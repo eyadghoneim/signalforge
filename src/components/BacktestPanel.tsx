@@ -83,7 +83,7 @@ export default function BacktestPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `eyad-backtest-${result.asset}.csv`;
+    a.download = `signalforge-backtest-${result.asset}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

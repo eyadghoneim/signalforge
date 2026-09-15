@@ -1,4 +1,4 @@
-// اختبارات EYAD — سلوكية على كود التطبيق الفعلي (tsx test/runTests.ts)
+// اختبارات SignalForge — سلوكية على كود التطبيق الفعلي (tsx test/runTests.ts)
 import * as path from 'path';
 import * as fs from 'fs';
 
