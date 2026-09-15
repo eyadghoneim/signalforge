@@ -77,7 +77,7 @@ export default function LearningPanel() {
               </tr>
             </thead>
             <tbody>
-              {data.perالعامل.map((t) => (
+              {data.perTag.map((t) => (
                 <tr key={t.tag} className="border-b border-zinc-800/50">
                   <td className="px-3 py-1.5 font-mono text-zinc-300" dir="ltr">{t.tag}</td>
                   <td className="px-3 py-1.5 tabular-nums text-zinc-400" dir="ltr">{t.samples}</td>
@@ -90,7 +90,7 @@ export default function LearningPanel() {
                   </td>
                 </tr>
               ))}
-              {data.perالعامل.length === 0 && (
+              {data.perTag.length === 0 && (
                 <tr><td className="px-3 py-4 text-center text-zinc-500" colSpan={7}>لا إشارات محسومة بعد - البوت يتعلم مع تحسم كل إشارة (هدف أو وقف).</td></tr>
               )}
             </tbody>
