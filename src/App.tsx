@@ -15,18 +15,18 @@ import type { LiquidityRegime, ProviderHealthInfo } from './api';
 type Tab = 'history' | 'backtest' | 'learning' | 'settings';
 
 export default function App() {
-  const [activeAsset, setActiveAsset] = useState<SupportedAsset>('BTC');
-  const [summary, setSummary] = useState<TickerSummary[]>([]);
-  const [signal, setSignal] = useState<Signal | null>(null);
-  const [signalError, setSignalError] = useState<string | null>(null);
-  const [history, setHistory] = useState<StoredSignal[]>([]);
-  const [attribution, setAttribution] = useState<AttributionSummary | null>(null);
-  const [health, setHealth] = useState<HealthInfo | null>(null);
-  const [regime, setRegime] = useState<LiquidityRegime | null>(null);
-  const [providers, setProviders] = useState<ProviderHealthInfo[]>([]);
-  const [tab, setTab] = useState<Tab>('history');
+  const [activeAsset, setActiveAsset] = useStatesSupportedAsset>('BTC');
+  const [summary, setSummary] = useStatesTickerSummary[]>([]);
+  const [signal, setSignal] = useStatesSignal | null>(null);
+  const [signalError, setSignalError] = useStatesstring | null>(null);
+  const [history, setHistory] = useStatesStoredSignal[]>([]);
+  const [attribution, setAttribution] = useStatesAttributionSummary | null>(null);
+  const [health, setHealth] = useStatesHealthInfo | null>(null);
+  const [regime, setRegime] = useStatesLiquidityRegime | null>(null);
+  const [providers, setProviders] = useStatesProviderHealthInfo[]>([]);
+  const [tab, setTab] = useStatesTab>('history');
   const [showSettings, setShowSettings] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<number>(0);
+  const [lastUpdate, setLastUpdate] = useStatesnumber>(0);
   const hiddenRef = useRef(false);
 
   const refreshCore = useCallback(async () => {
@@ -78,7 +78,7 @@ export default function App() {
   const priceChip = (a: TickerSummary) => {
     const up = (a.change24h ?? 0) >= 0;
     return (
-      <button
+      sbutton
         key={a.asset}
         onClick={() => a.ok && changeAsset(a.asset)}
         className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 transition-all ${
@@ -87,132 +87,132 @@ export default function App() {
             : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700'
         } ${a.ok ? '' : 'opacity-40'}`}
       >
-        <span className="text-xs font-bold text-zinc-300">{a.asset}</span>
-        <span className="text-sm font-bold tabular-nums text-zinc-100" dir="ltr">
+        sspan className="text-xs font-bold text-zinc-300">{a.asset}s/span>
+        sspan className="text-sm font-bold tabular-nums text-zinc-100" dir="ltr">
           {a.ok && a.price ? `$${a.price.toLocaleString('en-US')}` : '—'}
-        </span>
+        s/span>
         {a.ok && (
-          <span className={`text-[11px] font-bold tabular-nums ${up ? 'text-emerald-400' : 'text-rose-400'}`} dir="ltr">
+          sspan className={`text-[11px] font-bold tabular-nums ${up ? 'text-emerald-400' : 'text-rose-400'}`} dir="ltr">
             {up ? '+' : ''}
             {a.change24h?.toFixed(2)}%
-          </span>
+          s/span>
         )}
-      </button>
+      s/button>
     );
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    sdiv className="min-h-screen bg-zinc-950 text-zinc-100">
       {/* ─── الترويسة ─── */}
-      <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950">
-              <Activity size={20} strokeWidth={2.5} />
-            </div>
-            <div className="leading-tight">
-              <div className="text-base font-extrabold">
-                إياد <span className="text-amber-400">EYAD</span>
-              </div>
-              <div className="text-[10px] text-zinc-500">منصة الإشارات الكمية — أداة بحثية</div>
-            </div>
-          </div>
+      sheader className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
+        sdiv className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
+          sdiv className="flex items-center gap-2.5">
+            sdiv className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950">
+              sActivity size={20} strokeWidth={2.5} />
+            s/div>
+            sdiv className="leading-tight">
+              sdiv className="text-base font-extrabold">
+                يياد sspan className="text-amber-400">EYADs/span>
+              s/div>
+              sdiv className="text-[10px] text-zinc-500">منصة اليشارات الكمية — أداة بحثيةs/div>
+            s/div>
+          s/div>
 
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          sdiv className="flex flex-1 flex-wrap items-center justify-end gap-2">
             {summary.map(priceChip)}
-            <div className="mx-1 hidden items-center gap-1.5 text-[11px] text-zinc-500 sm:flex">
-              {health ? <Wifi size={13} className="text-emerald-500" /> : <WifiOff size={13} className="text-rose-500" />}
-              <span dir="ltr">{lastUpdate ? new Date(lastUpdate).toLocaleTimeString('ar-EG') : '—'}</span>
-            </div>
-            <button
+            sdiv className="mx-1 hidden items-center gap-1.5 text-[11px] text-zinc-500 sm:flex">
+              {health ? sWifi size={13} className="text-emerald-500" /> : sWifiOff size={13} className="text-rose-500" />}
+              sspan dir="ltr">{lastUpdate ? new Date(lastUpdate).toLocaleTimeString('ar-EG') : '—'}s/span>
+            s/div>
+            sbutton
               onClick={() => setShowSettings(true)}
               className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:border-amber-400/50 hover:text-amber-300"
             >
-              <Settings size={14} />
-              الإعدادات
-            </button>
-          </div>
-        </div>
-      </header>
+              sSettings size={14} />
+              اليعدادات
+            s/button>
+          s/div>
+        s/div>
+      s/header>
 
-      <main className="mx-auto max-w-7xl px-4 py-5">
+      smain className="mx-auto max-w-7xl px-4 py-5">
         {/* ─── الشبكة الرئيسية ─── */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <section className="space-y-4 lg:col-span-2">
-            <PriceChart asset={activeAsset} />
+        sdiv className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          ssection className="space-y-4 lg:col-span-2">
+            sPriceChart asset={activeAsset} />
             {signalError ? (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-5 text-sm text-rose-300">
-                تعذر جلب الإشارة: {signalError}
-                <button onClick={() => void refreshCore()} className="mr-3 rounded-lg border border-rose-400/40 px-2 py-0.5 text-xs hover:bg-rose-500/10">
-                  إعادة المحاولة
-                </button>
-              </div>
+              sdiv className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-5 text-sm text-rose-300">
+                تعذر جلب اليشارة: {signalError}
+                sbutton onClick={() => void refreshCore()} className="mr-3 rounded-lg border border-rose-400/40 px-2 py-0.5 text-xs hover:bg-rose-500/10">
+                  يعادة المحاولة
+                s/button>
+              s/div>
             ) : signal ? (
-              <SignalCard signal={signal} />
+              sSignalCard signal={signal} />
             ) : (
-              <div className="h-64 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/40" />
+              sdiv className="h-64 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/40" />
             )}
-          </section>
+          s/section>
 
-          <aside className="space-y-4">
+          saside className="space-y-4">
             {/* حالة المحرك */}
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-300">
-                <ShieldCheck size={16} className="text-amber-400" />
+            sdiv className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+              sdiv className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-300">
+                sShieldCheck size={16} className="text-amber-400" />
                 حالة المحرك
-              </div>
-              <div className="space-y-2 text-xs text-zinc-400">
-                <div className="flex justify-between">
-                  <span>النسخة</span>
-                  <span className="font-mono text-zinc-200" dir="ltr">v{health?.version ?? '…'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>آخر مسح آلي</span>
-                  <span dir="ltr" className="text-zinc-200">
+              s/div>
+              sdiv className="space-y-2 text-xs text-zinc-400">
+                sdiv className="flex justify-between">
+                  sspan>النسخةs/span>
+                  sspan className="font-mono text-zinc-200" dir="ltr">v{health?.version ?? '…'}s/span>
+                s/div>
+                sdiv className="flex justify-between">
+                  sspan>آخر مسح آليs/span>
+                  sspan dir="ltr" className="text-zinc-200">
                     {health?.lastScanAt ? new Date(health.lastScanAt).toLocaleTimeString('ar-EG') : 'قيد الانتظار…'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>الأصل النشط</span>
-                  <span className="text-zinc-200">{ASSET_LABELS_AR[activeAsset]}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>مصدر البيانات</span>
-                  <span className={signal?.dataSource === 'STALE' ? 'text-amber-400' : 'text-emerald-400'}>
+                  s/span>
+                s/div>
+                sdiv className="flex justify-between">
+                  sspan>الأصل النشطs/span>
+                  sspan className="text-zinc-200">{ASSET_LABELS_AR[activeAsset]}s/span>
+                s/div>
+                sdiv className="flex justify-between">
+                  sspan>مصدر البياناتs/span>
+                  sspan className={signal?.dataSource === 'STALE' ? 'text-amber-400' : 'text-emerald-400'}>
                     {signal?.dataSource === 'STALE' ? 'متأخرة' : signal ? 'حيّة' : '—'}
-                  </span>
-                </div>
-              </div>
-              <p className="mt-3 border-t border-zinc-800 pt-3 text-[11px] leading-5 text-zinc-500">
-                كل إشارة (الممنوعة كذلك) تُحفظ وتُتابع تلقائياً: هل TP1 يضرب قبل وقف الخسارة؟ — عشان نعرف مين من المؤشرات بيكسب فعلاً.
-              </p>
-            </div>
+                  s/span>
+                s/div>
+              s/div>
+              sp className="mt-3 border-t border-zinc-800 pt-3 text-[11px] leading-5 text-zinc-500">
+                كل يشارة (الممنوعة كذلك) تُحفظ وتُتابع تلقائياً: هل TP1 يضرب قبل وقف الخسارة؟ — عشان نعرف مين من المؤشرات بيكسب فعلاً.
+              s/p>
+            s/div>
 
-            {attribution && <AttributionPanel summary={attribution} />}
+            {attribution && sAttributionPanel summary={attribution} />}
 
-            <LiquidityCard regime={regime} />
+            sLiquidityCard regime={regime} />
 
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-              <ProviderDots providers={providers} />
-            </div>
+            sdiv className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+              sProviderDots providers={providers} />
+            s/div>
 
-            {/* إخلاء مسؤولية */}
-            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] leading-5 text-amber-200/70">
+            {/* يخلاء مسؤولية */}
+            sdiv className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] leading-5 text-amber-200/70">
               ⚠️ هذه منظومة بحثية ومحاكاة فقط — ليست نصيحة استثمارية. نتائج الباك تست التاريخية لا تضمن أي أداء مستقبلي. التنفيذ الحي معطل بالتصميم.
-            </div>
-          </aside>
-        </div>
+            s/div>
+          s/aside>
+        s/div>
 
         {/* ─── التبويبات ─── */}
-        <div className="mt-6">
-          <div className="flex gap-2 border-b border-zinc-800">
+        sdiv className="mt-6">
+          sdiv className="flex gap-2 border-b border-zinc-800">
             {([
-              ['history', 'سجل الإشارات'],
+              ['history', 'سجل اليشارات'],
               ['backtest', 'الباك تست'],
-              ['settings', 'الإعدادات'],
+              ['settings', 'اليعدادات'],
               ['learning', 'Learning'],
             ] as [Tab, string][]).map(([key, label]) => (
-              <button
+              sbutton
                 key={key}
                 onClick={() => setTab(key)}
                 className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-bold transition ${
@@ -220,33 +220,33 @@ export default function App() {
                 }`}
               >
                 {label}
-              </button>
+              s/button>
             ))}
-          </div>
-          <div className="pt-4 rise-in">
-            {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} />}
-            {tab === 'backtest' && <BacktestPanel />}
-        {tab === 'learning' && <LearningPanel />}
-            {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} />}
-          </div>
-        </div>
-      </main>
+          s/div>
+          sdiv className="pt-4 rise-in">
+            {tab === 'history' && sHistoryPanel signals={history} onRefresh={() => void refreshCore()} />}
+            {tab === 'backtest' && sBacktestPanel />}
+        {tab === 'learning' && sLearningPanel />}
+            {tab === 'settings' && sSettingsPanel onSaved={() => void refreshCore()} />}
+          s/div>
+        s/div>
+      s/main>
 
-      {/* نافذة الإعدادات */}
+      {/* نافذة اليعدادات */}
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowSettings(false)}>
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <SettingsPanel onSaved={() => void refreshCore()} />
-            <button onClick={() => setShowSettings(false)} className="mt-4 w-full rounded-xl border border-zinc-800 py-2 text-sm font-bold text-zinc-400 hover:text-zinc-200">
-              إغلاق
-            </button>
-          </div>
-        </div>
+        sdiv className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowSettings(false)}>
+          sdiv className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            sSettingsPanel onSaved={() => void refreshCore()} />
+            sbutton onClick={() => setShowSettings(false)} className="mt-4 w-full rounded-xl border border-zinc-800 py-2 text-sm font-bold text-zinc-400 hover:text-zinc-200">
+              يغلاق
+            s/button>
+          s/div>
+        s/div>
       )}
 
-      <footer className="mx-auto max-w-7xl px-4 py-8 text-center text-[11px] text-zinc-600">
+      sfooter className="mx-auto max-w-7xl px-4 py-8 text-center text-[11px] text-zinc-600">
         EYAD v{health?.version ?? '1.0.0'} — {health?.engineSignature ?? ''}
-      </footer>
-    </div>
+      s/footer>
+    s/div>
   );
 }

@@ -1,64 +1,72 @@
-# إياد EYAD — منصة الإشارات الكمية
+# SignalForge
 
-منصة تداول كمية بحثية للعملات الرقمية (BTC / ETH / PAXG): محرك إشارات حتمي ببوابات مخاطر، تتبّع تلقائي لأداء كل مؤشر، باك تست صادق على سنة كاملة من الشموع الحقيقية، وإشعارات تليجرام فورية.
+**A self-learning crypto signal terminal - measure, protect, adapt.**
 
-> ⚠️ **تنبيه بحثي هام:** هذه المنظومة أداة بحث ومحاكاة — **ليست نصيحة استثمارية**. نتائج الباك تست التاريخية لا تضمن أي أداء مستقبلي، ولا يوجد تنفيذ حي (Live Execution) بالتصميم.
+SignalForge is a local-first trading signal workstation for BTC, ETH and PAXG. It watches
+multi-timeframe market structure, scores conviction through a gated deterministic engine, tracks
+the outcome of every signal it publishes, and continuously adjusts its own factor weights from
+measured results - with a full audit trail.
 
----
-
-## 🚀 التشغيل على جهازك (خطوة واحدة)
-
-1. نزّل وثبّت [Node.js](https://nodejs.org) (الإصدار 18 أو أحدث — مرة واحدة فقط).
-2. اعمل **دبل كليك** على ملف `start.bat`.
-3. المتصفح هيفتح لوحده على `http://localhost:3000` — خلصت!
-
-> أول تشغيل بياخد 2-5 دقائق (تثبيت الحزم)، وأي تشغيل بعده فوري.
-> عشان توقف المنصة: اقفل النافذة السوداء أو اضغط Ctrl+C جواها.
+> **Honest by design:** SignalForge is an educational paper-trading research tool. It does not
+> place real orders, and it does not promise profits. Its own walk-forward analysis is published
+> in the repository because measured truth beats marketing.
 
 ---
 
-## 🧠 إيه اللي بيخليها مختلفة؟
+## Features
 
-| الميزة | التفاصيل |
+| | |
 |---|---|
-| **محرك حتمي واحد** | نفس كود الإشارة بالحرف في السيرفر الحي والباك تست — صفر انحراف بين المحاكى والواقع |
-| **بوابات مخاطر** | 4 بوابات تمنع الشراء في الظروف القاتلة: ترند 4 ساعات معاكس، سوق عرضي ميت (ADX<18)، كسر بفوليوم وهمي (RVOL<0.45)، تمويل عقود مرتفع — **والخروج الدفاعي بيتخطاها دايماً** |
-| **عدّاد الأداء (Attribution)** | كل إشارة (حتى الممنوعة ببوابة) بتتسجل وتتتابع 72 ساعة: MFE/MAE — هل TP1 ضرب قبل الوقف؟ — وفي النهاية تعرف مين من المؤشرات بيكسب فعلاً |
-| **باك تست صادق** | سنة شموع حقيقية، وقف متحفظ (الأولوية للوقف)، عمولة 0.1% لكل جانب، مقارنة صريحة مع شراء-واحتفاظ، وقيود معلنة |
-| **بلا أسعار وهمية** | 3 مزودين (Binance → Coinbase → CoinGecko) — لو كلهم فشلوا: خطأ صريح 503، مش رقم مخترع |
-| **توحيد الثوابت** | ملف واحد للعتبات والمضاعفات يستورده السيرفر والواجهة معاً — التناقضات مستحيلة بالبناء |
+| **Deterministic signal engine** | Multi-timeframe scoring (1h/4h/daily) with regime gates: HTF trend, chop (ADX), volume (RVOL) and funding squeeze - signals are reproducible, not hand-waved |
+| **Advanced measurement** | Win rate, profit factor, expectancy (R), payoff, per-trade Sharpe, max drawdown + duration, streaks, time-in-market, score-bucket and exit-reason diagnostics, equity curve with buy & hold benchmark, CSV export |
+| **Honest walk-forward optimizer** | Grid-search on the first half of the data, verdict on the unseen second half - ranking uses in-sample performance only, so the validation result cannot flatter itself |
+| **Capital protection** | Daily loss circuit breaker (R-based), max concurrent exposure with a BTC/ETH correlation guard, automatic expiry of stale unexecuted signals |
+| **Self-learning** | Every resolved signal feeds a bounded per-factor bias (clamped, evidence-gated at 10+ samples, >= 8pt deviation from baseline). Every bias change is logged with its evidence in a lessons ledger |
+| **Open interest factor** | 24h open-interest change from Binance futures confirms or warns on the prevailing move (graceful degradation when unavailable) |
+| **Multi-source market data** | Binance, Coinbase and CoinGecko with automatic failover and per-provider health tracking |
+| **Telegram alerts** | Signal pushes, daily digest heartbeat, circuit-breaker and scan-failure alerts |
+| **Web dashboard** | React + Tailwind terminal: live chart, signal card, history, backtest lab, learning panel, settings |
 
----
-
-## 📡 إشعارات تليجرام (اختياري)
-
-من تبويب **الإعدادات** في المنصة:
-
-1. افتح [@BotFather](https://t.me/BotFather) → أرسل `/newbot` → خُد التوكن.
-2. افتح [@userinfobot](https://t.me/userinfobot) → أرسل أي رسالة → خُد الـ Chat ID.
-3. افتح محادثة مع البوت الجديد واضغط Start (مهم!).
-4. حط التوكن والـ Chat ID في الإعدادات → اضغط **اختبر الاتصال** → **حفظ**.
-
-هتوصلك إشارات الشراء/البيع القابلة للتنفيذ فقط، بوقف الخسارة والأهداف ودرجة القناعة.
-
----
-
-## 🛠️ للمطورين (لو حبيت تعدّل)
+## Quick start
 
 ```bash
-npm install       # تثبيت
-npm run dev       # تشغيل التطوير (http://localhost:3000)
-npm run lint      # فحص الأنواع (tsc --noEmit)
-npm test          # اختبارات سلوكية
-npm run build     # بناء الإنتاج
-npm start         # تشغيل الإنتاج
+npm install
+npm run dev        # dashboard on http://localhost:3000
 ```
 
-- المحرك: `server/signalEngine.ts` + الثوابت في `shared/strategyConstants.ts`
-- المؤشرات (خالصة، مشتركة): `shared/indicators.ts`
-- الباك تست: `server/backtest.ts` — العدّاد: `server/attribution.ts`
-- البيانات تُحفظ محلياً في `data/` (إعدادات + إشارات + سجلات)
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Run the server + serve the dashboard |
+| `npm run lint` | TypeScript check (strict) |
+| `npm test` | 137 deterministic tests |
+| `npm run build` | Production build (vite + esbuild server bundle) |
+| `npm start` | Run the built server |
 
-## 📋 النشر على الإنترنت (لاحقاً)
+Telegram notifications are optional - configure a bot token and chat id in the dashboard settings
+(step-by-step guide included in the UI).
 
-المشروع جاهز للنشر على Render/Railway كخدمة Node عادية: `npm run build` ثم `npm start` مع متغير `NODE_ENV=production`. ملف CI جاهز في `.github/workflows/ci.yml`.
+## How the learning works
+
+1. Every actionable signal stores the factor tags that produced it.
+2. When a signal resolves (TP1 first / stop first), the outcome feeds a per-tag ledger.
+3. A tag with 10+ resolved samples whose win rate deviates 8+ points from the baseline earns a
+   bounded bias (+/-1..3) that nudges future scores.
+4. Every bias change is written to an audited lessons log - what changed, why, and on what evidence.
+
+No evidence, no bias. The system refuses to learn from thin data.
+
+## Project structure
+
+```
+server/    Express API, scan loop, signal engine, backtest, protection, learning
+shared/    Types, indicators, strategy constants (used by both server and UI)
+src/       React dashboard (Vite + Tailwind)
+test/      Deterministic test suite (npm test)
+data/      Runtime state (gitignored - contains private config)
+```
+
+## Disclaimer
+
+This project is for educational and research purposes only. Nothing in this repository is financial
+advice. Crypto markets are risky; backtested and paper-traded performance is not indicative of
+future results. Always verify anything you read - including this repository.
