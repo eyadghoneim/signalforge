@@ -92,4 +92,6 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   BTC 2238ms, ETH 608ms, PAXG 486ms (OI tag present), health clean. Honest note: llama DNS
   breakage is environmental - when it returns, liquidity factor resumes automatically.
 - Remaining: SettingsPanel numeric fields for protection config (optional polish; config works
-  via POST /api/config).
+  via POST /api/config).- 2026-09-15 21:40 - PUBLISHED: https://github.com/eyadghoneim/signalforge (public, main branch).
+  Rebranded SignalForge everywhere (readme/package/titles/engine signature); secrets verified absent
+  from tracked files before push. Final state: lint 0 / tests 137-137 / build 0 / server live.
