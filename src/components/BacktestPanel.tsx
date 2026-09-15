@@ -29,7 +29,7 @@ export default function BacktestPanel() {
       rightPriceScale: { borderColor: '#27272a' },
     });
     chartRef.current = chart;
-    equityRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, title: 'إياد' });
+    equityRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, title: 'SignalForge' });
     bhRef.current = chart.addSeries(LineSeries, { color: '#71717a', lineWidth: 1, lineStyle: 2, title: 'شراء واحتفاظ' });
     return () => {
       chart.remove();
@@ -165,7 +165,7 @@ export default function BacktestPanel() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {stat('Expectancy (R)', String(result.performance.expectancyR ?? '-'), (result.performance.expectancyR ?? 0) > 0 ? 'text-emerald-300' : 'text-rose-300')}
               {stat('Payoff W/L', String(result.performance.payoffRatio ?? '-'))}
-              {stat('Sharpe / trade', String(result.performance.sharpePerTrade ?? '-'))}
+              {stat('Trade return Z', String(result.performance.sharpePerTrade ?? '-'))}
               {stat('Avg win', result.performance.avgWinUsd !== null ? `$${result.performance.avgWinUsd}` : '-')}
               {stat('Avg loss', result.performance.avgLossUsd !== null ? `$${result.performance.avgLossUsd}` : '-')}
               {stat('DD duration', result.performance.maxDrawdownDurationHours !== null ? `${result.performance.maxDrawdownDurationHours}h` : '-')}
@@ -217,7 +217,7 @@ export default function BacktestPanel() {
           )}
           <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 p-2">
             <div className="flex items-center gap-3 px-2 pt-1 text-[10px] text-zinc-500">
-              <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-amber-400" /> استراتيجية إياد</span>
+              <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-amber-400" /> استراتيجية SignalForge</span>
               <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-zinc-500" /> شراء واحتفاظ</span>
             </div>
             <div ref={containerRef} className="h-64 w-full" />

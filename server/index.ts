@@ -1,4 +1,4 @@
-// خادم إياد: API + حلقة المسح الآلي + نشر الواجهة
+// خادم SignalForge: API + حلقة المسح الآلي + نشر الواجهة
 import express from 'express';
 import path from 'path';
 import { timingSafeEqual } from 'crypto';
@@ -42,6 +42,7 @@ import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
+import { invalidateCandleCache } from './marketData';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
 import { computeSnapshot, computeHtfSnapshot, computeSmcStructure, computeDailyTrend, computePullbackZone } from '../shared/indicators';
 
@@ -483,7 +484,7 @@ async function runScanCycle(): Promise<void> {
       const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
       const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
       if (token && chatId) {
-        void sendTelegramMessage(token, chatId, '🚨 <b>[تنبيه طوارئ — إياد]</b>\nفشل حلقة المسح 3 مرات متتالية — الحلقة مستمرة ولن تتوقف.');
+        void sendTelegramMessage(token, chatId, '🚨 <b>[تنبيه طوارئ — SignalForge]</b>\nفشل حلقة المسح 3 مرات متتالية — الحلقة مستمرة ولن تتوقف.');
       }
     }
   } finally {
@@ -578,7 +579,7 @@ async function main(): Promise<void> {
 
   app.listen(PORT, () => {
     console.log(`╔════════════════════════════════════════════╗`);
-    console.log(`║  إياد SignalForge — منصة الإشارات الكمية          ║`);
+    console.log(`║  SignalForge — منصة الإشارات الكمية          ║`);
     console.log(`║  ${ENGINE_SIGNATURE}`);
     console.log(`║  يعمل الآن على: http://localhost:${PORT}`);
     console.log(`╚════════════════════════════════════════════╝`);

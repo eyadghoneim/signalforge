@@ -12,9 +12,9 @@ export class DataUnavailableError extends Error {
 }
 
 const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string }> = {
-  BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin' },
-  ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum' },
-  PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold' },
+  BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT' },
+  ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT' },
+  PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT' },
 };
 
 // ─── كاش TTL مع منع الطلبات المكررة المتوازية ───
@@ -221,6 +221,34 @@ async function candlesFromCoinbase1h(asset: SupportedAsset): Promise<Candle[]> {
   return out;
 }
 
+async function candlesFromBybit(asset: SupportedAsset, interval: '1h' | '4h' | '1d', limit: number): Promise<Candle[]> {
+  // Bybit v5 spot klines - a non-restricted fallback host for regions where Binance is blocked.
+  const iv = interval === '1h' ? '60' : interval === '4h' ? '240' : 'D';
+  const d = await fetchJsonWithTimeout<{ result?: { list?: string[][] } }>(
+    `https://api.bybit.com/v5/market/kline?category=spot&symbol=${SYMBOLS[asset].bybit}&interval=${iv}&limit=${Math.min(limit, 1000)}`,
+  );
+  const rows = d.result?.list ?? [];
+  const out = rows
+    .map((r) => ({
+      time: Math.floor(Number(r[0]) / 1000),
+      open: parseFloat(String(r[1])),
+      high: parseFloat(String(r[2])),
+      low: parseFloat(String(r[3])),
+      close: parseFloat(String(r[4])),
+      volume: parseFloat(String(r[5])),
+    }))
+    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.close > 0)
+    .sort((a, b) => a.time - b.time); // bybit returns newest-first
+  if (out.length < 50) throw new Error('bybit candles too short');
+  return out;
+}
+
+/** Drop cached candles for one asset so a forced refresh actually re-fetches. */
+export function invalidateCandleCache(asset: SupportedAsset): void {
+  for (const key of [...cache.keys()]) {
+    if (key.startsWith(`c1h:${asset}:`) || key.startsWith(`c4h:${asset}:`) || key.startsWith(`c1d:${asset}:`)) cache.delete(key);
+  }
+}
 export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<Candle[]> {
   return cached(`c1h:${asset}:${limit}`, 60_000, async () => {
     try {
@@ -229,6 +257,13 @@ export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<
       return out;
     } catch (e) {
       noteProviderHealth('binance:klines', false, e instanceof Error ? e.message : String(e));
+      try {
+        const bb = await candlesFromBybit(asset, '1h', Math.min(limit, 1000));
+        noteProviderHealth('bybit:klines', true);
+        return bb.slice(-limit);
+      } catch (e2) {
+        noteProviderHealth('bybit:klines', false, e2 instanceof Error ? e2.message : String(e2));
+      }
       if (limit <= 300) {
         const cb = await candlesFromCoinbase1h(asset);
         noteProviderHealth('coinbase:candles', true);
@@ -242,7 +277,12 @@ export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<
 // شموع الفريم اليومي — لبوابة الماكرو اليومية
 export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<Candle[]> {
   return cached(`c1d:${asset}:${limit}`, 10 * 60_000, async () => {
-    const out = await candlesFromBinance(asset, '1d', Math.min(limit, 1000));
+    let out: Candle[];
+    try {
+      out = await candlesFromBinance(asset, '1d', Math.min(limit, 1000));
+    } catch {
+      out = await candlesFromBybit(asset, '1d', Math.min(limit, 1000));
+    }
     if (out.length < 75) throw new DataUnavailableError(asset, 'daily klines (too short)');
     return out;
   });
@@ -252,9 +292,15 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
   // قد تكون غير متاحة (تعطل مصدر الشموع) — نرجع null بصراحة بدل بيانات مزيفة
   try {
     return await cached(`c4h:${asset}:${limit}`, 120_000, async () => {
-      const rows = await candlesFromBinance(asset, '4h', Math.min(limit, 1000));
-      if (rows.length < 230) throw new Error('4h too short for HTF gate');
-      return rows;
+      try {
+        const rows = await candlesFromBinance(asset, '4h', Math.min(limit, 1000));
+        if (rows.length < 230) throw new Error('4h too short for HTF gate');
+        return rows;
+      } catch {
+        const rows = await candlesFromBybit(asset, '4h', Math.min(limit, 1000));
+        if (rows.length < 230) throw new Error('4h too short for HTF gate (bybit)');
+        return rows;
+      }
     });
   } catch {
     return null;
