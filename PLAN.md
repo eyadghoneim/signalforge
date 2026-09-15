@@ -117,4 +117,15 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   (utcDayStart is epoch-based). DEFERRED (backlog): label hysteresis, funding non-linear scoring,
   regime-keyed biases, bias decay + realized-R gating, endpoint smoke tests, screenshots/release.
   Scores from review: engineering 9/10, honesty 10/10, data resilience 6/10 -> Bybit failover
-  addresses the main gap.
+  addresses the main gap.- 2026-09-15 22:35 - Added npm run smoke (live API smoke suite, server/smoke.ts) + smoke script.
+- DESIGNED BACKLOG (from external reviews, awaiting implementation sessions):
+  1. Label hysteresis: require score to hold above threshold for 2 consecutive scans before
+     promoting a NEW signal label (needs per-asset state in the scan loop - design carefully,
+     engine must stay deterministic for backtests).
+  2. Regime-keyed learning biases: key bias on (tag, dailyTrend) instead of tag alone - signals
+     already store dailyTrend; engine lookup needs current regime from ctx.daily.
+  3. Bias decay: EWMA-weight samples by recency in computeTagStats instead of flat counts.
+  4. Realized-R gating: weight resolved outcomes by |RR| using stored target1/stopLoss distance
+     instead of binary +1/-1.
+  5. Funding non-linear scoring (log/clipped) - low priority.
+  6. Dashboard screenshots + demo GIF for the GitHub front page - low priority, presentation only.
