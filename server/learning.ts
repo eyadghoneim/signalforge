@@ -102,7 +102,10 @@ export function computeLearningState(signals: StoredSignal[]): LearningState {
       continue;
     }
     const steps = Math.min(3, Math.max(1, Math.round(Math.abs(dev) / 8)));
-    biases[t.tag] = (dev > 0 ? 1 : -1) * steps;
+    // Confidence scaling (review Issue 16): 10 samples = huge variance, so bias ramps
+    // from 0 at MIN_SAMPLES to full weight at +30 samples (N >= 40).
+    const confidence = Math.min(1, (t.samples - MIN_SAMPLES) / 30);
+    biases[t.tag] = Math.round((dev > 0 ? 1 : -1) * steps * confidence * 100) / 100;
   }
   let totalResolved = 0;
   for (const s of signals) {

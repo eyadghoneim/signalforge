@@ -75,6 +75,7 @@ export function dayRealizedR(signals: StoredSignal[], nowMs: number): DailyPnLR 
 }
 
 export interface BreakerState {
+  unrealizedR: number;
   tripped: boolean;
   realizedR: number;
   limit: number;
@@ -83,11 +84,29 @@ export interface BreakerState {
   dayStartMs: number;
 }
 
+function unrealizedAdverseR(signals: StoredSignal[]): number {
+  // Conservative estimate from the latest 4h attribution window: worst adverse move (MAE)
+  // divided by the stop distance. MAE is a worst-case snapshot, so this trips early, not late.
+  let r = 0;
+  for (const s of signals) {
+    if (!isActionableOpenBuy(s)) continue;
+    const stopDistPct = ((s.entryPrice - s.stopLoss) / s.entryPrice) * 100;
+    if (!(stopDistPct > 0)) continue;
+    const mae = s.outcomes.windows.h4.maePercent;
+    const adverse = Math.max(0, -mae);
+    if (adverse > 0) r += adverse / stopDistPct;
+  }
+  return r;
+}
+
 export function evaluateCircuitBreaker(signals: StoredSignal[], config: ProtectionConfig, nowMs: number): BreakerState {
   const pnl = dayRealizedR(signals, nowMs);
+  const unrealizedR = -unrealizedAdverseR(signals);
+  const totalR = pnl.realizedR + unrealizedR;
   return {
-    tripped: pnl.realizedR <= -Math.abs(config.dailyLossLimitR),
+    tripped: totalR <= -Math.abs(config.dailyLossLimitR),
     realizedR: pnl.realizedR,
+    unrealizedR,
     limit: config.dailyLossLimitR,
     resolvedToday: pnl.resolvedToday,
     lossesToday: pnl.lossesToday,

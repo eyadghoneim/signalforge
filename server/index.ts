@@ -40,7 +40,7 @@ import {
 import { buildSignalMessageHtml, buildTestMessageHtml, sendTelegramMessage } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
-import { biasForReasons, computeLearningState, diffLessons } from './learning';
+import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
 import { computeSnapshot, computeHtfSnapshot, computeSmcStructure, computeDailyTrend, computePullbackZone } from '../shared/indicators';
@@ -154,6 +154,7 @@ app.get('/api/market/klines', async (req, res) => {
 
 async function computeSignalFor(asset: SupportedAsset, refresh = false) {
   const config = loadConfig();
+  const tagBias = loadTagBias();
   let candles1h = await getCandles1h(asset, 500);
   if (refresh) candles1h = await getCandles1h(asset, 500);
   const snapshot = computeSnapshot(candles1h);
@@ -403,13 +404,8 @@ async function runScanCycle(): Promise<void> {
           liquidity,
           daily,
           entryZone,
+          tagBias,
         });
-        // Learning bias: bounded score nudge derived from the bot's own resolved outcomes.
-        const learningBias = biasForReasons(signal.reasons.map((r) => r.tag), tagBias);
-        if (learningBias !== 0) {
-          signal.convictionScore = Math.max(0, Math.min(100, signal.convictionScore + learningBias));
-          signal.learningBias = learningBias;
-        }
 
         const gateBlocked = signal.regimeGateStatus !== 'CLEAR';
         const eligible = signal.spotAction === 'SPOT_BUY' || signal.spotAction === 'SPOT_SELL_ALL';

@@ -17,6 +17,7 @@ import {
 } from '../shared/strategyConstants';
 import type { IndicatorSnapshot, HtfSnapshot } from '../shared/indicators';
 import { openInterestAdjustment } from './oiFactor';
+import { biasForReasons } from './learning';
 
 export { openInterestAdjustment };
 
@@ -41,12 +42,14 @@ export interface BuildSignalContext {
   daily?: DailyTrend | null;
   entryZone?: { low: number; high: number } | null;
   oiChange24h?: number | null;
+  tagBias?: Record<string, number>;
 }
 
 export function buildSignal(ctx: BuildSignalContext): Signal {
   const { asset, snapshot: s, htf, fundingPct8h, change24h } = ctx;
   const reasons: SignalReason[] = [];
   let score = 50;
+  let learningBiasValue = 0;
 
   const add = (tag: SignalReason['tag'], adjustment: number, textAr: string): void => {
     if (adjustment === 0) return;
@@ -139,6 +142,15 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     reasons.push({ tag: 'TREND', adjustment: 0, textAr: 'بنية هابطة صلبة — الخروج الدفاعي مُقدَّم على أي بوابة' });
   }
 
+  // Learning bias (bounded): applied BEFORE type derivation so signalType/spotAction
+  // always match the final score (review fix: bias used to be applied post-hoc).
+  if (ctx.tagBias) {
+    const bias = biasForReasons(Array.from(new Set(reasons.map((r) => r.tag))), ctx.tagBias);
+    if (bias !== 0) {
+      score = Math.max(0, Math.min(100, score + bias));
+      learningBiasValue = bias;
+    }
+  }
   let { signalType, spotAction } = deriveSignalTypeAndAction(score);
   if (hardBearish && spotAction !== 'SPOT_SELL_ALL') {
     signalType = score <= STRATEGY_THRESHOLDS.STRONG_SELL_MAX_SCORE ? 'STRONG_SELL' : 'SELL';
@@ -208,6 +220,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   return {
     asset,
     engineSignature: ENGINE_SIGNATURE,
+    learningBias: learningBiasValue !== 0 ? learningBiasValue : undefined,
     convictionScore: score,
     signalType,
     spotAction,

@@ -1,5 +1,7 @@
 # SignalForge
 
+[![CI](https://github.com/eyadghoneim/signalforge/actions/workflows/ci.yml/badge.svg)](https://github.com/eyadghoneim/signalforge/actions/workflows/ci.yml)
+
 **A self-learning crypto signal terminal - measure, protect, adapt.**
 
 SignalForge is a local-first trading signal workstation for BTC, ETH and PAXG. It watches
@@ -70,3 +72,10 @@ data/      Runtime state (gitignored - contains private config)
 This project is for educational and research purposes only. Nothing in this repository is financial
 advice. Crypto markets are risky; backtested and paper-traded performance is not indicative of
 future results. Always verify anything you read - including this repository.
+
+**Known limitation:** the exposure cap limits the NUMBER of open signals. Crypto assets
+remain broadly correlated - in a macro sell-off everything moves together. The cap reduces
+position count risk, not market beta.
+## License
+
+MIT - see [LICENSE](LICENSE).

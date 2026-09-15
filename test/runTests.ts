@@ -363,11 +363,11 @@ console.log('\n=== 8. طبقات v2.0 — SMC ومنطقة الدخول والي
   assert(snapV2 !== null, 'لقطة v2 جاهزة');
   if (snapV2) {
     const baseSig = buildSignal({
-      asset: 'BTC', snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
+      asset: 'BTC' as const, snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
       dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
     });
     const liftedSig = buildSignal({
-      asset: 'BTC', snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
+      asset: 'BTC' as const, snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
       dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
       liquidity: aggregateLiquidity(3.5, 1.2, 15),
     });
@@ -375,7 +375,7 @@ console.log('\n=== 8. طبقات v2.0 — SMC ومنطقة الدخول والي
     assert(liftedSig.liquidity?.adjustment === 8, 'الإشارة تحمل ملخص السيولة');
 
     const blockedSig = buildSignal({
-      asset: 'BTC', snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
+      asset: 'BTC' as const, snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
       dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
       daily: { close: 40000, ema20: 41000, ema50: 42000, bearish: true, bullish: false },
       entryZone: { low: 46000, high: 47500 },
@@ -665,13 +665,13 @@ console.log('\n=== 12. Learning system v3 ===');
 
   const state = computeLearningState(signals);
   assert(state.totalResolved === 36, `totalResolved = 36 (got ${state.totalResolved})`);
-  assert(state.biases['TREND'] === 3, `TREND bias = +3 (got ${state.biases['TREND']})`);
-  assert(state.biases['MACD'] === -3, `MACD bias = -3 (got ${state.biases['MACD']})`);
+  assert(Math.abs(state.biases['TREND'] - 0.2) < 0.001, `TREND bias = +0.2 scaled (got ${state.biases['TREND']})`);
+  assert(Math.abs(state.biases['MACD'] + 0.2) < 0.001, `MACD bias = -0.2 scaled (got ${state.biases['MACD']})`);
   assert(state.biases['RSI'] === 0, `RSI bias = 0, deviation under threshold (got ${state.biases['RSI']})`);
 
   // Bias application: sum over distinct tags, clamped to +/-5.
   assert(biasForReasons(['TREND', 'MACD'], state.biases) === 0, 'TREND+MACD biases cancel out');
-  assert(biasForReasons(['TREND'], state.biases) === 3, `TREND alone = +3 (got ${biasForReasons(['TREND'], state.biases)})`);
+  assert(Math.abs(biasForReasons(['TREND'], state.biases) - 0.2) < 0.001, `TREND alone = +0.2 scaled (got ${biasForReasons(['TREND'], state.biases)})`);
   assert(biasForReasons(['TREND', 'RSI'], { TREND: 3, RSI: 3 }) === 5, `sum clamped to +5 (got ${biasForReasons(['TREND', 'RSI'], { TREND: 3, RSI: 3 })})`);
   assert(biasForReasons(['UNKNOWN'], {}) === 0, 'unknown tag -> zero bias');
 
@@ -679,7 +679,7 @@ console.log('\n=== 12. Learning system v3 ===');
   const lessons = diffLessons({ TREND: 0, MACD: 0, RSI: 0 }, state.biases, state.perTag, baseline, 1000);
   assert(lessons.length === 2, `2 lessons for 2 changed biases (got ${lessons.length})`);
   const trendLesson = lessons.find((l) => l.tag === 'TREND');
-  assert(!!trendLesson && trendLesson.from === 0 && trendLesson.to === 3 && trendLesson.samples === 12, 'TREND lesson carries from/to/evidence');
+  assert(!!trendLesson && trendLesson.from === 0 && Math.abs(trendLesson.to - 0.2) < 0.001 && trendLesson.samples === 12, 'TREND lesson carries from/to/evidence');
   const none = diffLessons(state.biases, state.biases, state.perTag, baseline, 1000);
   assert(none.length === 0, 'no changes -> no lessons');
 }
@@ -702,11 +702,11 @@ console.log('\n=== 13. Open interest factor v3 ===');
   assert(snap !== null, 'OI integration snapshot ready');
   if (snap) {
     const base = buildSignal({
-      asset: 'BTC', snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
+      asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
       dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
     });
     const withOi = buildSignal({
-      asset: 'BTC', snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
+      asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
       dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
       oiChange24h: 5,
     });
@@ -729,6 +729,59 @@ console.log('\n=== 14. Hard timeout guard v3 ===');
   const t = Date.now();
   assert((await hung) === 'fb', 'hung promise -> fallback after timeout');
   assert(Date.now() - t < 900, `fallback fired quickly (got ${Date.now() - t}ms)`);
+}
+console.log('\n=== 15. Review-response fixes v3 ===');
+{
+  const { buildSignal } = await import('../server/signalEngine');
+  const { computeSnapshot } = await import('../shared/indicators');
+  const { deriveSignalTypeAndAction } = await import('../shared/strategyConstants');
+  const { runBacktest } = await import('../server/backtest');
+  const { evaluateCircuitBreaker, DEFAULT_PROTECTION } = await import('../server/protection');
+
+  const candles = syntheticCandles(300, 22, 7);
+  const snap = computeSnapshot(candles);
+  assert(snap !== null, 'review snapshot ready');
+  if (snap) {
+    const baseCtx = {
+      asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
+      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+    };
+    const base = buildSignal(baseCtx);
+    const biased = buildSignal({ ...baseCtx, tagBias: { TREND: -3 } });
+    assert(biased.learningBias === -3, `learningBias surfaced on the signal (got ${biased.learningBias})`);
+    assert(biased.convictionScore === Math.max(0, base.convictionScore - 3), `score shifted by bias (got ${biased.convictionScore} vs ${base.convictionScore})`);
+    // THE review fix: the label must match the FINAL (post-bias) score.
+    const re = deriveSignalTypeAndAction(biased.convictionScore);
+    assert(re.signalType === biased.signalType && re.spotAction === biased.spotAction, 'label matches final score - no stale label');
+  }
+
+  // Slippage: same data, same trades, strictly worse equity.
+  const candles1300 = syntheticCandles(1300, 10);
+  const clean = runBacktest('BTC', candles1300, { riskPercent: 1, feePercent: 0.1, cooldownCandles: 4, initialEquity: 10000, entryMinScore: 0, adxFloor: 0, slippagePercent: 0 });
+  const slippery = runBacktest('BTC', candles1300, { riskPercent: 1, feePercent: 0.1, cooldownCandles: 4, initialEquity: 10000, entryMinScore: 0, adxFloor: 0, slippagePercent: 1 });
+  assert(clean.totalTrades === slippery.totalTrades, `slippage must not change trade count (${clean.totalTrades}/${slippery.totalTrades})`);
+  assert(slippery.finalEquity < clean.finalEquity, `slippage reduces equity (${slippery.finalEquity} < ${clean.finalEquity})`);
+
+  // Breaker now counts unrealized adverse movement (MAE-based) from open signals.
+  const mkOpen = (mae: number): import('../shared/types').StoredSignal => ({
+    asset: 'BTC', engineSignature: 'test', convictionScore: 80, signalType: 'STRONG_BUY',
+    spotAction: 'SPOT_BUY', entryPrice: 100, stopLoss: 98, target1: 102, target2: 104, target3: 106,
+    riskRewardRatio: 2, regimeGateStatus: 'CLEAR', reasons: [], summaryAr: 'x', generatedAt: 0,
+    dedupHash: 'd' + Math.random(), dataSource: 'LIVE', htfAvailable: true, id: 'o' + Math.random(),
+    isGateBlocked: false, telegramSent: false,
+    outcomes: {
+      windows: {
+        h4: { mfePercent: 0, maePercent: mae, hitTp1BeforeSl: null },
+        h24: { mfePercent: 0, maePercent: mae, hitTp1BeforeSl: null },
+        h72: { mfePercent: 0, maePercent: mae, hitTp1BeforeSl: null },
+      },
+      resolution: 'OPEN',
+    },
+  });
+  const openLoss = [mkOpen(-3), mkOpen(-3)]; // each: 3% adverse / 2% stop distance = 1.5R -> 3R total
+  const st = evaluateCircuitBreaker(openLoss, { ...DEFAULT_PROTECTION, dailyLossLimitR: 3 }, Date.now());
+  assert(st.unrealizedR === -3, `unrealizedR = -3 (got ${st.unrealizedR})`);
+  assert(st.tripped, 'breaker trips on unrealized losses alone (review Issue 8)');
 }
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);

@@ -24,7 +24,8 @@ export interface BacktestOptions {
   cooldownCandles: number; // فترة تهدئة بعد الخروج (شموع 1h)
   initialEquity: number;
   entryMinScore: number; // فلتر إضافي للدرجة (0 = افتراضي المحرك)
-  adxFloor: number; // فلتر إضافي لقوة الاتجاه (0 = بلا فلتر)
+  adxFloor: number;
+  slippagePercent: number; // فلتر إضافي لقوة الاتجاه (0 = بلا فلتر)
 }
 
 export const DEFAULT_BACKTEST_OPTIONS: BacktestOptions = {
@@ -34,6 +35,7 @@ export const DEFAULT_BACKTEST_OPTIONS: BacktestOptions = {
   initialEquity: 10000,
   entryMinScore: 0,
   adxFloor: 0,
+  slippagePercent: 0.05,
 };
 
 interface OpenPosition {
@@ -147,7 +149,8 @@ export function runBacktest(
 
   // ─── حلقة المحاكاة ───
   const WARMUP = 1000;
-  const feeRate = opts.feePercent / 100;
+  // Round-trip cost model (review fix): entry fee + exit fee + slippage, charged at entry.
+  const feeRate = (opts.feePercent * 2 + opts.slippagePercent) / 100;
   let equity = opts.initialEquity;
   let position: OpenPosition | null = null;
   let cooldownUntil = -1;
