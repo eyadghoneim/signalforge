@@ -94,4 +94,27 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
 - Remaining: SettingsPanel numeric fields for protection config (optional polish; config works
   via POST /api/config).- 2026-09-15 21:40 - PUBLISHED: https://github.com/eyadghoneim/signalforge (public, main branch).
   Rebranded SignalForge everywhere (readme/package/titles/engine signature); secrets verified absent
-  from tracked files before push. Final state: lint 0 / tests 137-137 / build 0 / server live.
+  from tracked files before push. Final state: lint 0 / tests 137-137 / build 0 / server live.- 2026-09-15 22:10 - EXTERNAL REVIEW (ChatGPT x3) triaged and actioned: bias moved inside
+  buildSignal (label/score consistency - review 2 Issue 12), breaker counts unrealized adverse R
+  from open-signal MAE (Issue 8), confidence-scaled biases (Issue 16), slippage in the round-trip
+  cost model (Issues 5/6), MIT LICENSE, Bybit klines failover for 1h/4h/1d (review 3: geo-block
+  resilience), real refresh via invalidateCandleCache, .openclaw/ untracked, v2.0.0 unified,
+  branding fully SignalForge. Verified: lint 0 / tests 145-145 / build 0. Deferred with rationale
+  in PLAN: label hysteresis, funding non-linearity, regime-keyed biases, bias decay, endpoint
+  smoke tests. Non-applicable claims documented: indicator look-ahead (causality is test-proven
+  via NaN warmup asserts), SMC sweep proximity (no sweep concept in code), fold bias leak
+  (backtest never uses learning biases), timezone reset (utcDayStart already epoch-based).- 2026-09-15 22:30 - DNS diagnosis (probe evidence): api.binance.com fetches 12/12 OK (~300ms)
+  from Node; stablecoin.llama.fi fails at DNS (ENOTFOUND). The transient 4h klines 503 right after
+  a forced refresh was a refetch burst, self-recovered (400 candles OK, provider health clean).
+  Environment note: llama DNS breakage is local/environmental - liquidity degrades to neutral by
+  design until it resolves.
+- EXTERNAL REVIEW 3 (ChatGPT, ran the project itself) - triage summary:
+  FIXED: refresh bypassing cache (invalidateCandleCache), .openclaw/ untracked, version 2.0.0
+  unified, branding leftovers cleaned, MAX_BIAS now used, Bybit klines failover (1h/4h/1d).
+  ALREADY GUARDED (review claims not applicable to this codebase): indicator look-ahead (causality
+  proven by NaN warmup tests), SMC sweep proximity (no sweep concept; BOS uses close + backward
+  window), walk-forward bias leak (backtest never consumes learning biases), breaker timezone
+  (utcDayStart is epoch-based). DEFERRED (backlog): label hysteresis, funding non-linear scoring,
+  regime-keyed biases, bias decay + realized-R gating, endpoint smoke tests, screenshots/release.
+  Scores from review: engineering 9/10, honesty 10/10, data resilience 6/10 -> Bybit failover
+  addresses the main gap.
