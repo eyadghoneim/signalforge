@@ -364,11 +364,11 @@ console.log('\n=== 8. طبقات v2.0 — SMC ومنطقة الدخول والي
   if (snapV2) {
     const baseSig = buildSignal({
       asset: 'BTC' as const, snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
-      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
     });
     const liftedSig = buildSignal({
       asset: 'BTC' as const, snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
-      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
       liquidity: aggregateLiquidity(3.5, 1.2, 15),
     });
     assert(liftedSig.convictionScore === Math.min(100, baseSig.convictionScore + 8), `طبقة السيولة رفعت الدرجة بـ+8 (${baseSig.convictionScore} → ${liftedSig.convictionScore})`);
@@ -376,7 +376,7 @@ console.log('\n=== 8. طبقات v2.0 — SMC ومنطقة الدخول والي
 
     const blockedSig = buildSignal({
       asset: 'BTC' as const, snapshot: snapV2, htf: null, fundingPct8h: 0.01, change24h: 3,
-      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
       daily: { close: 40000, ema20: 41000, ema50: 42000, bearish: true, bullish: false },
       entryZone: { low: 46000, high: 47500 },
     });
@@ -703,11 +703,11 @@ console.log('\n=== 13. Open interest factor v3 ===');
   if (snap) {
     const base = buildSignal({
       asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
-      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
     });
     const withOi = buildSignal({
       asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
-      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
       oiChange24h: 5,
     });
     if (snap.emaTrend === 'BULLISH' || snap.emaTrend === 'STRONG_BULLISH') {
@@ -744,7 +744,7 @@ console.log('\n=== 15. Review-response fixes v3 ===');
   if (snap) {
     const baseCtx = {
       asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
-      dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
     };
     const base = buildSignal(baseCtx);
     const biased = buildSignal({ ...baseCtx, tagBias: { TREND: -3 } });
