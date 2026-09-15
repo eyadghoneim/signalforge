@@ -11,7 +11,7 @@ export class DataUnavailableError extends Error {
   }
 }
 
-const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string }> = {
+const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string; bybit: string }> = {
   BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT' },
   ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT' },
   PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT' },
