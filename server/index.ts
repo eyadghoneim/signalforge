@@ -270,7 +270,7 @@ app.get('/api/liquidity-regime', async (_req, res) => {
 app.get('/api/dex/pairs', async (req, res) => {
   const asset = String(req.query.asset || 'BTC').toUpperCase();
   try {
-    const pairs = await getTopDexPairs(`${asset}USDT`);
+    const pairs = await getTopDexPairs(asset);
     res.json({ ok: true, pairs: pairs ?? [] });
   } catch {
     res.status(503).json({ ok: false, pairs: [] });
