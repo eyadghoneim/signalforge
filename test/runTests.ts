@@ -601,8 +601,8 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(expired[0].ageHours === 4, `expiry age = 4h (got ${expired[0].ageHours})`);
 
   // Clamp guards.
-  const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true });
-  assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1, 'clampProtection bounds values');
+  const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true, stoplossGuardMax: 99, stoplossGuardHours: 999, lossCooldownHours: -5 });
+  assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1 && clamped.stoplossGuardMax === 10 && clamped.stoplossGuardHours === 72 && clamped.lossCooldownHours === 0, 'clampProtection bounds all values');
 }
 console.log('\n=== 12. Learning system v3 ===');
 {
@@ -834,7 +834,51 @@ console.log('\n=== 16. FNG + WHALE factors v3 ===');
   assert(parsed[0].close === 50050 && parsed[1].close === 50150, 'ohlc parsed correctly');
   const empty = parseBinanceVisionCsv('garbage\n,');
   assert(empty.length === 0, 'garbage input -> zero candles');
-}console.log(`\n=============================================`);
+}console.log('\n=== 18. Indicator audit vs trading-signals (external reference) ===');
+{
+  const { EMA, RSI, BollingerBands } = await import('trading-signals');
+  const { ema, rsi, bollinger } = await import('../shared/indicators');
+
+  const closes = Array.from({ length: 300 }, (_, i) => 100 + Math.sin(i / 7) * 20 + i * 0.15);
+
+  // EMA comparison (period 21)
+  const refEma = new EMA(21);
+  let refEmaLast: number | null = null;
+  for (const c of closes) {
+    refEma.add(c);
+    const r = refEma.getResult();
+    if (r !== undefined) refEmaLast = r;
+  }
+  const ours = ema(closes, 21);
+  const devEma = Math.abs(ours[299] - (refEmaLast ?? 0));
+  assert(devEma < 0.5, `EMA(21) matches reference (dev ${devEma.toFixed(4)})`);
+
+  // RSI comparison (period 14)
+  const refRsi = new RSI(14);
+  let refRsiLast: number | null = null;
+  for (const c of closes) {
+    refRsi.add(c);
+    const r = refRsi.getResult();
+    if (r !== undefined) refRsiLast = r;
+  }
+  const oursRsi = rsi(closes, 14);
+  const devRsi = Math.abs(oursRsi[299] - (refRsiLast ?? 0));
+  assert(devRsi < 2, `RSI(14) close to reference (dev ${devRsi.toFixed(3)} pts)`);
+
+  // Bollinger comparison (period 20, 2 std)
+  const refBb = new BollingerBands(20, 2);
+  let refBbLast: { middle: number; upper: number; lower: number } | undefined;
+  for (const c of closes) {
+    refBb.add(c);
+    const r = refBb.getResult();
+    if (r !== undefined && r !== null && (r as any).middle !== undefined) refBbLast = r as any;
+  }
+  const oursBb = bollinger(closes, 20, 2);
+  const devMid = Math.abs(oursBb.mid[299] - (refBbLast?.middle ?? 0));
+  assert(devMid < 0.5, `Bollinger mid matches reference (dev ${devMid.toFixed(4)})`);
+  console.log(`    audit note: EMA dev ${devEma.toFixed(4)} | RSI dev ${devRsi.toFixed(3)} pts | BB mid dev ${devMid.toFixed(4)} - method differences documented`);
+}
+console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);
 console.log('🎉 كل الاختبارات نجحت');

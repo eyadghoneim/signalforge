@@ -43,6 +43,7 @@ import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSi
 import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
+import { getTopDexPairs } from './dexscreener';
 import { getWhaleNetflow } from './whaleAlert';
 import { invalidateCandleCache } from './marketData';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
@@ -266,6 +267,15 @@ app.get('/api/liquidity-regime', async (_req, res) => {
   }
 });
 
+app.get('/api/dex/pairs', async (req, res) => {
+  const asset = String(req.query.asset || 'BTC').toUpperCase();
+  try {
+    const pairs = await getTopDexPairs(`${asset}USDT`);
+    res.json({ ok: true, pairs: pairs ?? [] });
+  } catch {
+    res.status(503).json({ ok: false, pairs: [] });
+  }
+});
 app.get('/api/providers', (_req, res) => {
   const providers = [...providerHealth.entries()].map(([provider, h]) => ({
     provider,
@@ -324,6 +334,9 @@ app.post('/api/config', requireAdmin, (req, res) => {
       maxConcurrentSignals: typeof pr.maxConcurrentSignals === 'number' ? pr.maxConcurrentSignals : cur.maxConcurrentSignals,
       signalExpiryHours: typeof pr.signalExpiryHours === 'number' ? pr.signalExpiryHours : cur.signalExpiryHours,
       correlationGuard: typeof pr.correlationGuard === 'boolean' ? pr.correlationGuard : cur.correlationGuard,
+      stoplossGuardMax: typeof pr.stoplossGuardMax === 'number' ? pr.stoplossGuardMax : cur.stoplossGuardMax,
+      stoplossGuardHours: typeof pr.stoplossGuardHours === 'number' ? pr.stoplossGuardHours : cur.stoplossGuardHours,
+      lossCooldownHours: typeof pr.lossCooldownHours === 'number' ? pr.lossCooldownHours : cur.lossCooldownHours,
     });
   }
   const next = saveConfig(patch);

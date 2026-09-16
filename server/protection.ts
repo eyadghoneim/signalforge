@@ -2,20 +2,17 @@
 // R unit convention: TP1_FIRST = +1R, SL_FIRST = -1R, EXPIRED = 0R (paper attribution).
 // Comments are English-only on purpose (codepage safety when written via shell tooling).
 
-import type { StoredSignal } from '../shared/types';
+import type { ProtectionConfig, StoredSignal } from '../shared/types';
 
-export interface ProtectionConfig {
-  dailyLossLimitR: number; // R lost in the current UTC day before the breaker trips (default 3)
-  maxConcurrentSignals: number; // max simultaneously OPEN buy signals (default 2)
-  signalExpiryHours: number; // unexecuted OPEN buy signals older than this expire (default 3)
-  correlationGuard: boolean; // BTC+ETH longs held together count as +1 exposure (default true)
-}
 
 export const DEFAULT_PROTECTION: ProtectionConfig = {
   dailyLossLimitR: 3,
   maxConcurrentSignals: 2,
   signalExpiryHours: 3,
   correlationGuard: true,
+  stoplossGuardMax: 3,
+  stoplossGuardHours: 6,
+  lossCooldownHours: 2,
 };
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -30,6 +27,9 @@ export function clampProtection(p: ProtectionConfig): ProtectionConfig {
     maxConcurrentSignals: clampNumber(p.maxConcurrentSignals, 1, 10, 2),
     signalExpiryHours: clampNumber(p.signalExpiryHours, 1, 72, 3),
     correlationGuard: Boolean(p.correlationGuard),
+    stoplossGuardMax: clampNumber(p.stoplossGuardMax, 1, 10, 3),
+    stoplossGuardHours: clampNumber(p.stoplossGuardHours, 1, 72, 6),
+    lossCooldownHours: clampNumber(p.lossCooldownHours, 0, 48, 2),
   };
 }
 
@@ -165,7 +165,7 @@ export function findExpiredSignals(signals: StoredSignal[], config: ProtectionCo
   return out;
 }
 
-export type ProtectionBlockReason = 'CIRCUIT_BREAKER' | 'EXPOSURE_CAP';
+export type ProtectionBlockReason = 'CIRCUIT_BREAKER' | 'EXPOSURE_CAP' | 'STOPLOSS_GUARD' | 'LOSS_COOLDOWN';
 
 /** Should a candidate actionable BUY be refused right now? */
 export function protectionVerdict(
@@ -178,9 +178,41 @@ export function protectionVerdict(
   if (breaker.tripped) {
     return { allow: false, reason: 'CIRCUIT_BREAKER', breaker, projected: currentExposure(signals, config).effectiveExposure };
   }
+  const slCount = stoplossGuardCount(signals, candidateAsset, config.stoplossGuardHours, nowMs);
+  if (slCount >= config.stoplossGuardMax) {
+    return { allow: false, reason: 'STOPLOSS_GUARD', breaker, projected: currentExposure(signals, config).effectiveExposure };
+  }
+  if (lossCooldownActive(signals, candidateAsset, config.lossCooldownHours, nowMs)) {
+    return { allow: false, reason: 'LOSS_COOLDOWN', breaker, projected: currentExposure(signals, config).effectiveExposure };
+  }
   const projected = projectedExposure(signals, config, candidateAsset);
   if (projected > config.maxConcurrentSignals) {
     return { allow: false, reason: 'EXPOSURE_CAP', breaker, projected };
   }
   return { allow: true, reason: null, breaker, projected };
+}
+/** Number of stop-loss resolutions for the asset inside the StoplossGuard window. */
+export function stoplossGuardCount(signals: StoredSignal[], asset: string, windowHours: number, nowMs: number): number {
+  const start = nowMs - windowHours * 3600_000;
+  let count = 0;
+  for (const s of signals) {
+    if (s.isGateBlocked || s.asset !== asset) continue;
+    if (s.outcomes.resolution !== 'SL_FIRST') continue;
+    const at = s.outcomes.resolvedAt ?? 0;
+    if (at >= start && at <= nowMs) count++;
+  }
+  return count;
+}
+
+/** True while the asset is still cooling down after its most recent stop-loss. */
+export function lossCooldownActive(signals: StoredSignal[], asset: string, cooldownHours: number, nowMs: number): boolean {
+  if (cooldownHours <= 0) return false;
+  let lastSlAt = 0;
+  for (const s of signals) {
+    if (s.isGateBlocked || s.asset !== asset) continue;
+    if (s.outcomes.resolution !== 'SL_FIRST') continue;
+    const at = s.outcomes.resolvedAt ?? 0;
+    if (at > lastSlAt) lastSlAt = at;
+  }
+  return lastSlAt > 0 && nowMs - lastSlAt < cooldownHours * 3600_000;
 }

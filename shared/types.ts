@@ -279,6 +279,9 @@ export interface ProtectionConfig {
   maxConcurrentSignals: number;
   signalExpiryHours: number;
   correlationGuard: boolean;
+  stoplossGuardMax: number;
+  stoplossGuardHours: number;
+  lossCooldownHours: number;
 }
 // --- Learning system (v3) ---
 export interface TagLearningStat {
