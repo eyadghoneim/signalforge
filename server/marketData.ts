@@ -209,6 +209,28 @@ async function candlesFromBinance(asset: SupportedAsset, interval: '1h' | '4h' |
   return out;
 }
 
+async function candlesFromOkx(asset: SupportedAsset, interval: '1h' | '4h' | '1d', limit: number): Promise<Candle[]> {
+  // OKX v5 - third failover link (reachable where Binance/Bybit are restricted).
+  const bar = interval === '1h' ? '1H' : interval === '4h' ? '4H' : '1D';
+  const d = await fetchJsonWithTimeout<{ code?: string; data?: string[][] }>(
+    `https://www.okx.com/api/v5/market/candles?instId=${SYMBOLS[asset].binance.replace('USDT', '-USDT')}&bar=${bar}&limit=${Math.min(limit, 300)}`,
+    6000,
+  );
+  const rows = d.data ?? [];
+  const out = rows
+    .map((r) => ({
+      time: Math.floor(Number(r[0]) / 1000),
+      open: parseFloat(String(r[1])),
+      high: parseFloat(String(r[2])),
+      low: parseFloat(String(r[3])),
+      close: parseFloat(String(r[4])),
+      volume: parseFloat(String(r[5])),
+    }))
+    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.close > 0)
+    .sort((a, b) => a.time - b.time); // okx returns newest-first
+  if (out.length < 50) throw new Error('okx candles too short');
+  return out;
+}
 async function candlesFromCoinbase1h(asset: SupportedAsset): Promise<Candle[]> {
   // كوين بيس: 300 شمعة كحد أقصى ودعم 1h فقط — استخدام احتياطي
   const d = await fetchJsonWithTimeout<number[][]>(

@@ -49,6 +49,17 @@ export interface BuildSignalContext {
   whale?: { netInflowUsd: number; txCount: number } | null;
 }
 
+// Log-scaled funding squeeze penalty (review backlog item 5). Flat -12 replaced
+// by a curve: 0 at or below the squeeze gate, minimum -2 just above it, -4 at
+// 1.25x the gate, -12 at 2x, clipped at -18 for extremes. Deterministic and
+// pure; backtests pass funding=null so they are unaffected.
+export function fundingSqueezePenalty(fundingPct8h: number): number {
+  const gate = STRATEGY_THRESHOLDS.FUNDING_SQUEEZE_PCT_8H;
+  if (!(fundingPct8h > gate)) return 0;
+  const ratio = fundingPct8h / gate;
+  return Math.max(2, Math.min(18, Math.round(12 * Math.log2(ratio))));
+}
+
 export function buildSignal(ctx: BuildSignalContext): Signal {
   const { asset, snapshot: s, htf, fundingPct8h, change24h } = ctx;
   const reasons: SignalReason[] = [];
@@ -99,7 +110,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   // 7. تمويل العقود
   if (fundingPct8h !== null) {
     if (fundingPct8h > STRATEGY_THRESHOLDS.FUNDING_SQUEEZE_PCT_8H)
-      add('FUNDING', -12, `تمويل مرتفع (${fundingPct8h.toFixed(3)}%/8h) — خطر تصفية المشترين`);
+      add('FUNDING', -fundingSqueezePenalty(fundingPct8h), `تمويل مرتفع (${fundingPct8h.toFixed(3)}%/8h) — خطر تصفية المشترين`);
     else if (fundingPct8h <= 0) add('FUNDING', 2, 'تمويل صفر أو سالب — لا ضغط شراء مفرط');
   }
 

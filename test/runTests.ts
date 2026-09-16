@@ -871,6 +871,57 @@ console.log('\n=== 16. FNG + WHALE factors v3 ===');
   assert(devMid < 0.5, `Bollinger mid matches reference (dev ${devMid.toFixed(4)})`);
   console.log(`    audit note: EMA dev ${devEma.toFixed(4)} | RSI dev ${devRsi.toFixed(3)} pts | BB mid dev ${devMid.toFixed(4)} - method differences documented`);
 }
+console.log('\n=== 19. Label hysteresis + funding squeeze curve v3 ===');
+{
+  const { evaluateLabelHysteresis, LABEL_HYSTERESIS_SCANS } = await import('../server/hysteresis');
+  assert(LABEL_HYSTERESIS_SCANS === 2, 'hysteresis default = 2 consecutive scan cycles');
+  const empty = { lastBuyCycle: null };
+  const d1 = evaluateLabelHysteresis(empty, true, 5);
+  assert(!d1.promote && d1.countsAsHold, 'first BUY cycle -> pending, not promoted');
+  assert(d1.nextState.lastBuyCycle === 5, 'state records the hold cycle');
+  const d2 = evaluateLabelHysteresis(d1.nextState, true, 6);
+  assert(d2.promote, 'second consecutive BUY cycle -> promoted');
+  const d3 = evaluateLabelHysteresis(d2.nextState, false, 7);
+  assert(!d3.promote && d3.nextState.lastBuyCycle === null, 'non-BUY cycle clears the streak');
+  const d4 = evaluateLabelHysteresis(d3.nextState, true, 8);
+  assert(!d4.promote, 'BUY after a gap is pending again');
+  const d5 = evaluateLabelHysteresis({ lastBuyCycle: 3 }, true, 6);
+  assert(!d5.promote, 'non-adjacent cycle does not confirm (skipped cycle safe)');
+  const d6 = evaluateLabelHysteresis(empty, true, 9, 1);
+  assert(d6.promote, 'requiredConsecutive=1 -> immediate promotion');
+
+  const { fundingSqueezePenalty } = await import('../server/signalEngine');
+  assert(fundingSqueezePenalty(0.03) === 0, 'funding below gate -> 0');
+  assert(fundingSqueezePenalty(0.04) === 0, 'funding at gate -> 0');
+  assert(fundingSqueezePenalty(0.05) === 4, 'funding 1.25x gate -> 4');
+  assert(fundingSqueezePenalty(0.08) === 12, 'funding 2x gate -> 12');
+  assert(fundingSqueezePenalty(0.2) === 18, 'extreme funding clipped at 18');
+  let mono = true;
+  for (let i = 1; i < 40; i++) {
+    if (fundingSqueezePenalty(0.04 + (i + 1) * 0.005) < fundingSqueezePenalty(0.04 + i * 0.005)) mono = false;
+  }
+  assert(mono, 'penalty monotonically non-decreasing above the gate');
+
+  // Engine integration: graduated FUNDING reason present and matching the curve.
+  const { buildSignal } = await import('../server/signalEngine');
+  const { computeSnapshot } = await import('../shared/indicators');
+  const candles = syntheticCandles(300, 22, 7);
+  const snap = computeSnapshot(candles);
+  assert(snap !== null, 'section 19 snapshot ready');
+  if (snap) {
+    const sig = buildSignal({
+      asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.05, change24h: 3,
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: false },
+    });
+    const fund = sig.reasons.find((r) => r.tag === 'FUNDING');
+    assert(fund !== undefined, 'squeeze funding produces a FUNDING reason');
+    if (fund) {
+      assert(fund.adjustment === -fundingSqueezePenalty(0.05), `graduated adjustment matches curve (got ${fund.adjustment})`);
+      assert(fund.adjustment < 0 && fund.adjustment >= -18, 'penalty negative and clipped at -18');
+    }
+  }
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

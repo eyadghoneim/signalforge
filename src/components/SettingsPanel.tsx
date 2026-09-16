@@ -15,6 +15,9 @@ export default function SettingsPanel({ onSaved }: { onSaved: () => void }) {
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [expiryHours, setExpiryHours] = useState(3);
   const [corrGuard, setCorrGuard] = useState(true);
+  const [stoplossGuardMax, setStoplossGuardMax] = useState(3);
+  const [stoplossGuardHours, setStoplossGuardHours] = useState(6);
+  const [lossCooldownHours, setLossCooldownHours] = useState(2);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -34,6 +37,9 @@ export default function SettingsPanel({ onSaved }: { onSaved: () => void }) {
           setMaxConcurrent(res.config.protection.maxConcurrentSignals);
           setExpiryHours(res.config.protection.signalExpiryHours);
           setCorrGuard(res.config.protection.correlationGuard);
+          setStoplossGuardMax(res.config.protection.stoplossGuardMax);
+          setStoplossGuardHours(res.config.protection.stoplossGuardHours);
+          setLossCooldownHours(res.config.protection.lossCooldownHours);
         }
         setChatIdInput(res.config.hasChatId ? '••••••••' : '');
       } catch (e) {
@@ -56,6 +62,9 @@ export default function SettingsPanel({ onSaved }: { onSaved: () => void }) {
           dailyLossLimitR,
           maxConcurrentSignals: maxConcurrent,
           signalExpiryHours: expiryHours,
+          stoplossGuardMax,
+          stoplossGuardHours,
+          lossCooldownHours,
           correlationGuard: corrGuard,
         },
       };
@@ -191,7 +200,7 @@ export default function SettingsPanel({ onSaved }: { onSaved: () => void }) {
       {/* فترة المسح */}
       <div className="rounded-2xl border border-rose-500/25 bg-zinc-900/40 p-4">
         <div className="mb-1 text-sm font-bold text-zinc-300">Capital protection</div>
-        <p className="mb-3 text-[10px] text-zinc-500">Daily loss breaker (R units), max concurrent open buys, signal expiry and the BTC/ETH correlation guard.</p>
+        <p className="mb-3 text-[10px] text-zinc-500">Daily loss breaker (R units), max concurrent open buys, signal expiry, the BTC/ETH correlation guard, plus freqtrade-style StoplossGuard and loss cooldown.</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
             <div className="mb-1 text-[11px] font-bold text-zinc-400">Daily loss limit (R)</div>
@@ -228,6 +237,45 @@ export default function SettingsPanel({ onSaved }: { onSaved: () => void }) {
               step={1}
               value={expiryHours}
               onChange={(e) => setExpiryHours(Number(e.target.value))}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus:border-rose-400/50 focus:outline-none"
+              dir="ltr"
+            />
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+            <div className="mb-1 text-[11px] font-bold text-zinc-400">Stoploss guard (max SL count)</div>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              step={1}
+              value={stoplossGuardMax}
+              onChange={(e) => setStoplossGuardMax(Number(e.target.value))}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus:border-rose-400/50 focus:outline-none"
+              dir="ltr"
+            />
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+            <div className="mb-1 text-[11px] font-bold text-zinc-400">Stoploss guard window (hours)</div>
+            <input
+              type="number"
+              min={1}
+              max={72}
+              step={1}
+              value={stoplossGuardHours}
+              onChange={(e) => setStoplossGuardHours(Number(e.target.value))}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus:border-rose-400/50 focus:outline-none"
+              dir="ltr"
+            />
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+            <div className="mb-1 text-[11px] font-bold text-zinc-400">Loss cooldown (hours)</div>
+            <input
+              type="number"
+              min={0}
+              max={48}
+              step={1}
+              value={lossCooldownHours}
+              onChange={(e) => setLossCooldownHours(Number(e.target.value))}
               className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus:border-rose-400/50 focus:outline-none"
               dir="ltr"
             />

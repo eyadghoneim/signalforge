@@ -19,6 +19,7 @@ import {
   providerHealth,
 } from './marketData';
 import { buildSignal, type GateToggles } from './signalEngine';
+import { evaluateLabelHysteresis, type HysteresisState } from './hysteresis';
 import { getLiquidityRegime, bootstrapLiquidityCache } from './llamaService';
 import {
   appendLog,
@@ -362,9 +363,14 @@ const lastTelegramSentAt = new Map<SupportedAsset, number>();
 let lastBreakerAlertDay = 0;
 let backgroundTimer: NodeJS.Timeout | null = null;
 
+// Label hysteresis state (per asset) + scan cycle counter (see server/hysteresis.ts).
+const hysteresisState = new Map<SupportedAsset, HysteresisState>();
+let scanCycle = 0;
+
 async function runScanCycle(): Promise<void> {
   if (scanning) return;
   scanning = true;
+  scanCycle++;
   try {
     const config = loadConfig();
     const protection = config.protection;
@@ -433,6 +439,19 @@ async function runScanCycle(): Promise<void> {
         const gateBlocked = signal.regimeGateStatus !== 'CLEAR';
         const eligible = signal.spotAction === 'SPOT_BUY' || signal.spotAction === 'SPOT_SELL_ALL';
         if (!eligible && !gateBlocked) continue;
+        // Label hysteresis: a NEW actionable BUY label must hold its score above
+        // the BUY threshold on 2 consecutive scan cycles before it is promoted
+        // (stored + Telegram). Gate-blocked BUYs still confirm the label and are
+        // stored as before (transparency); SELL/exit labels are never delayed.
+        // Pure state machine -> engine and backtests stay deterministic. State
+        // resets on restart (first candidate then waits one cycle - safe default).
+        const isBuyLabel = signal.spotAction === 'SPOT_BUY';
+        const hyst = evaluateLabelHysteresis(hysteresisState.get(asset) ?? { lastBuyCycle: null }, isBuyLabel, scanCycle);
+        hysteresisState.set(asset, hyst.nextState);
+        if (isBuyLabel && !gateBlocked && !hyst.promote) {
+          appendLog('INFO', `${asset}: ${signal.signalType} @ ${signal.entryPrice} hysteresis 1/2 (score ${signal.convictionScore} held - waiting for next scan)`);
+          continue;
+        }
 
         // Capital protection: refuse BUY candidates when breaker tripped or exposure cap is full.
         if (eligible && signal.spotAction === 'SPOT_BUY' && !gateBlocked) {
