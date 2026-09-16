@@ -185,6 +185,8 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
     htf,
     fundingPct8h: funding,
     oiChange24h: oiChange,
+    fng,
+    whale,
     change24h: ticker.change24h,
     dataSource: isDataStale(candles1h, 3600) ? 'STALE' : 'LIVE',
     gates: config.gates,
@@ -192,6 +194,7 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
     liquidity,
     daily,
     entryZone,
+    tagBias,
   });
 }
 
