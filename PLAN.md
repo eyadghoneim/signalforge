@@ -134,4 +134,7 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   B&H 11085 -> NEGATIVE expectancy as configured. This is the measurement layer working as
   designed. Next: walk-forward optimization on the 2y dataset to find positive-OOS configs;
   learning system will bias factors from live outcomes. fflate added as the only new dep (MIT,
-  8KB) for Vision ZIP parsing - justified deviation from the no-deps rule, documented.
+  8KB) for Vision ZIP parsing - justified deviation from the no-deps rule, documented.- 2026-09-16 18:30 - PHASE-2 ITEMS 1-5 DONE: DexScreener /api/dex/pairs (informational),
+  Bitquery client (key-optional), indicator audit vs trading-signals (EMA/RSI/BB zero deviation),
+  freqtrade-style protections (StoplossGuard + loss cooldown wired into verdict + config),
+  README learn-from-best section. Final: lint 0 / tests 166-166 / build 0.

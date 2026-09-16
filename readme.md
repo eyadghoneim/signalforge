@@ -76,6 +76,16 @@ future results. Always verify anything you read - including this repository.
 **Known limitation:** the exposure cap limits the NUMBER of open signals. Crypto assets
 remain broadly correlated - in a macro sell-off everything moves together. The cap reduces
 position count risk, not market beta.
+## Learn from the best
+
+SignalForge stands on the shoulders of excellent open-source projects:
+
+- [freqtrade](https://github.com/freqtrade/freqtrade) - protection patterns (StoplossGuard, CooldownPeriod) inspired our capital-protection layer
+- [trading-signals](https://github.com/bennycode/trading-signals) - used as an external reference to audit our indicator math (zero deviation)
+- [CCXT](https://github.com/ccxt/ccxt) - the universal exchange library; a candidate to consolidate our multi-source data layer
+- [Binance Vision](https://data.binance.vision) - bulk historical archives powering multi-year backtests
+- [awesome-systematic-trading](https://github.com/wangzhe3224/awesome-systematic-trading) - curated list for going deeper
+- [Whale Alert](https://whale-alert.io) / [Bitquery](https://bitquery.io) / [DexScreener](https://dexscreener.com) / [alternative.me FNG](https://api.alternative.me/fng/) - data sources behind the factors
 ## License
 
 MIT - see [LICENSE](LICENSE).
