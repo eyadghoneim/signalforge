@@ -146,4 +146,11 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   Date.now()). Final: lint 0 / tests 166-166 / build 0.- 2026-09-16 21:05 - MERGED SESSION: the EYAD CLAW session returned and delivered label
   hysteresis (server/hysteresis.ts, 2-scan confirmation for BUY labels, exits never delayed)
   + SettingsPanel protection fields + 18 tests - swept into the shared commit. Combined
-  verification: lint 0 / tests 184-184 / build 0. Server restarted on the merged state.
+  verification: lint 0 / tests 184-184 / build 0. Server restarted on the merged state.- 2026-09-16 22:26 - EXTERNAL REVIEW 4 (ChatGPT, post-merge, ran everything: lint/184/smoke 17-17/live):
+  verdict "ready for research use, data fully working from restricted regions". REAL BUG found and
+  fixed ON REMOTE by the reviewer: /api/signal path loaded tagBias/fng/whale but did not pass them
+  to buildSignal -> dashboard score could diverge from stored/Telegram score. Fix merged locally
+  (fast-forward to 7b95a86). Live-verified post-fix: signal consistent (HOLD 41, honest empty
+  learningBias until ledger fills). Minor notes (deferred): DexScreener endpoint not wired to a
+  UI tab; whaleAdjustment logic duplicated in two places (style, not a bug); tagBias cap disclosure
+  for README transparency.
