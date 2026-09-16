@@ -18,7 +18,7 @@ import {
 } from '../shared/strategyConstants';
 import type { IndicatorSnapshot, HtfSnapshot } from '../shared/indicators';
 import { openInterestAdjustment } from './oiFactor';
-import { biasForReasons } from './learning';
+import { biasForReasonsRegime } from './learning';
 import { fngAdjustment } from './fng';
 
 export { openInterestAdjustment };
@@ -162,10 +162,12 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     reasons.push({ tag: 'TREND', adjustment: 0, textAr: 'بنية هابطة صلبة — الخروج الدفاعي مُقدَّم على أي بوابة' });
   }
 
-  // Learning bias (bounded): applied BEFORE type derivation so signalType/spotAction
-  // always match the final score (review fix: bias used to be applied post-hoc).
+  // Learning bias v2 (bounded, regime-aware): applied BEFORE type derivation so
+  // signalType/spotAction always match the final score. Keys are TAG|REGIME with a
+  // plain-TAG fallback for simple configurations.
   if (ctx.tagBias) {
-    const bias = biasForReasons(Array.from(new Set(reasons.map((r) => r.tag))), ctx.tagBias);
+    const regime = ctx.daily ? (ctx.daily.bearish ? 'BEARISH' : ctx.daily.bullish ? 'BULLISH' : 'UNKNOWN') : 'UNKNOWN';
+    const bias = biasForReasonsRegime(Array.from(new Set(reasons.map((r) => r.tag))), regime, ctx.tagBias);
     if (bias !== 0) {
       score = Math.max(0, Math.min(100, score + bias));
       learningBiasValue = bias;

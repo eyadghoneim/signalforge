@@ -1,20 +1,26 @@
-// Learning system - pure functions, no I/O, no side effects.
-// The bot studies its own resolved signals and derives a BOUNDED bias per reason tag.
-// Bias rule: a tag with >= 10 resolved samples whose win rate deviates >= 8 points from
-// the overall baseline earns +/-1..3 bias (stepped by deviation, capped). A bias is only
-// a small score nudge - never a gate, never an unbounded change. All changes are audited
-// as lessons by the caller.
+// Learning system v2 - pure functions, no I/O, no side effects.
+// Synthesis of external review guidance (freqtrade/jesse methodology + review Issues 13-16):
+//  - REGIME-KEYED biases: a tag learned in a bull regime must not apply in a bear one.
+//    Bias keys are "TAG|REGIME" with REGIME in BULLISH|BEARISH|UNKNOWN (from daily trend).
+//  - RECENCY DECAY: evidence is weighted by a 30-day half-life (EWMA-style), so stale
+//    lessons fade instead of persisting forever.
+//  - REALIZED-R weighting: a TP1 win pays its true R multiple ((target1-entry)/(entry-stop)),
+//    a stop loss costs -1R - not a flat binary count.
+//  - CONFIDENCE scaling: full bias weight only after enough weighted evidence.
+// All changes are audited by the caller (lessons ledger). No evidence -> no bias.
 // Comments are English-only on purpose (codepage safety under shell tooling).
 
 import type { StoredSignal } from '../shared/types';
 
 export interface TagLearningStat {
+  key: string; // "TAG|REGIME"
   tag: string;
-  samples: number;
-  wins: number;
-  losses: number;
+  regime: string;
+  samples: number; // decay-weighted
+  wins: number; // decay-weighted
+  losses: number; // decay-weighted
   winRatePercent: number;
-  netR: number;
+  netR: number; // decay-weighted realized R
 }
 
 export interface LearningState {
@@ -26,7 +32,9 @@ export interface LearningState {
 
 export interface LearningLesson {
   at: number;
+  key: string;
   tag: string;
+  regime: string;
   from: number;
   to: number;
   samples: number;
@@ -38,85 +46,120 @@ const MIN_SAMPLES = 10;
 const MIN_DEVIATION_POINTS = 8;
 const MAX_BIAS = 3;
 const MAX_APPLIED_BIAS = 5;
+const DECAY_HALF_LIFE_DAYS = 30;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** Per-tag win/loss stats over resolved actionable signals (one count per distinct tag per signal). */
-export function computeTagStats(signals: StoredSignal[]): TagLearningStat[] {
-  const map = new Map<string, { samples: number; wins: number; losses: number }>();
+function stdev(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((a, v) => a + v, 0) / values.length;
+  const variance = values.reduce((a, v) => a + (v - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+function regimeOf(s: StoredSignal): string {
+  if (s.dailyTrend === 'BULLISH' || s.dailyTrend === 'BEARISH') return s.dailyTrend;
+  return 'UNKNOWN';
+}
+
+/** Recency weight: 30-day half-life. Signals older than ~10 half-lives weigh ~0. */
+function recencyWeight(generatedAt: number, nowMs: number): number {
+  const ageDays = Math.max(0, (nowMs - generatedAt) / 86_400_000);
+  return Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS);
+}
+
+/** Realized R of a resolved signal: TP1 pays (target1-entry)/(entry-stop); SL costs 1R. */
+export function realizedR(s: StoredSignal): number {
+  const stopDist = s.entryPrice - s.stopLoss;
+  if (!(stopDist > 0)) return 0;
+  if (s.outcomes.resolution === 'TP1_FIRST') return (s.target1 - s.entryPrice) / stopDist;
+  if (s.outcomes.resolution === 'SL_FIRST') return -1;
+  return 0;
+}
+
+function isCountable(s: StoredSignal): boolean {
+  if (s.isGateBlocked) return false;
+  return s.outcomes.resolution === 'TP1_FIRST' || s.outcomes.resolution === 'SL_FIRST';
+}
+
+export function computeTagStats(signals: StoredSignal[], nowMs: number): TagLearningStat[] {
+  const map = new Map<string, { wWins: number; wLosses: number; netR: number }>();
   for (const s of signals) {
-    if (s.isGateBlocked) continue;
-    const res = s.outcomes.resolution;
-    if (res !== 'TP1_FIRST' && res !== 'SL_FIRST') continue;
-    const win = res === 'TP1_FIRST';
-    const tags = new Set<string>(s.reasons.map((r) => r.tag));
-    for (const t of tags) {
-      const cur = map.get(t) ?? { samples: 0, wins: 0, losses: 0 };
-      cur.samples++;
-      if (win) cur.wins++;
-      else cur.losses++;
-      map.set(t, cur);
+    if (!isCountable(s)) continue;
+    const w = recencyWeight(s.generatedAt, nowMs);
+    const r = realizedR(s);
+    const win = s.outcomes.resolution === 'TP1_FIRST';
+    const regime = regimeOf(s);
+    for (const tag of new Set(s.reasons.map((x) => x.tag))) {
+      const key = `${tag}|${regime}`;
+      const cur = map.get(key) ?? { wWins: 0, wLosses: 0, netR: 0 };
+      if (win) cur.wWins += w;
+      else cur.wLosses += w;
+      cur.netR += r * w;
+      map.set(key, cur);
     }
   }
   const out: TagLearningStat[] = [];
-  for (const [tag, v] of map) {
+  for (const [key, v] of map) {
+    const samples = v.wWins + v.wLosses;
     out.push({
-      tag,
-      samples: v.samples,
-      wins: v.wins,
-      losses: v.losses,
-      winRatePercent: v.samples > 0 ? round1((v.wins / v.samples) * 100) : 0,
-      netR: v.wins - v.losses,
+      key,
+      tag: key.split('|')[0],
+      regime: key.split('|')[1] ?? 'UNKNOWN',
+      samples: round2(samples),
+      wins: round2(v.wWins),
+      losses: round2(v.wLosses),
+      winRatePercent: samples > 0 ? round1((v.wWins / samples) * 100) : 0,
+      netR: round2(v.netR),
     });
   }
   return out.sort((a, b) => b.samples - a.samples);
 }
 
-export function baselineWinRatePercent(signals: StoredSignal[]): number {
-  let wins = 0;
-  let losses = 0;
+export function baselineWinRatePercent(signals: StoredSignal[], nowMs: number): number {
+  let wWins = 0;
+  let wLosses = 0;
   for (const s of signals) {
-    if (s.isGateBlocked) continue;
-    const res = s.outcomes.resolution;
-    if (res === 'TP1_FIRST') wins++;
-    else if (res === 'SL_FIRST') losses++;
+    if (!isCountable(s)) continue;
+    const w = recencyWeight(s.generatedAt, nowMs);
+    if (s.outcomes.resolution === 'TP1_FIRST') wWins += w;
+    else wLosses += w;
   }
-  return wins + losses > 0 ? round1((wins / (wins + losses)) * 100) : 0;
+  return wWins + wLosses > 0 ? round1((wWins / (wWins + wLosses)) * 100) : 0;
 }
 
-/** Derive bounded biases from evidence. No evidence -> no bias. */
-export function computeLearningState(signals: StoredSignal[]): LearningState {
-  const baseline = baselineWinRatePercent(signals);
-  const perTag = computeTagStats(signals);
+export function computeLearningState(signals: StoredSignal[], nowMs: number = Date.now()): LearningState {
+  const baseline = baselineWinRatePercent(signals, nowMs);
+  const perTag = computeTagStats(signals, nowMs);
   const biases: Record<string, number> = {};
   for (const t of perTag) {
     if (t.samples < MIN_SAMPLES) {
-      biases[t.tag] = 0;
+      biases[t.key] = 0;
       continue;
     }
     const dev = t.winRatePercent - baseline;
     if (Math.abs(dev) < MIN_DEVIATION_POINTS) {
-      biases[t.tag] = 0;
+      biases[t.key] = 0;
       continue;
     }
     const steps = Math.min(MAX_BIAS, Math.max(1, Math.round(Math.abs(dev) / 8)));
-    // Confidence scaling (review Issue 16): 10 samples = huge variance, so bias ramps
-    // from 0 at MIN_SAMPLES to full weight at +30 samples (N >= 40).
+    // Confidence scaling (review Issue 16): evidence-weighted samples ramp the bias in.
     const confidence = Math.min(1, (t.samples - MIN_SAMPLES) / 30);
-    biases[t.tag] = Math.round((dev > 0 ? 1 : -1) * steps * confidence * 100) / 100;
+    biases[t.key] = Math.round((dev > 0 ? 1 : -1) * steps * confidence * 100) / 100;
   }
   let totalResolved = 0;
   for (const s of signals) {
-    if (s.isGateBlocked) continue;
-    const res = s.outcomes.resolution;
-    if (res === 'TP1_FIRST' || res === 'SL_FIRST') totalResolved++;
+    if (isCountable(s)) totalResolved++;
   }
   return { baselineWinRatePercent: baseline, totalResolved, perTag, biases };
 }
 
-/** Audit entries for every bias value that changed between two learning runs. */
 export function diffLessons(
   oldBiases: Record<string, number>,
   newBiases: Record<string, number>,
@@ -124,16 +167,18 @@ export function diffLessons(
   baselineWinRatePercent: number,
   nowMs: number,
 ): LearningLesson[] {
-  const statsByTag = new Map(perTag.map((t) => [t.tag, t]));
+  const statsByKey = new Map(perTag.map((t) => [t.key, t]));
   const lessons: LearningLesson[] = [];
-  for (const tag of Object.keys(newBiases)) {
-    const from = oldBiases[tag] ?? 0;
-    const to = newBiases[tag];
+  for (const key of Object.keys(newBiases)) {
+    const from = oldBiases[key] ?? 0;
+    const to = newBiases[key];
     if (from === to) continue;
-    const st = statsByTag.get(tag);
+    const st = statsByKey.get(key);
     lessons.push({
       at: nowMs,
-      tag,
+      key,
+      tag: st ? st.tag : key.split('|')[0],
+      regime: st ? st.regime : key.split('|')[1] ?? 'UNKNOWN',
       from,
       to,
       samples: st ? st.samples : 0,
@@ -144,10 +189,25 @@ export function diffLessons(
   return lessons;
 }
 
-/** Total applied bias for a candidate signal's reason tags, clamped to [-5, +5]. */
-export function biasForReasons(reasonTags: string[], biases: Record<string, number>): number {
-  const tags = new Set(reasonTags);
-  let sum = 0;
-  for (const t of tags) sum += biases[t] ?? 0;
+function clampBias(sum: number): number {
   return Math.max(-MAX_APPLIED_BIAS, Math.min(MAX_APPLIED_BIAS, sum));
+}
+
+/** Plain-tag lookup (kept for simple configurations and tests). */
+export function biasForReasons(reasonTags: string[], biases: Record<string, number>): number {
+  let sum = 0;
+  for (const t of new Set(reasonTags)) sum += biases[t] ?? 0;
+  return clampBias(sum);
+}
+
+/**
+ * Regime-aware lookup (v2): prefer "TAG|REGIME" keys, fall back to the plain "TAG" key
+ * when no regime-specific entry exists. Sum over distinct tags, clamped to [-5, +5].
+ */
+export function biasForReasonsRegime(reasonTags: string[], regime: string, biases: Record<string, number>): number {
+  let sum = 0;
+  for (const t of new Set(reasonTags)) {
+    sum += biases[`${t}|${regime}`] ?? biases[t] ?? 0;
+  }
+  return clampBias(sum);
 }

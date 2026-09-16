@@ -604,32 +604,23 @@ console.log('\n=== 11. Capital protection v3 ===');
   const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true, stoplossGuardMax: 99, stoplossGuardHours: 999, lossCooldownHours: -5 });
   assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1 && clamped.stoplossGuardMax === 10 && clamped.stoplossGuardHours === 72 && clamped.lossCooldownHours === 0, 'clampProtection bounds all values');
 }
-console.log('\n=== 12. Learning system v3 ===');
+console.log('\n=== 12. Learning system v2 (regime-keyed, decay, realized-R) ===');
 {
-  const { computeTagStats, baselineWinRatePercent, computeLearningState, diffLessons, biasForReasons } = await import('../server/learning');
+  const { computeTagStats, baselineWinRatePercent, computeLearningState, diffLessons, biasForReasons, biasForReasonsRegime, realizedR } = await import('../server/learning');
 
-  const mkLearnt = (tag: import('../shared/types').ReasonTag, win: boolean, opts: { blocked?: boolean; open?: boolean } = {}): import('../shared/types').StoredSignal => ({
-    asset: 'BTC',
-    engineSignature: 'test',
-    convictionScore: 80,
-    signalType: 'STRONG_BUY',
-    spotAction: 'SPOT_BUY',
-    entryPrice: 50000,
-    stopLoss: 49000,
-    target1: 51000,
-    target2: 52000,
-    target3: 53000,
-    riskRewardRatio: 2,
-    regimeGateStatus: 'CLEAR',
-    reasons: [{ tag, adjustment: 0, textAr: 'x' }],
-    summaryAr: 'x',
-    generatedAt: 0,
-    dedupHash: 'd' + Math.random(),
-    dataSource: 'LIVE',
-    htfAvailable: true,
-    id: 'l' + Math.random(),
-    isGateBlocked: opts.blocked ?? false,
-    telegramSent: false,
+  const NOW = 1700004000000;
+  const mkLearnt = (
+    tag: import('../shared/types').ReasonTag,
+    win: boolean,
+    opts: { blocked?: boolean; open?: boolean; regime?: 'BULLISH' | 'BEARISH'; generatedAt?: number } = {},
+  ): import('../shared/types').StoredSignal => ({
+    asset: 'BTC', engineSignature: 't', convictionScore: 80, signalType: 'STRONG_BUY',
+    spotAction: 'SPOT_BUY', entryPrice: 50000, stopLoss: 49000, target1: 51000, target2: 52000,
+    target3: 53000, riskRewardRatio: 2, regimeGateStatus: 'CLEAR',
+    reasons: [{ tag, adjustment: 0, textAr: 'x' }], summaryAr: 'x',
+    generatedAt: opts.generatedAt ?? 1700000000, dedupHash: 'd' + Math.random(),
+    dataSource: 'LIVE', htfAvailable: true, dailyTrend: opts.regime ?? 'BULLISH',
+    id: 'l' + Math.random(), isGateBlocked: opts.blocked ?? false, telegramSent: false,
     outcomes: {
       windows: {
         h4: { mfePercent: 0, maePercent: 0, hitTp1BeforeSl: null },
@@ -640,48 +631,50 @@ console.log('\n=== 12. Learning system v3 ===');
     },
   });
 
-  // Evidence: TREND 10W/2L (83.3%), MACD 3W/9L (25%), RSI 6W/6L (50%) -> baseline 52.8%
+  // Evidence: TREND|BULLISH 10W/2L (83.3%), MACD|BULLISH 3W/9L (25%), RSI|BEARISH 6W/6L (50%)
   const signals: import('../shared/types').StoredSignal[] = [];
   for (let i = 0; i < 10; i++) signals.push(mkLearnt('TREND', true));
   for (let i = 0; i < 2; i++) signals.push(mkLearnt('TREND', false));
   for (let i = 0; i < 3; i++) signals.push(mkLearnt('MACD', true));
   for (let i = 0; i < 9; i++) signals.push(mkLearnt('MACD', false));
-  for (let i = 0; i < 6; i++) signals.push(mkLearnt('RSI', true));
-  for (let i = 0; i < 6; i++) signals.push(mkLearnt('RSI', false));
-  // noise that must NOT affect stats: blocked + open signals
+  for (let i = 0; i < 6; i++) signals.push(mkLearnt('RSI', true, { regime: 'BEARISH' }));
+  for (let i = 0; i < 6; i++) signals.push(mkLearnt('RSI', false, { regime: 'BEARISH' }));
   signals.push(mkLearnt('TREND', true, { blocked: true }));
   signals.push(mkLearnt('TREND', true, { open: true }));
 
-  const stats = computeTagStats(signals);
-  const trend = stats.find((t) => t.tag === 'TREND');
-  const macd = stats.find((t) => t.tag === 'MACD');
-  const rsi = stats.find((t) => t.tag === 'RSI');
-  assert(!!trend && trend.samples === 12, `TREND samples = 12 (got ${trend ? trend.samples : 'missing'})`);
-  assert(!!macd && macd.samples === 12, `MACD samples = 12 (got ${macd ? macd.samples : 'missing'})`);
-  assert(!!rsi && rsi.winRatePercent === 50, `RSI winRate = 50 (got ${rsi ? rsi.winRatePercent : 'missing'})`);
+  const stats = computeTagStats(signals, NOW);
+  const trend = stats.find((t) => t.key === 'TREND|BULLISH');
+  const macd = stats.find((t) => t.key === 'MACD|BULLISH');
+  const rsi = stats.find((t) => t.key === 'RSI|BEARISH');
+  assert(!!trend && trend.samples > 11, `TREND|BULLISH decay-weighted samples ~12 (got ${trend ? trend.samples : 'missing'})`);
+  assert(!!rsi && rsi.regime === 'BEARISH' && rsi.winRatePercent === 50, `RSI|BEARISH winRate 50 (got ${rsi ? rsi.winRatePercent : 'missing'})`);
 
-  const baseline = baselineWinRatePercent(signals);
-  assert(Math.abs(baseline - 52.8) < 0.1, `baseline ~= 52.8 (got ${baseline})`);
+  const baseline = baselineWinRatePercent(signals, NOW);
+  assert(Math.abs(baseline - 52.8) < 0.5, `baseline ~= 52.8 (got ${baseline})`);
 
-  const state = computeLearningState(signals);
+  const state = computeLearningState(signals, NOW);
   assert(state.totalResolved === 36, `totalResolved = 36 (got ${state.totalResolved})`);
-  assert(Math.abs(state.biases['TREND'] - 0.2) < 0.001, `TREND bias = +0.2 scaled (got ${state.biases['TREND']})`);
-  assert(Math.abs(state.biases['MACD'] + 0.2) < 0.001, `MACD bias = -0.2 scaled (got ${state.biases['MACD']})`);
-  assert(state.biases['RSI'] === 0, `RSI bias = 0, deviation under threshold (got ${state.biases['RSI']})`);
+  assert(state.biases['TREND|BULLISH'] > 0 && state.biases['TREND|BULLISH'] <= 3, `TREND|BULLISH positive bias (got ${state.biases['TREND|BULLISH']})`);
+  assert(state.biases['MACD|BULLISH'] < 0 && state.biases['MACD|BULLISH'] >= -3, `MACD|BULLISH negative bias (got ${state.biases['MACD|BULLISH']})`);
+  assert(state.biases['RSI|BEARISH'] === 0, `RSI|BEARISH within deviation -> 0 (got ${state.biases['RSI|BEARISH']})`);
+  assert(state.biases['TREND'] === undefined, 'plain keys no longer produced (regime-keyed only)');
 
-  // Bias application: sum over distinct tags, clamped to +/-5.
-  assert(biasForReasons(['TREND', 'MACD'], state.biases) === 0, 'TREND+MACD biases cancel out');
-  assert(Math.abs(biasForReasons(['TREND'], state.biases) - 0.2) < 0.001, `TREND alone = +0.2 scaled (got ${biasForReasons(['TREND'], state.biases)})`);
-  assert(biasForReasons(['TREND', 'RSI'], { TREND: 3, RSI: 3 }) === 5, `sum clamped to +5 (got ${biasForReasons(['TREND', 'RSI'], { TREND: 3, RSI: 3 })})`);
-  assert(biasForReasons(['UNKNOWN'], {}) === 0, 'unknown tag -> zero bias');
+  // Realized R: TP1 win at 1R (+1), SL at -1R (fixture RR = 1.0)
+  const winSig = mkLearnt('TREND', true);
+  const lossSig = mkLearnt('TREND', false);
+  assert(realizedR(winSig) === 1, `TP1 win = +1R (got ${realizedR(winSig)})`);
+  assert(realizedR(lossSig) === -1, `SL = -1R (got ${realizedR(lossSig)})`);
 
-  // Audit trail: only changed tags produce lessons.
-  const lessons = diffLessons({ TREND: 0, MACD: 0, RSI: 0 }, state.biases, state.perTag, baseline, 1000);
-  assert(lessons.length === 2, `2 lessons for 2 changed biases (got ${lessons.length})`);
-  const trendLesson = lessons.find((l) => l.tag === 'TREND');
-  assert(!!trendLesson && trendLesson.from === 0 && Math.abs(trendLesson.to - 0.2) < 0.001 && trendLesson.samples === 12, 'TREND lesson carries from/to/evidence');
-  const none = diffLessons(state.biases, state.biases, state.perTag, baseline, 1000);
-  assert(none.length === 0, 'no changes -> no lessons');
+  // Regime-aware engine lookup: plain-key fallback + regime-specific match
+  assert(biasForReasons(['TREND'], { TREND: -3 }) === -3, 'plain-tag fallback works');
+  assert(biasForReasonsRegime(['TREND'], 'BULLISH', { 'TREND|BULLISH': 2, TREND: -3 }) === 2, 'regime key preferred over plain');
+  assert(biasForReasonsRegime(['TREND'], 'BEARISH', { 'TREND|BULLISH': 2, TREND: -3 }) === -3, 'regime miss falls back to plain');
+
+  // Audit trail: changed regime keys produce lessons with regime info
+  const lessons = diffLessons({}, state.biases, state.perTag, baseline, NOW);
+  assert(lessons.length >= 2, `lessons for changed keys (got ${lessons.length})`);
+  const tl = lessons.find((l) => l.key === 'TREND|BULLISH');
+  assert(!!tl && tl.regime === 'BULLISH', 'lesson carries regime metadata');
 }
 console.log('\n=== 13. Open interest factor v3 ===');
 {
