@@ -201,7 +201,7 @@ function mapBinanceKlines(rows: unknown[][]): Candle[] {
 
 async function candlesFromBinance(asset: SupportedAsset, interval: '1h' | '4h' | '1d', limit: number): Promise<Candle[]> {
   const d = await fetchJsonWithTimeout<unknown[][]>(
-    `https://api.binance.com/api/v3/klines?symbol=${SYMBOLS[asset].binance}&interval=${interval}&limit=${limit}`,
+    `https://api.binance.com/api/v3/klines?symbol=${SYMBOLS[asset].binance}&interval=${interval}&limit=${limit}`,    6000,
   );
   const out = mapBinanceKlines(d);
   if (out.length < 50) throw new Error('binance candles too short');
@@ -225,7 +225,7 @@ async function candlesFromBybit(asset: SupportedAsset, interval: '1h' | '4h' | '
   // Bybit v5 spot klines - a non-restricted fallback host for regions where Binance is blocked.
   const iv = interval === '1h' ? '60' : interval === '4h' ? '240' : 'D';
   const d = await fetchJsonWithTimeout<{ result?: { list?: string[][] } }>(
-    `https://api.bybit.com/v5/market/kline?category=spot&symbol=${SYMBOLS[asset].bybit}&interval=${iv}&limit=${Math.min(limit, 1000)}`,
+    `https://api.bybit.com/v5/market/kline?category=spot&symbol=${SYMBOLS[asset].bybit}&interval=${iv}&limit=${Math.min(limit, 1000)}`,    6000,
   );
   const rows = d.result?.list ?? [];
   const out = rows
