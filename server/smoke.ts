@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   const prov = await j('/api/providers');
   check('providers responds', prov.json?.ok === true && Array.isArray(prov.json?.providers));
 
-  const kl = await j('/api/market/klines?asset=BTC&interval=4h&limit=50');
+  const kl = await j('/api/market/klines?asset=BTC&interval=4h&limit=300');
   check('klines 4h responds', kl.status === 200 && kl.json?.ok === true && kl.json?.candles?.length > 0, `status ${kl.status}`);
 
   const bt = await j('/api/backtest', { method: 'POST', body: JSON.stringify({ asset: 'BTC', days: 90 }) });

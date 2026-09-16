@@ -161,8 +161,8 @@ app.get('/api/market/klines', async (req, res) => {
 async function computeSignalFor(asset: SupportedAsset, refresh = false) {
   const config = loadConfig();
   const tagBias = loadTagBias();
-  let candles1h = await getCandles1h(asset, 500);
-  if (refresh) candles1h = await getCandles1h(asset, 500);
+  if (refresh) invalidateCandleCache(asset); // forced refresh → bypass TTL caches for this asset
+  const candles1h = await getCandles1h(asset, 500);
   const snapshot = computeSnapshot(candles1h);
   if (!snapshot) throw new Error(`بيانات غير كافية لحساب إشارة ${asset}`);
   const [candles4h, candles1d, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([

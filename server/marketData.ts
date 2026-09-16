@@ -1,6 +1,7 @@
-// طبقة بيانات السوق: 3 مزودين + كاش + مهل زمنية + فشل صريح (بدون أسعار وهمية أبداً)
+// طبقة بيانات السوق: مزودين متعددين + كاش + مهل زمنية + فشل صريح (بدون أسعار وهمية أبداً)
 import type { Candle, SupportedAsset } from '../shared/types';
 import { getVisionMonthlyKlines } from './vision';
+import { OKX_BAR, OKX_SWAP, hasOkxSwap } from './symbols';
 
 export class DataUnavailableError extends Error {
   asset: string;
@@ -12,10 +13,10 @@ export class DataUnavailableError extends Error {
   }
 }
 
-const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string; bybit: string }> = {
-  BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT' },
-  ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT' },
-  PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT' },
+const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string; bybit: string; okx: string }> = {
+  BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT', okx: 'BTC-USDT' },
+  ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT', okx: 'ETH-USDT' },
+  PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT', okx: 'PAXG-USDT' },
 };
 
 // ─── كاش TTL مع منع الطلبات المكررة المتوازية ───
@@ -175,7 +176,8 @@ async function tickerFromCoingecko(asset: SupportedAsset): Promise<TickerData> {
 
 export async function getTicker(asset: SupportedAsset): Promise<TickerData> {
   return cached(`ticker:${asset}`, 30_000, async () => {
-    const providers = [tickerFromBinance, tickerFromCoinbase, tickerFromCoingecko];
+    // OKX/Coinbase first - reachable where Binance/Bybit are geo-blocked.
+    const providers = [tickerFromOkx, tickerFromCoinbase, tickerFromBinance, tickerFromCoingecko];
     let lastErr: unknown = null;
     for (const p of providers) {
       try {
@@ -186,6 +188,33 @@ export async function getTicker(asset: SupportedAsset): Promise<TickerData> {
     }
     throw new DataUnavailableError(asset, `ticker (${String((lastErr as Error)?.message || lastErr)})`);
   });
+}
+
+async function tickerFromOkx(asset: SupportedAsset): Promise<TickerData> {
+  try {
+    const d = await fetchJsonWithTimeout<{
+      code: string;
+      data: Array<{ last: string; open24h: string; high24h: string; low24h: string; vol24h: string }>;
+    }>(`https://www.okx.com/api/v5/market/ticker?instId=${SYMBOLS[asset].okx}`);
+    const row = Array.isArray(d.data) ? d.data[0] : undefined;
+    if (d.code !== '0' || !row) throw new Error('okx ticker bad response');
+    const price = parseFloat(row.last);
+    if (!Number.isFinite(price) || price <= 0) throw new Error('okx bad price');
+    const open = parseFloat(row.open24h) || price;
+    noteProviderHealth('okx:ticker', true);
+    return {
+      asset,
+      price,
+      change24h: open > 0 ? Number((((price - open) / open) * 100).toFixed(2)) : 0,
+      high24h: parseFloat(row.high24h) || price,
+      low24h: parseFloat(row.low24h) || price,
+      volume24h: parseFloat(row.vol24h) || 0,
+      source: 'okx',
+    };
+  } catch (e) {
+    noteProviderHealth('okx:ticker', false, e instanceof Error ? e.message : String(e));
+    throw e;
+  }
 }
 
 // ─── الشموع ───
@@ -210,26 +239,43 @@ async function candlesFromBinance(asset: SupportedAsset, interval: '1h' | '4h' |
 }
 
 async function candlesFromOkx(asset: SupportedAsset, interval: '1h' | '4h' | '1d', limit: number): Promise<Candle[]> {
-  // OKX v5 - third failover link (reachable where Binance/Bybit are restricted).
-  const bar = interval === '1h' ? '1H' : interval === '4h' ? '4H' : '1D';
-  const d = await fetchJsonWithTimeout<{ code?: string; data?: string[][] }>(
-    `https://www.okx.com/api/v5/market/candles?instId=${SYMBOLS[asset].binance.replace('USDT', '-USDT')}&bar=${bar}&limit=${Math.min(limit, 300)}`,
-    6000,
-  );
-  const rows = d.data ?? [];
-  const out = rows
-    .map((r) => ({
-      time: Math.floor(Number(r[0]) / 1000),
-      open: parseFloat(String(r[1])),
-      high: parseFloat(String(r[2])),
-      low: parseFloat(String(r[3])),
-      close: parseFloat(String(r[4])),
-      volume: parseFloat(String(r[5])),
-    }))
-    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.close > 0)
-    .sort((a, b) => a.time - b.time); // okx returns newest-first
+  // OKX v5 - primary live link (reachable where Binance/Bybit are geo-blocked, incl. SA).
+  // market/candles returns max 300 newest-first rows; walk back with `after` for more.
+  // Strictly sequential: OKX silently drops parallel history burst requests (verified).
+  const bar = OKX_BAR[interval];
+  const instId = SYMBOLS[asset].okx;
+  const MAX = 300;
+  const byTime = new Map<number, Candle>();
+  let after: string | undefined;
+  let pages = 0;
+  while (byTime.size < limit && pages < 12) {
+    const want = Math.min(MAX, limit - byTime.size);
+    const url = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=${want}${after ? `&after=${after}` : ''}`;
+    const d = await fetchJsonWithTimeout<{ code?: string; data?: string[][] }>(url, 6000);
+    if (d.code !== '0') throw new Error(`okx candles code ${d.code}`);
+    const rows = (d.data ?? [])
+      .map((r) => ({
+        time: Math.floor(Number(r[0]) / 1000),
+        open: parseFloat(String(r[1])),
+        high: parseFloat(String(r[2])),
+        low: parseFloat(String(r[3])),
+        close: parseFloat(String(r[4])),
+        volume: parseFloat(String(r[5])),
+      }))
+      .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.close > 0);
+    if (rows.length === 0) break;
+    let oldest = Infinity;
+    for (const c of rows) {
+      if (c.time < oldest) oldest = c.time;
+      if (!byTime.has(c.time)) byTime.set(c.time, c);
+    }
+    pages++;
+    if (rows.length < MAX) break; // upstream exhausted
+    after = String(oldest * 1000);
+  }
+  const out = [...byTime.values()].sort((a, b) => a.time - b.time);
   if (out.length < 50) throw new Error('okx candles too short');
-  return out;
+  return out.slice(-limit);
 }
 async function candlesFromCoinbase1h(asset: SupportedAsset): Promise<Candle[]> {
   // كوين بيس: 300 شمعة كحد أقصى ودعم 1h فقط — استخدام احتياطي
@@ -275,17 +321,17 @@ export function invalidateCandleCache(asset: SupportedAsset): void {
 export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<Candle[]> {
   return cached(`c1h:${asset}:${limit}`, 60_000, async () => {
     try {
-      const out = await candlesFromBinance(asset, '1h', Math.min(limit, 1000));
-      noteProviderHealth('binance:klines', true);
+      const out = await candlesFromOkx(asset, '1h', Math.min(limit, 1000));
+      noteProviderHealth('okx:klines', true);
       return out;
     } catch (e) {
-      noteProviderHealth('binance:klines', false, e instanceof Error ? e.message : String(e));
+      noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
       try {
-        const bb = await candlesFromBybit(asset, '1h', Math.min(limit, 1000));
-        noteProviderHealth('bybit:klines', true);
-        return bb.slice(-limit);
+        const out = await candlesFromBinance(asset, '1h', Math.min(limit, 1000));
+        noteProviderHealth('binance:klines', true);
+        return out;
       } catch (e2) {
-        noteProviderHealth('bybit:klines', false, e2 instanceof Error ? e2.message : String(e2));
+        noteProviderHealth('binance:klines', false, e2 instanceof Error ? e2.message : String(e2));
       }
       if (limit <= 300) {
         const cb = await candlesFromCoinbase1h(asset);
@@ -300,14 +346,24 @@ export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<
 // شموع الفريم اليومي — لبوابة الماكرو اليومية
 export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<Candle[]> {
   return cached(`c1d:${asset}:${limit}`, 10 * 60_000, async () => {
-    let out: Candle[];
     try {
-      out = await candlesFromBinance(asset, '1d', Math.min(limit, 1000));
-    } catch {
-      out = await candlesFromBybit(asset, '1d', Math.min(limit, 1000));
+      const out = await candlesFromOkx(asset, '1d', Math.min(limit, 400));
+      noteProviderHealth('okx:klines', true);
+      if (out.length < 75) throw new Error('okx daily too short');
+      return out;
+    } catch (e) {
+      noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
+      let out: Candle[];
+      try {
+        out = await candlesFromBinance(asset, '1d', Math.min(limit, 1000));
+        noteProviderHealth('binance:klines', true);
+      } catch {
+        out = await candlesFromBybit(asset, '1d', Math.min(limit, 1000));
+        noteProviderHealth('bybit:klines', true);
+      }
+      if (out.length < 75) throw new DataUnavailableError(asset, 'daily klines (too short)');
+      return out;
     }
-    if (out.length < 75) throw new DataUnavailableError(asset, 'daily klines (too short)');
-    return out;
   });
 }
 
@@ -316,12 +372,21 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
   try {
     return await cached(`c4h:${asset}:${limit}`, 120_000, async () => {
       try {
-        const rows = await candlesFromBinance(asset, '4h', Math.min(limit, 1000));
+        const rows = await candlesFromOkx(asset, '4h', Math.min(limit, 1000));
+        noteProviderHealth('okx:klines', true);
         if (rows.length < 230) throw new Error('4h too short for HTF gate');
         return rows;
-      } catch {
-        const rows = await candlesFromBybit(asset, '4h', Math.min(limit, 1000));
-        if (rows.length < 230) throw new Error('4h too short for HTF gate (bybit)');
+      } catch (e) {
+        noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
+        let rows: Candle[];
+        try {
+          rows = await candlesFromBinance(asset, '4h', Math.min(limit, 1000));
+          noteProviderHealth('binance:klines', true);
+        } catch {
+          rows = await candlesFromBybit(asset, '4h', Math.min(limit, 1000));
+          noteProviderHealth('bybit:klines', true);
+        }
+        if (rows.length < 230) throw new Error('4h too short for HTF gate');
         return rows;
       }
     });
@@ -357,13 +422,33 @@ export async function getHistoricalCandles1h(asset: SupportedAsset, totalLimit: 
 export async function getFundingPct8h(asset: SupportedAsset): Promise<number | null> {
   try {
     return await cached(`funding:${asset}`, 5 * 60_000, async () => {
+      // OKX first - reachable from restricted regions; PAXG has no swap → Binance only.
+      if (hasOkxSwap(asset)) {
+        try {
+          const d = await fetchJsonWithTimeout<{ code: string; data: Array<{ fundingRate: string }> }>(
+            `https://www.okx.com/api/v5/public/funding-rate?instId=${OKX_SWAP[asset]}`,
+          );
+          const row = Array.isArray(d.data) ? d.data[0] : undefined;
+          if (d.code === '0' && row) {
+            const rate = parseFloat(row.fundingRate);
+            if (Number.isFinite(rate)) {
+              noteProviderHealth('okx:funding', true);
+              return rate * 100;
+            }
+          }
+        } catch (e) {
+          noteProviderHealth('okx:funding', false, e instanceof Error ? e.message : String(e));
+        }
+      }
       const d = await fetchJsonWithTimeout<{ lastFundingRate: string }>(
         `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${SYMBOLS[asset].binance}`,
       );
       const rate = parseFloat(d.lastFundingRate);
+      if (Number.isFinite(rate)) noteProviderHealth('binance:funding', true);
       return Number.isFinite(rate) ? rate * 100 : null;
     });
-  } catch {
+  } catch (e) {
+    noteProviderHealth('binance:funding', false, e instanceof Error ? e.message : String(e));
     return null;
   }
 }
