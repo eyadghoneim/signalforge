@@ -86,6 +86,16 @@ export interface BotLogEntry {
   at: number;
 }
 
+export interface DexPairInfo {
+  chainId: string;
+  dexId: string;
+  pairUrl: string;
+  priceUsd: number | null;
+  liquidityUsd: number | null;
+  volume24hUsd: number | null;
+  priceChange24hPercent: number | null;
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'content-type': 'application/json' },
@@ -121,6 +131,7 @@ export const api = {
   }) => j<{ ok: true }>('/api/config', { method: 'POST', body: JSON.stringify(body) }),
   telegramTest: () => j<{ ok: boolean; error?: string }>('/api/telegram/test', { method: 'POST', body: '{}' }),
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
+  dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {

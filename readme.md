@@ -26,6 +26,8 @@ measured results - with a full audit trail.
 | **Self-learning** | Every resolved signal feeds a bounded per-factor bias (clamped, evidence-gated at 10+ samples, >= 8pt deviation from baseline). Every bias change is logged with its evidence in a lessons ledger |
 | **Open interest factor** | 24h open-interest change from Binance futures confirms or warns on the prevailing move (graceful degradation when unavailable) |
 | **Multi-source market data** | OKX (reachable from restricted regions incl. SA) + Binance, Bybit, Coinbase, CoinGecko with automatic failover and per-provider health tracking |
+| **Fear & Greed + whale alerts** | Contrarian FNG factor (alternative.me, no key) and on-chain whale netflow (Whale Alert key optional, graceful degradation) |
+| **Deep history** | Binance Vision monthly archives merged with a live tail for multi-year backtests, no rate limits |
 | **Telegram alerts** | Signal pushes, daily digest heartbeat, circuit-breaker and scan-failure alerts |
 | **Web dashboard** | React + Tailwind terminal: live chart, signal card, history, backtest lab, learning panel, settings |
 

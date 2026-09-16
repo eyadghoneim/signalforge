@@ -24,6 +24,9 @@ function whaleAdjustmentInner(netInflowUsd: number): number {
   return 0;
 }
 
+/** Single source of truth for the whale-netflow scoring rule (also used by signalEngine). */
+export { whaleAdjustmentInner };
+/** Back-compat alias for tests. */
 export const __whaleAdjustmentInner = whaleAdjustmentInner;
 
 /** Net exchange flow (USD) for the asset over the last hour, or null without a key / on failure. */

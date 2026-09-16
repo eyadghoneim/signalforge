@@ -20,6 +20,7 @@ import type { IndicatorSnapshot, HtfSnapshot } from '../shared/indicators';
 import { openInterestAdjustment } from './oiFactor';
 import { biasForReasonsRegime } from './learning';
 import { fngAdjustment } from './fng';
+import { whaleAdjustmentInner } from './whaleAlert';
 
 export { openInterestAdjustment };
 
@@ -157,9 +158,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   // Whale netflow: net exchange deposits = potential sell pressure; net withdrawals = accumulation.
   if (ctx.whale && ctx.whale.txCount > 0) {
     const wn = ctx.whale.netInflowUsd;
-    const absWn = Math.abs(wn);
-    const signWn = wn > 0 ? -1 : 1;
-    const wAdj = absWn >= 25_000_000 ? 3 * signWn : absWn >= 10_000_000 ? 2 * signWn : absWn >= 3_000_000 ? 1 * signWn : 0;
+    const wAdj = whaleAdjustmentInner(wn);
     if (wAdj !== 0) {
       add('WHALE', wAdj, `Whale netflow 1h: ${(wn > 0 ? '+' : '')}${(wn / 1_000_000).toFixed(1)}M USD`);
     }

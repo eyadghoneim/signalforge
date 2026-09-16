@@ -9,10 +9,11 @@ import SettingsPanel from './components/SettingsPanel';
 import BacktestPanel from './components/BacktestPanel';
 import LearningPanel from './components/LearningPanel';
 import AttributionPanel from './components/AttributionPanel';
+import DexPanel from './components/DexPanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
 
-type Tab = 'history' | 'backtest' | 'learning' | 'settings';
+type Tab = 'history' | 'backtest' | 'learning' | 'dex' | 'settings';
 
 export default function App() {
   const [activeAsset, setActiveAsset] = useState<SupportedAsset>('BTC');
@@ -210,6 +211,7 @@ export default function App() {
               ['history', 'سجل الإشارات'],
               ['backtest', 'الباك تست'],
               ['settings', 'الإعدادات'],
+              ['dex', 'سيولة DEX'],
               ['learning', 'Learning'],
             ] as [Tab, string][]).map(([key, label]) => (
               <button
@@ -226,7 +228,8 @@ export default function App() {
           <div className="pt-4 rise-in">
             {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} />}
             {tab === 'backtest' && <BacktestPanel />}
-        {tab === 'learning' && <LearningPanel />}
+            {tab === 'dex' && <DexPanel />}
+            {tab === 'learning' && <LearningPanel />}
             {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} />}
           </div>
         </div>
