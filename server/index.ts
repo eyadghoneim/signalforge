@@ -46,6 +46,7 @@ import { getFearGreedIndex } from './fng';
 import { getWhaleNetflow } from './whaleAlert';
 import { invalidateCandleCache } from './marketData';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
+import { getHistoricalCandlesDeep } from './marketData';
 import { computeSnapshot, computeHtfSnapshot, computeSmcStructure, computeDailyTrend, computePullbackZone } from '../shared/indicators';
 
 dotenv.config();
@@ -235,9 +236,9 @@ app.post('/api/backtest', async (req, res) => {
   const body = (req.body || {}) as { asset?: string; days?: number; robustness?: boolean; walkforward?: boolean };
   const asset = String(body.asset || 'BTC').toUpperCase() as SupportedAsset;
   if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
-  const days = Math.min(365, Math.max(90, Number(body.days) || 365));
+  const days = Math.min(1095, Math.max(90, Number(body.days) || 365));
   try {
-    const candles = await getHistoricalCandles1h(asset, Math.min(10000, days * 24));
+    const candles = await getHistoricalCandlesDeep(asset, Math.min(30000, days * 24));
     if (body.robustness) {
       const { base, grid } = runRobustness(asset, candles, DEFAULT_BACKTEST_OPTIONS);
       appendLog('INFO', `Backtest robustness ${asset} (${days}d): 9 scenarios computed`);

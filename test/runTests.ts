@@ -818,6 +818,22 @@ console.log('\n=== 16. FNG + WHALE factors v3 ===');
     });
     assert(!noFng.reasons.some((r) => r.tag === 'FNG'), 'no FNG data -> no FNG tag (graceful)');
   }
+}console.log('\n=== 17. Binance Vision bulk history v3 ===');
+{
+  const { parseBinanceVisionCsv } = await import('../server/vision');
+  const csv = [
+    '1700000400000,50000,50100,49900,50050,12.5,1700003999999,625625,10,5,312500,0',
+    '1700004000000000,50050,50200,50000,50150,15.0,1700007599999,752250,12,6,376125,0',
+    'not-a-number,line',
+    '',
+  ].join('\n');
+  const parsed = parseBinanceVisionCsv(csv);
+  assert(parsed.length === 2, `2 valid rows parsed (got ${parsed.length})`);
+  assert(parsed[0].time === 1700000400, `ms-era row normalized (got ${parsed[0].time})`);
+  assert(parsed[1].time === 1700004000, `us-era row normalized (got ${parsed[1].time})`);
+  assert(parsed[0].close === 50050 && parsed[1].close === 50150, 'ohlc parsed correctly');
+  const empty = parseBinanceVisionCsv('garbage\n,');
+  assert(empty.length === 0, 'garbage input -> zero candles');
 }console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

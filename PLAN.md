@@ -128,4 +128,10 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   4. Realized-R gating: weight resolved outcomes by |RR| using stored target1/stopLoss distance
      instead of binary +1/-1.
   5. Funding non-linear scoring (log/clipped) - low priority.
-  6. Dashboard screenshots + demo GIF for the GitHub front page - low priority, presentation only.
+  6. Dashboard screenshots + demo GIF for the GitHub front page - low priority, presentation only.- 2026-09-15 22:45 - INTEGRATION 2 COMPLETE: Binance Vision bulk history (server/vision.ts +
+  getHistoricalCandlesDeep in marketData) - 2y backtest (17520 candles) via API in 29s.
+  HONEST FINDING: default config on 2y BTC = PF 0.67, win 42.1%, maxDD 31.4%, equity 7561 vs
+  B&H 11085 -> NEGATIVE expectancy as configured. This is the measurement layer working as
+  designed. Next: walk-forward optimization on the 2y dataset to find positive-OOS configs;
+  learning system will bias factors from live outcomes. fflate added as the only new dep (MIT,
+  8KB) for Vision ZIP parsing - justified deviation from the no-deps rule, documented.

@@ -1,5 +1,6 @@
 // طبقة بيانات السوق: 3 مزودين + كاش + مهل زمنية + فشل صريح (بدون أسعار وهمية أبداً)
 import type { Candle, SupportedAsset } from '../shared/types';
+import { getVisionMonthlyKlines } from './vision';
 
 export class DataUnavailableError extends Error {
   asset: string;
@@ -349,4 +350,26 @@ export function isDataStale(candles: Candle[], intervalSeconds: number): boolean
   if (!candles.length) return true;
   const age = Date.now() / 1000 - candles[candles.length - 1].time;
   return age > intervalSeconds * 2.5;
+}
+
+/**
+ * Deep history for backtests: bulk archives from Binance Vision (months of 1h klines,
+ * no rate limits) merged with a live-API tail so the series ends at "now".
+ * Falls back to the paginated API when Vision is unavailable.
+ */
+export async function getHistoricalCandlesDeep(asset: SupportedAsset, totalLimit: number): Promise<Candle[]> {
+  const months = Math.ceil(totalLimit / 720) + 1;
+  try {
+    const vision = await getVisionMonthlyKlines(asset, months);
+    if (vision && vision.length >= 1200) {
+      const tail = await getCandles1h(asset, 500);
+      const tailStart = tail[0].time;
+      const head = vision.filter((c) => c.time < tailStart);
+      const merged = [...head, ...tail];
+      if (merged.length >= 1200) return merged.slice(-totalLimit);
+    }
+  } catch {
+    // fall through to the paginated API
+  }
+  return getHistoricalCandles1h(asset, totalLimit);
 }
