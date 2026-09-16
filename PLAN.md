@@ -143,4 +143,7 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   Plain-TAG fallback preserved for simple configs. Section 12 rewritten for v2 semantics.
   Bug caught during verification: fixture generatedAt passed in SECONDS vs ms convention -
   decay annihilated all evidence (tests caught it: samples=0). Fixed to ms (app convention:
-  Date.now()). Final: lint 0 / tests 166-166 / build 0.
+  Date.now()). Final: lint 0 / tests 166-166 / build 0.- 2026-09-16 21:05 - MERGED SESSION: the EYAD CLAW session returned and delivered label
+  hysteresis (server/hysteresis.ts, 2-scan confirmation for BUY labels, exits never delayed)
+  + SettingsPanel protection fields + 18 tests - swept into the shared commit. Combined
+  verification: lint 0 / tests 184-184 / build 0. Server restarted on the merged state.
