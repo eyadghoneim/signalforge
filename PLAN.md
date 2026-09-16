@@ -137,4 +137,10 @@ Project: C:\Users\MaLeK\.openclaw-autoclaw\workspace\projects\eyad
   8KB) for Vision ZIP parsing - justified deviation from the no-deps rule, documented.- 2026-09-16 18:30 - PHASE-2 ITEMS 1-5 DONE: DexScreener /api/dex/pairs (informational),
   Bitquery client (key-optional), indicator audit vs trading-signals (EMA/RSI/BB zero deviation),
   freqtrade-style protections (StoplossGuard + loss cooldown wired into verdict + config),
-  README learn-from-best section. Final: lint 0 / tests 166-166 / build 0.
+  README learn-from-best section. Final: lint 0 / tests 166-166 / build 0.- 2026-09-16 18:40 - LEARNING V2 SHIPPED (the best-of-every-repo synthesis): regime-keyed biases
+  (TAG|BULLISH/BEARISH/UNKNOWN - review Issue 13), 30-day half-life recency decay (Issue 14),
+  realized-R weighting with true TP1 multiples (Issue 15), confidence ramp kept (Issue 16).
+  Plain-TAG fallback preserved for simple configs. Section 12 rewritten for v2 semantics.
+  Bug caught during verification: fixture generatedAt passed in SECONDS vs ms convention -
+  decay annihilated all evidence (tests caught it: samples=0). Fixed to ms (app convention:
+  Date.now()). Final: lint 0 / tests 166-166 / build 0.
