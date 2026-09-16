@@ -618,7 +618,7 @@ console.log('\n=== 12. Learning system v2 (regime-keyed, decay, realized-R) ==='
     spotAction: 'SPOT_BUY', entryPrice: 50000, stopLoss: 49000, target1: 51000, target2: 52000,
     target3: 53000, riskRewardRatio: 2, regimeGateStatus: 'CLEAR',
     reasons: [{ tag, adjustment: 0, textAr: 'x' }], summaryAr: 'x',
-    generatedAt: opts.generatedAt ?? 1700000000, dedupHash: 'd' + Math.random(),
+    generatedAt: opts.generatedAt ?? 1700000000000, dedupHash: 'd' + Math.random(),
     dataSource: 'LIVE', htfAvailable: true, dailyTrend: opts.regime ?? 'BULLISH',
     id: 'l' + Math.random(), isGateBlocked: opts.blocked ?? false, telegramSent: false,
     outcomes: {
