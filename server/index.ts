@@ -42,6 +42,8 @@ import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
+import { getFearGreedIndex } from './fng';
+import { getWhaleNetflow } from './whaleAlert';
 import { invalidateCandleCache } from './marketData';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
 import { computeSnapshot, computeHtfSnapshot, computeSmcStructure, computeDailyTrend, computePullbackZone } from '../shared/indicators';
@@ -160,11 +162,13 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
   if (refresh) candles1h = await getCandles1h(asset, 500);
   const snapshot = computeSnapshot(candles1h);
   if (!snapshot) throw new Error(`بيانات غير كافية لحساب إشارة ${asset}`);
-  const [candles4h, candles1d, funding, oiChange, ticker, liquidity] = await Promise.all([
+  const [candles4h, candles1d, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
     getCandles4h(asset, 400),
     getCandles1d(asset, 400).catch(() => null),
     getFundingPct8h(asset),
     getOpenInterestChange24h(asset),
+    getFearGreedIndex(),
+    getWhaleNetflow(asset),
     getTicker(asset),
     config.regimeEnabled ? getLiquidityRegime() : Promise.resolve(null),
   ]);
@@ -377,11 +381,13 @@ async function runScanCycle(): Promise<void> {
     }
     for (const asset of SUPPORTED_ASSETS) {
       try {
-        const [candles1h, candles4h, funding, oiChange, ticker, liquidity] = await Promise.all([
+        const [candles1h, candles4h, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
           getCandles1h(asset, 500),
           getCandles4h(asset, 400),
           getFundingPct8h(asset),
           getOpenInterestChange24h(asset),
+          getFearGreedIndex(),
+          getWhaleNetflow(asset),
           getTicker(asset),
           config.regimeEnabled ? getLiquidityRegime().catch(() => null) : Promise.resolve(null),
         ]);
@@ -398,6 +404,8 @@ async function runScanCycle(): Promise<void> {
           htf,
           fundingPct8h: funding,
           oiChange24h: oiChange,
+          fng,
+          whale,
           change24h: ticker.change24h,
           dataSource: isDataStale(candles1h, 3600) ? 'STALE' : 'LIVE',
           gates: config.gates,

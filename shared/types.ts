@@ -39,7 +39,9 @@ export type ReasonTag =
   | 'HTF'
   | 'SMC'
   | 'LIQUIDITY'
-  | 'OI';
+  | 'OI'
+  | 'FNG'
+  | 'WHALE';
 
 export interface SignalReason {
   tag: ReasonTag;
@@ -296,4 +298,10 @@ export interface LearningLesson {
   samples: number;
   tagWinRatePercent: number;
   baselineWinRatePercent: number;
+}
+// --- Fear & Greed factor (v3) ---
+export interface FngPoint {
+  value: number;
+  classification: string;
+  timestamp: number;
 }

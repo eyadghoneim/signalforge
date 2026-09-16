@@ -783,7 +783,42 @@ console.log('\n=== 15. Review-response fixes v3 ===');
   assert(st.unrealizedR === -3, `unrealizedR = -3 (got ${st.unrealizedR})`);
   assert(st.tripped, 'breaker trips on unrealized losses alone (review Issue 8)');
 }
-console.log(`\n=============================================`);
+console.log('\n=== 16. FNG + WHALE factors v3 ===');
+{
+  const { fngAdjustment } = await import('../server/fng');
+  const { __whaleAdjustmentInner } = await import('../server/whaleAlert');
+
+  assert(fngAdjustment(null) === 0, 'no FNG data -> zero');
+  assert(fngAdjustment(10) === 3, `extreme fear = +3 (got ${fngAdjustment(10)})`);
+  assert(fngAdjustment(35) === 1, `fear = +1 (got ${fngAdjustment(35)})`);
+  assert(fngAdjustment(50) === 0, `neutral = 0 (got ${fngAdjustment(50)})`);
+  assert(fngAdjustment(65) === -1, `greed = -1 (got ${fngAdjustment(65)})`);
+  assert(fngAdjustment(90) === -3, `extreme greed = -3 (got ${fngAdjustment(90)})`);
+
+  assert(__whaleAdjustmentInner(0) === 0, 'no whale flow -> 0');
+  assert(__whaleAdjustmentInner(5_000_000) === -1, `net inflow 5M = -1 sell pressure (got ${__whaleAdjustmentInner(5_000_000)})`);
+  assert(__whaleAdjustmentInner(-12_000_000) === 2, `net outflow 12M = +2 accumulation (got ${__whaleAdjustmentInner(-12_000_000)})`);
+  assert(__whaleAdjustmentInner(30_000_000) === -3, `net inflow 30M = -3 (got ${__whaleAdjustmentInner(30_000_000)})`);
+
+  const { buildSignal } = await import('../server/signalEngine');
+  const { computeSnapshot } = await import('../shared/indicators');
+  const candles = syntheticCandles(300, 22, 7);
+  const snap = computeSnapshot(candles);
+  assert(snap !== null, 'factors integration snapshot ready');
+  if (snap) {
+    const withFng = buildSignal({
+      asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
+      fng: { value: 90, classification: 'Extreme Greed', timestamp: 0 },
+    });
+    assert(withFng.reasons.some((r) => r.tag === 'FNG'), 'signal carries FNG tag');
+    const noFng = buildSignal({
+      asset: 'BTC' as const, snapshot: snap, htf: null, fundingPct8h: 0.01, change24h: 3,
+      dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
+    });
+    assert(!noFng.reasons.some((r) => r.tag === 'FNG'), 'no FNG data -> no FNG tag (graceful)');
+  }
+}console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);
 console.log('🎉 كل الاختبارات نجحت');

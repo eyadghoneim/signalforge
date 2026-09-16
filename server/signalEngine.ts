@@ -5,6 +5,7 @@ import type {
   SupportedAsset,
   RegimeGateStatus,
   SmcSnapshot,
+  FngPoint,
   LiquidityRegime,
   DailyTrend,
 } from '../shared/types';
@@ -18,6 +19,7 @@ import {
 import type { IndicatorSnapshot, HtfSnapshot } from '../shared/indicators';
 import { openInterestAdjustment } from './oiFactor';
 import { biasForReasons } from './learning';
+import { fngAdjustment } from './fng';
 
 export { openInterestAdjustment };
 
@@ -43,6 +45,8 @@ export interface BuildSignalContext {
   entryZone?: { low: number; high: number } | null;
   oiChange24h?: number | null;
   tagBias?: Record<string, number>;
+  fng?: FngPoint | null;
+  whale?: { netInflowUsd: number; txCount: number } | null;
 }
 
 export function buildSignal(ctx: BuildSignalContext): Signal {
@@ -133,6 +137,22 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     add('OI', oiAdj, `Open interest 24h: ${(oiVal > 0 ? '+' : '') + oiVal.toFixed(1)}% (${oiAdj > 0 ? 'confirms trend' : 'warns exhaustion'})`);
   }
 
+  // Fear & Greed (contrarian): extreme fear = accumulation, extreme greed = euphoria warning.
+  const fngAdj = fngAdjustment(ctx.fng ? ctx.fng.value : null);
+  if (fngAdj !== 0) {
+    const fv = ctx.fng ? ctx.fng.value : 0;
+    add('FNG', fngAdj, `Fear & Greed: ${fv} (${ctx.fng ? ctx.fng.classification : 'n/a'})`);
+  }
+  // Whale netflow: net exchange deposits = potential sell pressure; net withdrawals = accumulation.
+  if (ctx.whale && ctx.whale.txCount > 0) {
+    const wn = ctx.whale.netInflowUsd;
+    const absWn = Math.abs(wn);
+    const signWn = wn > 0 ? -1 : 1;
+    const wAdj = absWn >= 25_000_000 ? 3 * signWn : absWn >= 10_000_000 ? 2 * signWn : absWn >= 3_000_000 ? 1 * signWn : 0;
+    if (wAdj !== 0) {
+      add('WHALE', wAdj, `Whale netflow 1h: ${(wn > 0 ? '+' : '')}${(wn / 1_000_000).toFixed(1)}M USD`);
+    }
+  }
   score = Math.min(100, Math.max(0, Math.round(score)));
 
   // ─── بنية هابطة صلبة → خروج دفاعي (يتخطى كل البوابات دائماً) ───
