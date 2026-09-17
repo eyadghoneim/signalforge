@@ -18,9 +18,6 @@ const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coing
   ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT', okx: 'ETH-USDT' },
   PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT', okx: 'PAXG-USDT' },
   SOL: { binance: 'SOLUSDT', coinbase: 'SOL-USD', coingecko: 'solana', bybit: 'SOLUSDT', okx: 'SOL-USDT' },
-  XRP: { binance: 'XRPUSDT', coinbase: 'XRP-USD', coingecko: 'ripple', bybit: 'XRPUSDT', okx: 'XRP-USDT' },
-  DOGE: { binance: 'DOGEUSDT', coinbase: 'DOGE-USD', coingecko: 'dogecoin', bybit: 'DOGEUSDT', okx: 'DOGE-USDT' },
-  ADA: { binance: 'ADAUSDT', coinbase: 'ADA-USD', coingecko: 'cardano', bybit: 'ADAUSDT', okx: 'ADA-USDT' },
 };
 
 // ─── كاش TTL مع منع الطلبات المكررة المتوازية ───

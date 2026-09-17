@@ -11,9 +11,6 @@ export const OKX_SWAP: Record<SupportedAsset, string> = {
   ETH: 'ETH-USDT-SWAP',
   PAXG: '', // PAXG has no perpetual swap on OKX
   SOL: 'SOL-USDT-SWAP',
-  XRP: 'XRP-USDT-SWAP',
-  DOGE: 'DOGE-USDT-SWAP',
-  ADA: 'ADA-USDT-SWAP',
 };
 
 /** PAXG has no perpetual swap on OKX - funding/OI legitimately unavailable. */
