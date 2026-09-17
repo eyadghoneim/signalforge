@@ -1,11 +1,12 @@
 // أنواع مشتركة بين السيرفر والواجهة — مصدر واحد للحقيقة
-export type SupportedAsset = 'BTC' | 'ETH' | 'PAXG';
-export const SUPPORTED_ASSETS: SupportedAsset[] = ['BTC', 'ETH', 'PAXG'];
+export type SupportedAsset = 'BTC' | 'ETH' | 'PAXG' | 'SOL';
+export const SUPPORTED_ASSETS: SupportedAsset[] = ['BTC', 'ETH', 'PAXG', 'SOL'];
 
 export const ASSET_LABELS_AR: Record<SupportedAsset, string> = {
   BTC: 'البيتكوين',
   ETH: 'الإيثريوم',
   PAXG: 'الذهب الرقمي (PAXG)',
+  SOL: 'سولانا',
 };
 
 export interface Candle {

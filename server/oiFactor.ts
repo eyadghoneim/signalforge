@@ -9,7 +9,7 @@ import { OKX_SWAP, hasOkxSwap } from './symbols';
 
 const OI_CACHE = new Map<string, { value: number | null; at: number }>();
 const OI_TTL_MS = 10 * 60_000;
-const BINANCE_SYMBOLS: Record<string, string> = { BTC: 'BTCUSDT', ETH: 'ETHUSDT', PAXG: 'PAXGUSDT' };
+const BINANCE_SYMBOLS: Record<string, string> = { BTC: 'BTCUSDT', ETH: 'ETHUSDT', PAXG: 'PAXGUSDT', SOL: 'SOLUSDT' };
 
 /** Historical 1h open-interest from OKX (rows of [ts, oiUsd]) - null when unavailable. */
 async function okxOpenInterestUsd(asset: SupportedAsset): Promise<number[][] | null> {

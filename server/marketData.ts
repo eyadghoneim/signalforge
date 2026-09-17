@@ -17,6 +17,7 @@ const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coing
   BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT', okx: 'BTC-USDT' },
   ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT', okx: 'ETH-USDT' },
   PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT', okx: 'PAXG-USDT' },
+  SOL: { binance: 'SOLUSDT', coinbase: 'SOL-USD', coingecko: 'solana', bybit: 'SOLUSDT', okx: 'SOL-USDT' },
 };
 
 // ─── كاش TTL مع منع الطلبات المكررة المتوازية ───
@@ -396,26 +397,48 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
 }
 
 // جلب تاريخي مُقطّع للباك تست (حتى ~سنة من شموع 1h)
+// الترتيب: OKX (مفتوح في السعودية) ← Coinbase (مفتوح) ← Binance (محجوب، يظل خيارًا لغيره)
 export async function getHistoricalCandles1h(asset: SupportedAsset, totalLimit: number): Promise<Candle[]> {
-  return cached(`hist:${asset}:${totalLimit}`, 10 * 60_000, async () => {
-    const all: Candle[] = [];
-    let endTime: number | undefined;
-    while (all.length < totalLimit) {
-      const url =
-        `https://api.binance.com/api/v3/klines?symbol=${SYMBOLS[asset].binance}&interval=1h&limit=1000` +
-        (endTime ? `&endTime=${endTime}` : '');
-      const rows = await fetchJsonWithTimeout<unknown[][]>(url, 6000);
-      const batch = mapBinanceKlines(rows);
-      if (batch.length === 0) break;
-      all.unshift(...batch);
-      endTime = batch[0].time * 1000 - 1;
-      if (rows.length < 1000) break;
+  const hist = await cached(`hist:${asset}:${totalLimit}`, 10 * 60_000, async () => {
+    // 1) OKX pagination (reachable from SA) — fetch as deep as provider allows.
+    try {
+      const out = await candlesFromOkx(asset, '1h', Math.min(totalLimit, 3000));
+      if (out.length >= 1200) {
+        noteProviderHealth('okx:klines', true);
+        return out;
+      }
+      noteProviderHealth('okx:klines', false, `too short (${out.length})`);
+    } catch (e) {
+      noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
     }
-    if (all.length < 1200) {
-      throw new DataUnavailableError(asset, `historical klines (got ${all.length}, need 1200+)`);
+
+    // 2) Binance paginated (best depth, but geo-blocked in some regions incl. SA).
+    try {
+      const all: Candle[] = [];
+      let endTime: number | undefined;
+      while (all.length < totalLimit) {
+        const url =
+          `https://api.binance.com/api/v3/klines?symbol=${SYMBOLS[asset].binance}&interval=1h&limit=1000` +
+          (endTime ? `&endTime=${endTime}` : '');
+        const rows = await fetchJsonWithTimeout<unknown[][]>(url, 6000);
+        const batch = mapBinanceKlines(rows);
+        if (batch.length === 0) break;
+        all.unshift(...batch);
+        endTime = batch[0].time * 1000 - 1;
+        if (rows.length < 1000) break;
+      }
+      if (all.length >= 1200) {
+        noteProviderHealth('binance:klines', true);
+        return all;
+      }
+      noteProviderHealth('binance:klines', false, `too short (${all.length})`);
+    } catch (e) {
+      noteProviderHealth('binance:klines', false, e instanceof Error ? e.message : String(e));
     }
-    return all.slice(-totalLimit);
+
+    throw new DataUnavailableError(asset, 'historical klines (need 1200+, all providers failed)');
   });
+  return hist.slice(-totalLimit);
 }
 
 // ─── تمويل العقود (كل 8 ساعات) — قد لا يتوفر لبعض الأصول ───
