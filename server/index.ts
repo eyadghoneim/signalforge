@@ -73,6 +73,7 @@ if (!IS_DEV) {
 }
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const RATE_BUCKETS_MAX = 10_000; // سقف أمان ضد النمو غير المحدود
 app.use('/api', (req, res, next) => {
   const ip = req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -85,6 +86,19 @@ app.use('/api', (req, res, next) => {
   if (bucket.count > 240) return res.status(429).json({ ok: false, error: 'Too many requests' });
   next();
 });
+// تنظيف دوري: يمسح الإدخالات المنتهية + يفرض السقف الأقصى — يمنع تسريب الذاكرة
+// على السيرفرات الدائمة (Render وغيره) اللي بيفضل شغال أسابيع.
+function sweepRateBuckets(): void {
+  const now = Date.now();
+  for (const [ip, b] of rateBuckets) {
+    if (b.resetAt <= now) rateBuckets.delete(ip);
+  }
+  if (rateBuckets.size > RATE_BUCKETS_MAX) {
+    const oldest = [...rateBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
+    for (const [ip] of oldest.slice(0, rateBuckets.size - RATE_BUCKETS_MAX)) rateBuckets.delete(ip);
+  }
+}
+setInterval(sweepRateBuckets, 60_000).unref();
 
 // ─── أدمن: توكن صريح أو ثقة محلية (localhost فقط) ───
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -307,7 +321,9 @@ app.get('/api/liquidity-regime', async (_req, res) => {
 });
 
 app.get('/api/dex/pairs', async (req, res) => {
-  const asset = String(req.query.asset || 'BTC').toUpperCase();
+  const raw = String(req.query.asset || 'BTC');
+  // حد أمان: مصطلح البحث أقصاه 30 حرف — يمنع نص عشوائي طويل يتكدس في الكاش
+  const asset = raw.toUpperCase().slice(0, 30);
   try {
     const pairs = await getTopDexPairs(asset);
     res.json({ ok: true, pairs: pairs ?? [] });

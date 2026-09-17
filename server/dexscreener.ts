@@ -3,8 +3,9 @@
 // trade on CEXs; DEX liquidity is context, not a direct factor for them).
 // Comments are English-only on purpose (codepage safety under shell tooling).
 
-const CACHE = new Map<string, { value: any; at: number }>();
+const CACHE = new Map<string, { value: DexPairInfo[] | null; at: number }>();
 const TTL_MS = 5 * 60_000;
+const CACHE_MAX_KEYS = 200; // سقف أمان — نص البحث مفتوح، الكاش لا ينمو بلا حدود
 
 export interface DexPairInfo {
   chainId: string;
@@ -48,5 +49,18 @@ export async function getTopDexPairs(query: string): Promise<DexPairInfo[] | nul
     value = null;
   }
   CACHE.set(key, { value, at: Date.now() });
+  // تنظيف الكاش: يمسح المنتهي + يحافظ على السقف الأقصى (LRU بسيط بالأقدم)
+  if (CACHE.size > CACHE_MAX_KEYS) {
+    for (const k of CACHE.keys()) {
+      const e = CACHE.get(k);
+      if (e && Date.now() - e.at > TTL_MS) CACHE.delete(k);
+      if (CACHE.size <= CACHE_MAX_KEYS) break;
+    }
+    while (CACHE.size > CACHE_MAX_KEYS) {
+      const first = CACHE.keys().next().value;
+      if (first === undefined) break;
+      CACHE.delete(first);
+    }
+  }
   return value;
 }
