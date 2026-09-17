@@ -922,6 +922,29 @@ console.log('\n=== 19. Label hysteresis + funding squeeze curve v3 ===');
   }
 }
 
+console.log('\n=== 20. R-consistency + explicit verdict ===');
+{
+  // The protection circuit breaker must use the SAME R unit as the learning
+  // system: a TP1 win pays its true R multiple (from strategy constants),
+  // not a flat +1. With entry=50000, stop=49000, TP1=51000 the true R is exactly 1.0;
+  // with wider TP1 it must be >1.
+  const { dayRealizedR } = await import('../server/protection');
+  const mkR = (tp1: number): import('../shared/types').StoredSignal => ({
+    asset: 'BTC', engineSignature: 't', convictionScore: 80, signalType: 'STRONG_BUY',
+    spotAction: 'SPOT_BUY', entryPrice: 50000, stopLoss: 49000, target1: tp1, target2: 52000, target3: 53000,
+    riskRewardRatio: 2, regimeGateStatus: 'CLEAR', reasons: [], summaryAr: 't',
+    generatedAt: 0, dedupHash: 'r' + Math.random(), dataSource: 'LIVE', htfAvailable: true,
+    id: 'r' + Math.random(), isGateBlocked: false, telegramSent: false,
+    outcomes: { windows: { h4: {mfePercent:0,maePercent:0,hitTp1BeforeSl:null}, h24: {mfePercent:0,maePercent:0,hitTp1BeforeSl:null}, h72: {mfePercent:0,maePercent:0,hitTp1BeforeSl:null} }, resolution: 'TP1_FIRST', resolvedAt: Date.now() },
+  });
+  const narrow = dayRealizedR([mkR(51000)], Date.now());
+  assert(narrow.realizedR === 1, `TP1 with 1:1 R pays 1R (got ${narrow.realizedR})`);
+  const wide = dayRealizedR([mkR(51250)], Date.now()); // 1.25R TP1
+  assert(wide.realizedR === 1.25, `TP1 with R:R 1.25 pays 1.25R (got ${wide.realizedR})`);
+  const loss = dayRealizedR([{ ...mkR(51000), outcomes: { ...mkR(51000).outcomes, resolution: 'SL_FIRST' as const } }], Date.now());
+  assert(loss.realizedR === -1, `SL costs exactly -1R (got ${loss.realizedR})`);
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

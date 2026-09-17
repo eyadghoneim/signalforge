@@ -3,6 +3,7 @@
 // Comments are English-only on purpose (codepage safety when written via shell tooling).
 
 import type { ProtectionConfig, StoredSignal } from '../shared/types';
+import { realizedR } from './learning';
 
 
 export const DEFAULT_PROTECTION: ProtectionConfig = {
@@ -52,7 +53,7 @@ export interface DailyPnLR {
 /** Realized paper PnL (in R) for the current UTC day, from resolved actionable signals. */
 export function dayRealizedR(signals: StoredSignal[], nowMs: number): DailyPnLR {
   const start = utcDayStart(nowMs);
-  let realizedR = 0;
+  let totalR = 0;
   let resolvedToday = 0;
   let winsToday = 0;
   let lossesToday = 0;
@@ -64,14 +65,16 @@ export function dayRealizedR(signals: StoredSignal[], nowMs: number): DailyPnLR 
     if (at < start || at > nowMs) continue;
     resolvedToday++;
     if (res === 'TP1_FIRST') {
-      realizedR += 1;
+      // True R multiple from the strategy constants (TP1 = ~1.25R), consistent
+      // with the learning system - a win is no longer a flat +1.
+      totalR += realizedR(s);
       winsToday++;
     } else {
-      realizedR -= 1;
+      totalR -= 1;
       lossesToday++;
     }
   }
-  return { realizedR, resolvedToday, winsToday, lossesToday };
+  return { realizedR: Number(totalR.toFixed(2)), resolvedToday, winsToday, lossesToday };
 }
 
 export interface BreakerState {

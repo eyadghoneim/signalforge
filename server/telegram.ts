@@ -52,8 +52,16 @@ export function buildSignalMessageHtml(s: Signal): string {
     s.signalType === 'STRONG_SELL' ? '🛑 بيع قوي' :
     s.signalType === 'NO_TRADE' ? `🛡️ ممنوع الدخول (${esc(s.blockReasonAr || '')})` : '⏳ انتظار';
 
+  // التوصية الصريحة: سطر واحد يخلي أي حد يعرف يتصرف فورًا.
+  const verdictLine =
+    s.regimeGateStatus !== 'CLEAR' ? '🟠 <b>التوصية: ممنوع الدخول (بوابة حماية)</b>' :
+    s.spotAction === 'SPOT_BUY' ? '🟢 <b>التوصية: ادخل — شراء</b>' :
+    s.spotAction === 'SPOT_SELL_ALL' ? '🔴 <b>التوصية: اخرج — بيع / تخفيف</b>' : '⚪ <b>التوصية: انتظار</b>';
+
   const lines = [
     badge,
+    '',
+    verdictLine,
     '',
     `<b>الأصل:</b> ${esc(s.asset)}`,
     `<b>الإشارة:</b> ${typeLine}`,

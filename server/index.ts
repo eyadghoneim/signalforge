@@ -56,7 +56,7 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
-const VERSION = '2.0.0';
+const VERSION = '3.0.0';
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));

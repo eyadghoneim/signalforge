@@ -54,8 +54,26 @@ export default function SignalCard({ signal }: { signal: Signal }) {
   const isSell = signal.spotAction === 'SPOT_SELL_ALL';
   const gated = signal.regimeGateStatus !== 'CLEAR';
 
+  // التوصية الصريحة: جملة واحدة كبيرة يفهمها أي حد بدون قراية كود.
+  const verdict = gated
+    ? { text: 'ممنوع الدخول حاليًا', sub: 'بوابة حماية منعت الإشارة', cls: 'border-amber-400/50 bg-amber-400/10 text-amber-300' }
+    : isBuy
+      ? { text: 'ادخل — شراء', sub: 'الظروف الفنية معاك', cls: 'border-emerald-400/50 bg-emerald-400/10 text-emerald-300' }
+      : isSell
+        ? { text: 'اخرج — بيع / تخفيف', sub: 'البنية الفنية بتقول خروج دفاعي', cls: 'border-rose-400/50 bg-rose-400/10 text-rose-300' }
+        : { text: 'خليك برا — انتظار', sub: 'مفيش ظروف جيدة للدخول دلوقتي', cls: 'border-zinc-600/50 bg-zinc-600/10 text-zinc-300' };
+
   return (
     <div className={`rise-in rounded-2xl border bg-zinc-900/60 p-5 ${gated ? 'border-amber-500/30' : 'border-zinc-800'}`}>
+      {/* ─── التوصية الصريحة الكبيرة ─── */}
+      <div className={`mb-5 flex items-center justify-between rounded-2xl border px-4 py-3 ${verdict.cls}`}>
+        <div>
+          <div className="text-2xl font-black leading-tight">{verdict.text}</div>
+          <div className="text-xs opacity-80">{verdict.sub}</div>
+        </div>
+        <div className="hidden text-4xl sm:block">{isBuy ? '🟢' : isSell ? '🔴' : gated ? '🟠' : '⚪'}</div>
+      </div>
+
       {/* الترويسة: الدرجة + النوع */}
       <div className="flex flex-wrap items-center gap-4">
         <ScoreRing score={signal.convictionScore} color={style.ring} />
