@@ -4,7 +4,7 @@
 
 **A self-learning crypto signal terminal - measure, protect, adapt.**
 
-SignalForge is a local-first trading signal workstation for BTC, ETH and PAXG. It watches
+SignalForge is a local-first trading signal workstation for BTC, ETH, PAXG and SOL. It watches
 multi-timeframe market structure, scores conviction through a gated deterministic engine, tracks
 the outcome of every signal it publishes, and continuously adjusts its own factor weights from
 measured results - with a full audit trail.
@@ -31,6 +31,17 @@ measured results - with a full audit trail.
 | **Telegram alerts** | Signal pushes, daily digest heartbeat, circuit-breaker and scan-failure alerts |
 | **Web dashboard** | React + Tailwind terminal: live chart, signal card, history, backtest lab, learning panel, settings |
 
+## Honest backtest limitations
+
+The backtest is transparent about its own edge cases instead of hiding them:
+
+| Limitation | How it is handled |
+|---|---|
+| **Same-candle ambiguity** | If a stop and a target are both inside one candle, the stop is assumed FIRST (conservative). The engine never pretends the target won; it assumes the worse outcome. |
+| **Stop-loss execution slippage** | Stop-market orders fill worse than the stop price in gaps/flash moves. The backtest now applies a realistic slippage of `STOP_SLIPPAGE_ATR` (15% of ATR) on stop exits instead of a perfect fill. |
+| **Funding gate disabled in backtests** | Historical funding is not freely available, so this gate is off in the simulation (disclosed, not silent). |
+| **Liquidity layer disabled in backtests** | DefiLlama history is not freely available; the layer is off in the simulation (disclosed). |
+
 ## Quick start
 
 ```bash
@@ -42,7 +53,7 @@ npm run dev        # dashboard on http://localhost:3000
 |---|---|
 | `npm run dev` | Run the server + serve the dashboard |
 | `npm run lint` | TypeScript check (strict) |
-| `npm test` | 137 deterministic tests |
+| `npm test` | 195 deterministic tests |
 | `npm run build` | Production build (vite + esbuild server bundle) |
 | `npm start` | Run the built server |
 

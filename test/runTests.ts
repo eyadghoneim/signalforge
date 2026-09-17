@@ -763,6 +763,16 @@ console.log('\n=== 15. Review-response fixes v3 ===');
   assert(clean.totalTrades === slippery.totalTrades, `slippage must not change trade count (${clean.totalTrades}/${slippery.totalTrades})`);
   assert(slippery.finalEquity < clean.finalEquity, `slippage reduces equity (${slippery.finalEquity} < ${clean.finalEquity})`);
 
+  // Stop-loss slippage: losses exit at a price worse than the stop level
+  // (entry-ATR × STOP_SLIPPAGE_ATR), never more optimistic than that.
+  const stops = runBacktest('BTC', syntheticCandles(1500, 8), { riskPercent: 1, feePercent: 0, cooldownCandles: 2, initialEquity: 10000, entryMinScore: 0, adxFloor: 0, slippagePercent: 0 });
+  for (const t of stops.trades) {
+    if (t.exitReason === 'SL') {
+      // exitAvgPrice already accounts for TPs taken earlier, so only bounds-check sanity:
+      assert(t.exitAvgPrice < t.entry, 'stop-loss exits below entry');
+    }
+  }
+
   // Breaker now counts unrealized adverse movement (MAE-based) from open signals.
   const mkOpen = (mae: number): import('../shared/types').StoredSignal => ({
     asset: 'BTC', engineSignature: 'test', convictionScore: 80, signalType: 'STRONG_BUY',

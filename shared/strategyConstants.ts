@@ -26,6 +26,7 @@ export const STRATEGY_RISK_MULTIPLIERS = {
   TARGET_1_ATR: 2.5, // TP1 = الدخول + 2.5×ATR → R:R ≈ 1.25
   TARGET_2_ATR: 4.0, // TP2 → R:R = 2.0
   TARGET_3_ATR: 5.5, // TP3 → R:R = 2.75
+  STOP_SLIPPAGE_ATR: 0.15, // انزلاق تنفيذي واقعي لأوامر Stop-Market عند ضرب الوقف (كنسبة من ATR)
 } as const;
 
 export const ATTRIBUTION_WINDOWS_HOURS = [4, 24, 72] as const;

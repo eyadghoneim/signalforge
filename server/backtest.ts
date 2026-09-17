@@ -14,7 +14,7 @@ import {
   relativeVolume,
   type IndicatorSnapshot,
 } from '../shared/indicators';
-import { computeRiskTargets } from '../shared/strategyConstants';
+import { computeRiskTargets, STRATEGY_RISK_MULTIPLIERS } from '../shared/strategyConstants';
 import { computePerformanceStats } from './performance';
 import { buildSignal } from './signalEngine';
 
@@ -163,9 +163,13 @@ export function runBacktest(
 
     // ─── 1) إدارة مركز مفتوح (افتُتح في شمعة سابقة) ───
     if (position) {
-      // الوقف أولاً (متحفظ) — مع معالجة فجوة الفتح
+      // الوقف أولاً (متحفظ) — مع معالجة فجوة الفتح + انزلاق تنفيذي واقعي
       if (candle.low <= position.stop) {
-        const exit = Math.min(candle.open, position.stop);
+        // انزلاق وقف السوق: أمر Stop-Market في الواقع يتنفذ أسوأ من سعر الوقف
+        // وقت الفجوات والضغط. نحاكي ده بـ نسبة صغيرة من ATR بدل تنفيذ مثالي.
+        const stopSlippage = position.trailAtr * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
+        const gapOpen = Math.min(candle.open, position.stop); // فجوة: تنفيذ على الفتح
+        const exit = Math.min(gapOpen, position.stop - stopSlippage);
         const qtyPart = position.qty * position.remainingRatio;
         const pnl = (exit - position.entry) * qtyPart - position.entryFeeTotal * position.remainingRatio;
         position.realizedPnl += pnl;
@@ -377,7 +381,7 @@ export function runBacktest(
       'بوابة التمويل معطلة داخل الباك تست (التمويل التاريخي غير متاح مجاناً) — القيد معلن بصدق',
       'طبقة السيولة (DefiLlama) معطلة داخل الباك تست — بياناتها التاريخية غير متاحة مجاناً',
       'الوقف يُنفذ بأسلوب متحفظ: لو الوقف والهدف في نفس الشمعة يُحسب الوقف أولاً',
-      'العمولة 0.1% لكل جانب، والانزلاق السعري غير مضاف',
+      'العمولة 0.1% لكل جانب، مع انزلاق تفيذي 15% من ATR عند ضرب الوقف (محاكاة لواقع أوامر Stop-Market)',
     ],
     monthlyStats,
   };

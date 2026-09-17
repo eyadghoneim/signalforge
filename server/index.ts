@@ -60,6 +60,9 @@ const IS_DEV = process.env.NODE_ENV !== 'production';
 const VERSION = '3.0.0';
 
 app.disable('x-powered-by');
+// خلف البروكسي السحابي (Render وغيره) كل الطلبات توصل من localhost فيظهر أي زائر كأنه
+// "محلي". لذلك trust proxy ضروري عشان نعرف عنوان الفعلي للمستخدم من X-Forwarded-For.
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
 // ─── أمان: CSP في الإنتاج + rate limit بسيط ───
@@ -104,10 +107,13 @@ setInterval(sweepRateBuckets, 60_000).unref();
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const config = loadConfig();
   const token = config.adminToken || process.env.BOT_ADMIN_TOKEN || '';
+  // الثقة المحلية (بدون توكين) مسموحة في وضع التطوير فقط — خلف بروكسي سحابي
+  // (الإنتاج) لازم توكين admin صريح حتى من localhost، وإلا أي زائر هيتعامل "محلي".
+  if (!token && IS_DEV && (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1')) {
+    return next();
+  }
   if (!token) {
-    const ip = req.socket.remoteAddress || '';
-    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return next();
-    res.status(401).json({ ok: false, error: 'Admin token required for non-local requests' });
+    res.status(401).json({ ok: false, error: 'Admin token required' });
     return;
   }
   const provided = String(req.headers['x-bot-admin-token'] || '');
