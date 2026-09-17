@@ -963,6 +963,72 @@ console.log('\n=== 20. R-consistency + explicit verdict ===');
   assert(loss.realizedR === -1, `SL costs exactly -1R (got ${loss.realizedR})`);
 }
 
+console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
+{
+  const { defaultPaperAccount, openBuy, markToMarket, currentEquity, closeBySellSignal } = await import('../server/paperTrading');
+
+  // 1) فتح صفقة بحجم 1% مخاطرة: القيود الرياضية
+  const acct0 = defaultPaperAccount();
+  const entry = 100;
+  const stop = 99; // مخاطرة $1 لكل وحدة
+  const sig = {
+    asset: 'BTC' as const, engineSignature: 't', convictionScore: 80,
+    signalType: 'STRONG_BUY' as const, spotAction: 'SPOT_BUY' as const,
+    entryPrice: entry, stopLoss: stop, target1: 102, target2: 104, target3: 106,
+    riskRewardRatio: 2, regimeGateStatus: 'CLEAR' as const, reasons: [],
+    summaryAr: 't', generatedAt: 0, dedupHash: 'p', dataSource: 'LIVE' as const, htfAvailable: true,
+  };
+  const opened = openBuy(acct0, sig, 0.5, 1000);
+  assert(opened.open.length === 1, 'buy opens one position');
+  const pos0 = opened.open[0];
+  assert(pos0.qty > 0, 'qty positive');
+  // كمية 1% مخاطرة = $100 على مسافة $1 → qty=100، لكن سقف 95% من الرصيد
+  // ($9,500) يقص الكمية لـ 95 — السقف شغال صح، والكمية ضمن نطاقها
+  assert(pos0.qty === 95, `qty = 95 via cash cap (got ${pos0.qty.toFixed(2)})`);
+  assert(opened.cash < 10000, 'cash reduced by position cost');
+  assert(pos0.qty * entry <= 10000 * 0.95 + 0.01, 'position never exceeds 95% of equity');
+
+  // 2) نفس الأصل مايتكرارش (مركز واحد لكل عملة)
+  const dup = openBuy(opened, sig, 0.5, 2000);
+  assert(dup.open.length === 1, 'one position per asset');
+
+  // 3) تسيير على شمعة تجيب الوقف → خسارة، والقيمة النهائية < البداية
+  const post = markToMarket(
+    dup,
+    { BTC: 98 },
+    { BTC: { open: 99.5, high: 100, low: 97, close: 98, time: 2000 } },
+    3000,
+  );
+  assert(post.open.length === 0, 'stop closes the position');
+  assert(post.closed.length === 1, 'one closed trade');
+  assert(post.closed[0].pnlUsd < 0, `stop exit loses money (got ${post.closed[0].pnlUsd})`);
+
+  // 4) جني TP1 ثم وقف تعادل (لا خسارة بعد TP1)
+  const acct1 = defaultPaperAccount();
+  const a1 = openBuy(acct1, sig, 0.5, 1000);
+  // شمعة تجيب TP1 (102) ثم ترتد وتلمس فقط 100 (فوق وقف التعادل)
+  const post2 = markToMarket(
+    a1,
+    { BTC: 101 },
+    { BTC: { open: 100, high: 103, low: 99.8, close: 101, time: 2000 } },
+    3000,
+  );
+  const stillOpen = post2.open[0];
+  assert(stillOpen && stillOpen.tp1Taken, 'TP1 taken');
+  assert(stillOpen.stop >= stillOpen.entry, 'stop moved to break-even after TP1');
+  assert(post2.cash > acct1.cash - post2.open[0].qty * post2.open[0].entry, 'TP1 proceeds returned to cash');
+
+  // 5) بيع/خروج يقفل المركز
+  const closedBySell = closeBySellSignal(post2, 'BTC', 101, 4000);
+  assert(closedBySell.open.length === 0, 'sell signal closes position');
+  assert(closedBySell.closed.length === 1, 'one closed trade from sell');
+
+  // 6) currentEquity = كاش + قيمة مفتوح (بعد TP1: ربح محقق + مركز مفتوح)
+  const eq = currentEquity(closedBySell, { BTC: 101 });
+  // حساب يدوي: رأس 10000، ربنا من TP1 + القيمة المتبقية والمقفلة عند البيع
+  assert(Number.isFinite(eq) && eq > 10000 && eq < 10300, `equity ~ 10142 after TP1 (got ${eq})`);
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

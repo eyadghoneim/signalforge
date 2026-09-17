@@ -86,6 +86,44 @@ export interface BotLogEntry {
   at: number;
 }
 
+export interface PaperPositionInfo {
+  id: string;
+  asset: SupportedAsset;
+  entry: number;
+  stop: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  qty: number;
+  qtyOpen: number;
+  pnlAccum: number;
+  openedAtSec: number;
+  tp1Taken: boolean;
+  tp2Taken: boolean;
+}
+
+export interface PaperTradeInfo {
+  id: string;
+  asset: SupportedAsset;
+  openedAt: number;
+  closedAt: number;
+  entry: number;
+  exitAvg: number;
+  qty: number;
+  pnlUsd: number;
+  reason: 'TP3' | 'SL' | 'SELL_SIGNAL';
+}
+
+export interface PaperAccountInfo {
+  startingEquity: number;
+  cash: number;
+  realizedPnl: number;
+  open: PaperPositionInfo[];
+  closed: PaperTradeInfo[];
+  equityCurve: { time: number; equity: number }[];
+  updatedAt: number;
+}
+
 export interface LiquidationEventInfo {
   time: number;
   posSide: 'long' | 'short';
@@ -153,6 +191,8 @@ export const api = {
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
   dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
+  paper: () => j<{ ok: true; account: PaperAccountInfo; initialEquity: number }>('/api/paper'),
+  resetPaper: () => j<{ ok: true }>('/api/paper/reset', { method: 'POST', body: '{}' }),
   liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {

@@ -11,6 +11,7 @@ import LearningPanel from './components/LearningPanel';
 import AttributionPanel from './components/AttributionPanel';
 import DexPanel from './components/DexPanel';
 import LiquidationPanel from './components/LiquidationPanel';
+import PaperPanel from './components/PaperPanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
@@ -221,6 +222,8 @@ export default function App() {
             {attribution && <AttributionPanel summary={attribution} lang={lang} />}
 
             <LiquidityCard regime={regime} lang={lang} />
+
+            <PaperPanel lang={lang} />
 
             <LiquidationPanel asset={activeAsset} lang={lang} />
 

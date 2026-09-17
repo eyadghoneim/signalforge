@@ -47,6 +47,18 @@ import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
 import { getWhaleNetflow } from './whaleAlert';
 import { getLiquidationRadar } from './liquidationRadar';
+import {
+  loadPaperAccount,
+  savePaperAccount,
+  resetPaperAccount,
+  markToMarket,
+  openBuy,
+  closeBySellSignal,
+  currentEquity,
+  PAPER_INITIAL_EQUITY,
+  type PaperAccount,
+  type PaperCandle,
+} from './paperTrading';
 import { invalidateCandleCache } from './marketData';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
 import { getHistoricalCandlesDeep } from './marketData';
@@ -173,6 +185,30 @@ app.get('/api/liquidations/:asset?', async (req, res) => {
   } catch (e) {
     return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
   }
+});
+
+// ─── المحفظة الورقية: قراءة الحالة الحية ───
+app.get('/api/paper', (_req, res) => {
+  res.json({
+    ok: true,
+    account: {
+      startingEquity: paperAccount.startingEquity,
+      cash: paperAccount.cash,
+      realizedPnl: paperAccount.realizedPnl,
+      open: paperAccount.open,
+      closed: paperAccount.closed.slice(-30).reverse(),
+      equityCurve: paperAccount.equityCurve,
+      updatedAt: paperAccount.updatedAt,
+    },
+    initialEquity: PAPER_INITIAL_EQUITY,
+  });
+});
+
+// إعادة ضبط الحساب الورقي (إجراء أدمن لأنه يمحو السجل)
+app.post('/api/paper/reset', requireAdmin, (_req, res) => {
+  paperAccount = resetPaperAccount();
+  appendLog('INFO', 'Paper trading account reset to $10,000');
+  res.json({ ok: true });
 });
 
 // خارطة السوق: كل الأصول في نظرة واحدة (سعر + تغير + توصية + تصفية سريعة)
@@ -429,6 +465,11 @@ let backgroundTimer: NodeJS.Timeout | null = null;
 const hysteresisState = new Map<SupportedAsset, HysteresisState>();
 let scanCycle = 0;
 
+// ─── المحفظة الورقية: حالة حية تُحمَّل من القرص عند الإقلاع ───
+let paperAccount: PaperAccount = loadPaperAccount();
+// آخر شموع 1h مكتملة لكل أصل (لتسيير الصفقات بدون تسرب داخل نفس الشمعة)
+const lastPaperCandles = new Map<SupportedAsset, PaperCandle>();
+
 async function runScanCycle(): Promise<void> {
   if (scanning) return;
   scanning = true;
@@ -538,6 +579,25 @@ async function runScanCycle(): Promise<void> {
         signalsNow.push(stored);
         appendLog('INFO', `${asset}: ${signal.signalType}${gateBlocked ? ` (${signal.regimeGateStatus})` : ''} @ ${signal.entryPrice}`);
 
+        // ─── المحفظة الورقية: فتح شراء / قفل على بيع ───
+        // نقيّم على آخر شمعة مكتملة فقط (نستبعد الشمعة الجارية لتجنب تسرب زمني).
+        const lastClosed = candles1h[candles1h.length - 2] ?? candles1h[candles1h.length - 1];
+        if (lastClosed) {
+          lastPaperCandles.set(asset, {
+            open: lastClosed.open,
+            high: lastClosed.high,
+            low: lastClosed.low,
+            close: lastClosed.close,
+            time: lastClosed.time,
+          });
+        }
+        if (!gateBlocked && signal.spotAction === 'SPOT_BUY') {
+          paperAccount = openBuy(paperAccount, signal, snapshot.atr14, Date.now());
+        } else if (!gateBlocked && signal.spotAction === 'SPOT_SELL_ALL') {
+          paperAccount = closeBySellSignal(paperAccount, asset, ticker.price, Date.now());
+        }
+        savePaperAccount(paperAccount);
+
         // إشعار تليجرام الذكي: نُعلن فقط عندما تتغيّر الصورة القابلة للتنفيذ
         // (توصية جديدة أو مختلفة عن آخر ما أُعلن)، لا مع كل مسح يتكرر نفس الحال.
         const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -568,6 +628,29 @@ async function runScanCycle(): Promise<void> {
       } catch (e) {
         appendLog('WARN', `Scan ${asset}: ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+
+    // ─── المحفظة الورقية: تسيير المراكز المفتوحة بآخر الأسعار والشموع المكتملة ───
+    try {
+      if (paperAccount.open.length > 0) {
+        const prices: Partial<Record<SupportedAsset, number>> = {};
+        for (const p of paperAccount.open) {
+          try {
+            const t = await getTicker(p.asset);
+            prices[p.asset] = t.price;
+          } catch {
+            // فشل مزود → نُبقي آخر سعر معروف
+          }
+        }
+        const candleMap: Partial<Record<SupportedAsset, PaperCandle>> = {};
+        for (const a of lastPaperCandles.keys()) {
+          candleMap[a] = lastPaperCandles.get(a) as PaperCandle;
+        }
+        paperAccount = markToMarket(paperAccount, prices, candleMap, Date.now());
+        savePaperAccount(paperAccount);
+      }
+    } catch {
+      // غير قاتل — المحاولة القادمة
     }
 
     // تحديث عدّاد الأداء (Attribution) للإشارات المفتوحة
