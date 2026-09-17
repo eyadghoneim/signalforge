@@ -86,6 +86,26 @@ export interface BotLogEntry {
   at: number;
 }
 
+export interface LiquidationEventInfo {
+  time: number;
+  posSide: 'long' | 'short';
+  side: 'buy' | 'sell';
+  price: number;
+  sizeUsd: number;
+}
+
+export interface LiquidationRadar {
+  asset: SupportedAsset;
+  longCount: number;
+  shortCount: number;
+  longSizeUsd: number;
+  shortSizeUsd: number;
+  tilt: number;
+  events: LiquidationEventInfo[];
+  source: string;
+  noteAr: string;
+}
+
 export interface DexPairInfo {
   chainId: string;
   dexId: string;
@@ -133,6 +153,7 @@ export const api = {
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
   dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
+  liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {
       method: 'POST',

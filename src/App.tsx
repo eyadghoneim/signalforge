@@ -10,6 +10,7 @@ import BacktestPanel from './components/BacktestPanel';
 import LearningPanel from './components/LearningPanel';
 import AttributionPanel from './components/AttributionPanel';
 import DexPanel from './components/DexPanel';
+import LiquidationPanel from './components/LiquidationPanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
@@ -220,6 +221,8 @@ export default function App() {
             {attribution && <AttributionPanel summary={attribution} lang={lang} />}
 
             <LiquidityCard regime={regime} lang={lang} />
+
+            <LiquidationPanel asset={activeAsset} lang={lang} />
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
               <ProviderDots providers={providers} lang={lang} />

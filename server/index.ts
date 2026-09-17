@@ -46,6 +46,7 @@ import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
 import { getWhaleNetflow } from './whaleAlert';
+import { getLiquidationRadar } from './liquidationRadar';
 import { invalidateCandleCache } from './marketData';
 import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
 import { getHistoricalCandlesDeep } from './marketData';
@@ -140,6 +141,40 @@ app.get('/api/market/summary', async (_req, res) => {
     }),
   );
   res.json({ ok: true, assets: results });
+});
+
+// رادار التصفية — بيانات حقيقية من OKX (بدون أرقام وهمية)
+app.get('/api/liquidations/:asset?', async (req, res) => {
+  const asset = String(req.query.asset || req.params.asset || 'BTC').toUpperCase() as SupportedAsset;
+  if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
+  try {
+    const radar = await getLiquidationRadar(asset);
+    return res.json({ ok: true, radar });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// خارطة السوق: كل الأصول في نظرة واحدة (سعر + تغير + توصية + تصفية سريعة)
+app.get('/api/market/map', async (_req, res) => {
+  const rows = await Promise.all(
+    SUPPORTED_ASSETS.map(async (asset) => {
+      try {
+        const t = await getTicker(asset);
+        return {
+          asset,
+          labelAr: ASSET_LABELS_AR[asset],
+          ok: true,
+          price: t.price,
+          change24h: t.change24h,
+          source: t.source,
+        };
+      } catch {
+        return { asset, labelAr: ASSET_LABELS_AR[asset], ok: false };
+      }
+    }),
+  );
+  res.json({ ok: true, rows });
 });
 
 app.get('/api/market/klines', async (req, res) => {
