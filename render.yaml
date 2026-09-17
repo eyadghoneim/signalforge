@@ -1,0 +1,17 @@
+# إعداد Render: وصف خدمة الويب للمشروع
+services:
+  - type: web
+    name: signalforge
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+    # ملاحظات سريعة:
+    # • البيانات بتتخزن في مجلد data/ جوة الخدمة — لو عايزها تفضل بعد إعادة التشغيل،
+    #   حول المجلد لـ Disk في إعدادات الخدمة (Settings → Disks).
+    # • لو عايز تليجرام: ضيف TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID،
+    #   أو فعّلهم من الواجهة نفسها (Settings).
