@@ -238,6 +238,14 @@ console.log('\n=== 4. رسائل تليجرام ===');
     assert(html.includes(String(sig.convictionScore)), 'الرسالة تحمل الدرجة');
     assert(html.includes('بحثية'), 'الرسالة تحمل إخلاء المسؤولية');
     assert(!html.includes('<script'), 'لا حقن سكريبت في الرسالة');
+
+    // الكشف الذكي: سطر "التوصية اتغيّرت" يظهر فقط عند تغيّر الفئة الفعلية.
+    const { verdictOf } = await import('../server/telegram');
+    const vNow = verdictOf(sig);
+    const changed = buildSignalMessageHtml(sig, vNow === 'BUY' ? 'SELL' : 'BUY');
+    assert(changed.includes('التوصية اتغيّرت'), 'عند اختلاف الفئة يظهر سطر الانتقال');
+    const same = buildSignalMessageHtml(sig, verdictOf(sig));
+    assert(!same.includes('التوصية اتغيّرت'), 'عند تطابق الفئة لا يظهر سطر الانتقال');
   }
 }
 

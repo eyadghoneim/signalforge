@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, Settings, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Globe, Settings, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { api, type SupportedAsset, type Signal, type StoredSignal, type TickerSummary, type AttributionSummary, type HealthInfo } from './api';
 import { SUPPORTED_ASSETS, ASSET_LABELS_AR } from '../shared/types';
 import PriceChart from './components/PriceChart';
@@ -11,11 +11,20 @@ import LearningPanel from './components/LearningPanel';
 import AttributionPanel from './components/AttributionPanel';
 import DexPanel from './components/DexPanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
+import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
 
 type Tab = 'history' | 'backtest' | 'learning' | 'dex' | 'settings';
 
 export default function App() {
+  const [lang, setLang] = useState<Lang>(() => {
+    try {
+      const saved = localStorage.getItem('sf.lang');
+      return saved === 'en' ? 'en' : 'ar';
+    } catch {
+      return 'ar';
+    }
+  });
   const [activeAsset, setActiveAsset] = useState<SupportedAsset>('BTC');
   const [summary, setSummary] = useState<TickerSummary[]>([]);
   const [signal, setSignal] = useState<Signal | null>(null);
@@ -29,6 +38,15 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(0);
   const hiddenRef = useRef(false);
+
+  useEffect(() => {
+    applyDocumentDir(lang);
+    try {
+      localStorage.setItem('sf.lang', lang);
+    } catch {
+      // ignore
+    }
+  }, [lang]);
 
   const refreshCore = useCallback(async () => {
     if (hiddenRef.current) return;
@@ -102,6 +120,8 @@ export default function App() {
     );
   };
 
+  const te = (key: Parameters<typeof t>[1]) => t(lang, key);
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       {/* ─── الترويسة ─── */}
@@ -115,7 +135,7 @@ export default function App() {
               <div className="text-base font-extrabold">
                 <span className="text-amber-400">SignalForge</span>
               </div>
-              <div className="text-[10px] text-zinc-500">منصة الإشارات الكمية — أداة بحثية</div>
+              <div className="text-[10px] text-zinc-500">{te('tagline')}</div>
             </div>
           </div>
 
@@ -126,11 +146,19 @@ export default function App() {
               <span dir="ltr">{lastUpdate ? new Date(lastUpdate).toLocaleTimeString('ar-EG') : '—'}</span>
             </div>
             <button
+              onClick={() => setLang((l) => (l === 'ar' ? 'en' : 'ar'))}
+              className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:border-emerald-400/50 hover:text-emerald-300"
+              title={lang === 'ar' ? 'English' : 'العربية'}
+            >
+              <Globe size={14} />
+              {lang === 'ar' ? 'EN' : 'عربي'}
+            </button>
+            <button
               onClick={() => setShowSettings(true)}
               className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:border-amber-400/50 hover:text-amber-300"
             >
               <Settings size={14} />
-              الإعدادات
+              {te('settings')}
             </button>
           </div>
         </div>
@@ -143,13 +171,13 @@ export default function App() {
             <PriceChart asset={activeAsset} />
             {signalError ? (
               <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-5 text-sm text-rose-300">
-                تعذر جلب الإشارة: {signalError}
+                {te('signalError')}: {signalError}
                 <button onClick={() => void refreshCore()} className="mr-3 rounded-lg border border-rose-400/40 px-2 py-0.5 text-xs hover:bg-rose-500/10">
-                  إعادة المحاولة
+                  {te('retry')}
                 </button>
               </div>
             ) : signal ? (
-              <SignalCard signal={signal} />
+              <SignalCard signal={signal} lang={lang} />
             ) : (
               <div className="h-64 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/40" />
             )}
@@ -160,46 +188,46 @@ export default function App() {
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-300">
                 <ShieldCheck size={16} className="text-amber-400" />
-                حالة المحرك
+                {te('engineStatus')}
               </div>
               <div className="space-y-2 text-xs text-zinc-400">
                 <div className="flex justify-between">
-                  <span>النسخة</span>
+                  <span>{te('version')}</span>
                   <span className="font-mono text-zinc-200" dir="ltr">v{health?.version ?? '…'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>آخر مسح آلي</span>
+                  <span>{te('lastScan')}</span>
                   <span dir="ltr" className="text-zinc-200">
-                    {health?.lastScanAt ? new Date(health.lastScanAt).toLocaleTimeString('ar-EG') : 'قيد الانتظار…'}
+                    {health?.lastScanAt ? new Date(health.lastScanAt).toLocaleTimeString('ar-EG') : te('waiting')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>الأصل النشط</span>
+                  <span>{te('activeAsset')}</span>
                   <span className="text-zinc-200">{ASSET_LABELS_AR[activeAsset]}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>مصدر البيانات</span>
+                  <span>{te('dataSource')}</span>
                   <span className={signal?.dataSource === 'STALE' ? 'text-amber-400' : 'text-emerald-400'}>
-                    {signal?.dataSource === 'STALE' ? 'متأخرة' : signal ? 'حيّة' : '—'}
+                    {signal?.dataSource === 'STALE' ? te('stale') : signal ? te('live') : '—'}
                   </span>
                 </div>
               </div>
               <p className="mt-3 border-t border-zinc-800 pt-3 text-[11px] leading-5 text-zinc-500">
-                كل إشارة (الممنوعة كذلك) تُحفظ وتُتابع تلقائياً: هل TP1 يضرب قبل وقف الخسارة؟ — عشان نعرف مين من المؤشرات بيكسب فعلاً.
+                {te('engineNote')}
               </p>
             </div>
 
-            {attribution && <AttributionPanel summary={attribution} />}
+            {attribution && <AttributionPanel summary={attribution} lang={lang} />}
 
-            <LiquidityCard regime={regime} />
+            <LiquidityCard regime={regime} lang={lang} />
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-              <ProviderDots providers={providers} />
+              <ProviderDots providers={providers} lang={lang} />
             </div>
 
             {/* إخلاء مسؤولية */}
             <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] leading-5 text-amber-200/70">
-              ⚠️ هذه منظومة بحثية ومحاكاة فقط — ليست نصيحة استثمارية. نتائج الباك تست التاريخية لا تضمن أي أداء مستقبلي. التنفيذ الحي معطل بالتصميم.
+              ⚠️ {te('disclaimer')}
             </div>
           </aside>
         </div>
@@ -208,11 +236,11 @@ export default function App() {
         <div className="mt-6">
           <div className="flex gap-2 border-b border-zinc-800">
             {([
-              ['history', 'سجل الإشارات'],
-              ['backtest', 'الباك تست'],
-              ['settings', 'الإعدادات'],
-              ['dex', 'سيولة DEX'],
-              ['learning', 'Learning'],
+              ['history', te('tabHistory')],
+              ['backtest', te('tabBacktest')],
+              ['settings', te('tabSettings')],
+              ['dex', te('tabDex')],
+              ['learning', te('tabLearning')],
             ] as [Tab, string][]).map(([key, label]) => (
               <button
                 key={key}
@@ -241,7 +269,7 @@ export default function App() {
           <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <SettingsPanel onSaved={() => void refreshCore()} />
             <button onClick={() => setShowSettings(false)} className="mt-4 w-full rounded-xl border border-zinc-800 py-2 text-sm font-bold text-zinc-400 hover:text-zinc-200">
-              إغلاق
+              {te('close')}
             </button>
           </div>
         </div>

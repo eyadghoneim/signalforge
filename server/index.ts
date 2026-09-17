@@ -38,7 +38,7 @@ import {
   appendLesson,
   listLessons,
 } from './persistence';
-import { buildSignalMessageHtml, buildTestMessageHtml, sendTelegramMessage } from './telegram';
+import { buildSignalMessageHtml, buildTestMessageHtml, sendTelegramMessage, verdictOf, verdictLabel } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
@@ -363,6 +363,8 @@ let scanning = false;
 let consecutiveScanFailures = 0;
 let lastFailureAlertAt = 0;
 const lastTelegramSentAt = new Map<SupportedAsset, number>();
+// آخر توصية تم الإعلان عنها لكل عملة — نعلن فقط عند تغيّر الصورة، فلا تتكرر الرسائل سدى.
+const lastAnnouncedVerdict = new Map<SupportedAsset, import('./telegram').VerdictClass>();
 let lastBreakerAlertDay = 0;
 let backgroundTimer: NodeJS.Timeout | null = null;
 
@@ -479,15 +481,31 @@ async function runScanCycle(): Promise<void> {
         signalsNow.push(stored);
         appendLog('INFO', `${asset}: ${signal.signalType}${gateBlocked ? ` (${signal.regimeGateStatus})` : ''} @ ${signal.entryPrice}`);
 
-        // إشعار تليجرام للإشارات القابلة للتنفيذ فقط
+        // إشعار تليجرام الذكي: نُعلن فقط عندما تتغيّر الصورة القابلة للتنفيذ
+        // (توصية جديدة أو مختلفة عن آخر ما أُعلن)، لا مع كل مسح يتكرر نفس الحال.
         const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
         const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
         const now = Date.now();
         const lastSent = lastTelegramSentAt.get(asset) || 0;
-        if (config.telegramEnabled && eligible && token && chatId && now - lastSent > TELEGRAM_COOLDOWN_MS) {
-          const sendResult = await sendTelegramMessage(token, chatId, buildSignalMessageHtml(signal));
+        const vNow = verdictOf(signal);
+        const vPrev = lastAnnouncedVerdict.get(asset) ?? null;
+        const verdictChanged = vPrev !== vNow;
+        const cooldownOk = now - lastSent > TELEGRAM_COOLDOWN_MS;
+        // نُعلن دائمًا عن توصية قابلة للتنفيذ (BUY/SELL) إن تغيّرت؛ أما البوابات
+        // والتكرار فيخضعان لفحص التغيّر + التهدئة.
+        const shouldSend =
+          config.telegramEnabled &&
+          token &&
+          chatId &&
+          verdictChanged &&
+          (eligible ? true : cooldownOk); // gate-blocked transitions also respect cooldown
+        if (shouldSend) {
+          const sendResult = await sendTelegramMessage(token, chatId, buildSignalMessageHtml(signal, vPrev));
           markTelegramSent(stored.id, sendResult.ok);
-          if (sendResult.ok) lastTelegramSentAt.set(asset, now);
+          if (sendResult.ok) {
+            lastTelegramSentAt.set(asset, now);
+            lastAnnouncedVerdict.set(asset, vNow);
+          }
           appendLog(sendResult.ok ? 'INFO' : 'WARN', `Telegram ${asset}: ${sendResult.ok ? 'sent' : sendResult.error}`);
         }
       } catch (e) {
@@ -553,14 +571,25 @@ function scheduleNextScan(delayMs?: number): void {
 
 function buildDailyDigestHtml(): string {
   const summary = computeAttributionSummary(listSignals(500));
-  const recent = listSignals(15);
-  const actionable = recent.filter((s) => !s.isGateBlocked);
-  const blocked = recent.filter((s) => s.isGateBlocked);
+  const all = listSignals(500);
   const lines = [
     '📊 <b>[التقرير اليومي — SignalForge]</b>',
     '',
-    `<b>آخر 24 ساعة:</b> ${actionable.length} إشارة قابلة للتنفيذ، ${blocked.length} محجوبة ببوابات المخاطر`,
+    '<b>الموقف الحالي لكل أصل:</b>',
   ];
+  // آخر إشارة محفوظة لكل أصل = موقفه الحالي (توصية صريحة).
+  for (const asset of SUPPORTED_ASSETS) {
+    const last = all.find((s) => s.asset === asset);
+    if (!last) {
+      lines.push(`• ${ASSET_LABELS_AR[asset]}: — لا توجد إشارات بعد`);
+      continue;
+    }
+    const v = verdictOf(last);
+    const gate = v === 'GATED' ? ` (${last.regimeGateStatus.replace(/_/g, ' ')})` : '';
+    lines.push(`• ${ASSET_LABELS_AR[asset]}: ${verdictLabel(v)}${gate} @ ${last.entryPrice ? `$${last.entryPrice.toLocaleString('en-US')}` : '—'}`);
+  }
+  const actionableToday = all.filter((s) => !s.isGateBlocked && s.spotAction !== 'SPOT_HOLD').length;
+  lines.push('', `<b>إشارات قابلة للتنفيذ في السجل:</b> ${actionableToday}`);
   if (summary.resolved > 0) {
     lines.push(
       `<b>الإجمالي المُتتبع:</b> ${summary.resolved} محسومة — نجاح ${summary.winRatePercent ?? 0}% (TP1 قبل الوقف: ${summary.tp1First}، وقف أولاً: ${summary.slFirst})`,

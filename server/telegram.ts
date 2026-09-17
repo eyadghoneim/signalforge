@@ -42,7 +42,21 @@ function fmtUsd(v: number): string {
   return Number.isFinite(v) ? `$${v.toLocaleString('en-US')}` : '—';
 }
 
-export function buildSignalMessageHtml(s: Signal): string {
+// فئة التوصية الواحدة — تُستخدم في "تغيّرت التوصية" وفي التقرير اليومي.
+export type VerdictClass = 'BUY' | 'SELL' | 'GATED' | 'HOLD';
+
+export function verdictOf(s: { regimeGateStatus: string; spotAction: string }): VerdictClass {
+  if (s.regimeGateStatus !== 'CLEAR') return 'GATED';
+  if (s.spotAction === 'SPOT_BUY') return 'BUY';
+  if (s.spotAction === 'SPOT_SELL_ALL') return 'SELL';
+  return 'HOLD';
+}
+
+export function verdictLabel(v: VerdictClass): string {
+  return v === 'BUY' ? '🟢 شراء' : v === 'SELL' ? '🔴 بيع' : v === 'GATED' ? '🟠 ممنوع الدخول' : '⚪ انتظار';
+}
+
+export function buildSignalMessageHtml(s: Signal, changedFrom?: VerdictClass | null): string {
   const isUrgent = s.spotAction === 'SPOT_BUY' || s.spotAction === 'SPOT_SELL_ALL';
   const badge = isUrgent ? '🚨 <b>[إشارة تداول فورية]</b>' : 'ℹ️ <b>[تحديث فني]</b>';
   const typeLine =
@@ -68,6 +82,11 @@ export function buildSignalMessageHtml(s: Signal): string {
     `<b>درجة القناعة:</b> ${s.convictionScore}/100`,
     `<b>السعر الحالي:</b> ${fmtUsd(s.entryPrice)}`,
   ];
+
+  // لو التوصية اتغيّرت فعلًا، نوضّح الانتقال بشفافية.
+  if (changedFrom && changedFrom !== verdictOf(s)) {
+    lines.splice(2, 0, `🔁 <b>التوصية اتغيّرت:</b> ${verdictLabel(changedFrom)} ← ${verdictLabel(verdictOf(s))}`);
+  }
 
   if (s.spotAction === 'SPOT_BUY') {
     lines.push(
