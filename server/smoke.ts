@@ -37,7 +37,7 @@ async function main(): Promise<void> {
   }
 
   const summary = await j('/api/market/summary');
-  check('market summary: 4 assets', summary.json?.ok === true && summary.json?.assets?.length === 4, `got ${summary.json?.assets?.length}`);
+  check('market summary: 7 assets', summary.json?.ok === true && summary.json?.assets?.length === 7, `got ${summary.json?.assets?.length}`);
 
   const sig = await j('/api/signal/BTC');
   const s = sig.json?.signal;

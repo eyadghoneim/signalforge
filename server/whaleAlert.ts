@@ -13,7 +13,7 @@ const WHALE_TTL_MS = 10 * 60_000;
 const WHALE_MIN_VALUE_USD = 1_000_000;
 const WINDOW_SECONDS = 3600;
 
-const WHALE_SYMBOLS: Record<string, string> = { BTC: 'btc', ETH: 'eth', PAXG: 'paxg', SOL: 'sol' };
+const WHALE_SYMBOLS: Record<string, string> = { BTC: 'btc', ETH: 'eth', PAXG: 'paxg', SOL: 'sol', XRP: 'xrp', DOGE: 'doge', ADA: 'ada' };
 
 function whaleAdjustmentInner(netInflowUsd: number): number {
   const abs = Math.abs(netInflowUsd);
