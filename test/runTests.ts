@@ -1029,6 +1029,65 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   assert(Number.isFinite(eq) && eq > 10000 && eq < 10300, `equity ~ 10142 after TP1 (got ${eq})`);
 }
 
+console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (Telegram) ===');
+{
+  const { defaultPaperAccount, openBuy, snapshotPaperAccount, diffPaperEvents } = await import('../server/paperTrading');
+  const { buildPaperEventHtml } = await import('../server/telegram');
+
+  // 1) فتح مركز → حدث OPENED
+  const a0 = defaultPaperAccount();
+  const sig = {
+    asset: 'ETH' as const, engineSignature: 't', convictionScore: 80,
+    signalType: 'STRONG_BUY' as const, spotAction: 'SPOT_BUY' as const,
+    entryPrice: 2000, stopLoss: 1990, target1: 2020, target2: 2040, target3: 2060,
+    riskRewardRatio: 2, regimeGateStatus: 'CLEAR' as const, reasons: [],
+    summaryAr: 't', generatedAt: 0, dedupHash: 'pw', dataSource: 'LIVE' as const, htfAvailable: true,
+  };
+  const before = snapshotPaperAccount(a0);
+  const afterOpen = openBuy(a0, sig, 20, 1000);
+  const evs1 = diffPaperEvents(before, afterOpen);
+  assert(evs1.length === 1 && evs1[0].kind === 'OPENED' && evs1[0].asset === 'ETH', 'open → OPENED event');
+  const htmlAr = buildPaperEventHtml({ kind: 'OPENED', asset: 'ETH', qty: 2.5, entry: 2000 }, 'ar');
+  assert(htmlAr.includes('المحفظة الورقية') && htmlAr.includes('ETH'), 'open message in Arabic');
+  const htmlEn = buildPaperEventHtml({ kind: 'OPENED', asset: 'ETH', qty: 2.5, entry: 2000 }, 'en');
+  assert(htmlEn.includes('Paper wallet') && htmlEn.includes('Position opened'), 'open message in English');
+
+  // 2) جني TP1 → حدث TP1
+  const b0 = openBuy(defaultPaperAccount(), sig, 20, 1000);
+  const bBefore = snapshotPaperAccount(b0);
+  const bWork = snapshotPaperAccount(b0); // نسخة مستقلة عشان markToMarket بتعدّل في المكان
+  const afterTp1 = (await import('../server/paperTrading')).markToMarket(
+    bWork,
+    { ETH: 2010 },
+    { ETH: { open: 2000, high: 2021, low: 1995, close: 2010, time: 2000 } },
+    3000,
+  );
+  const evs2 = diffPaperEvents(bBefore, afterTp1);
+  assert(evs2.some((e) => e.kind === 'TP1'), 'TP1 hit → TP1 event');
+  const htmlTp1 = buildPaperEventHtml({ kind: 'TP1', asset: 'ETH', entry: 2000, pnlUsd: 10 }, 'ar');
+  assert(htmlTp1.includes('TP1') && htmlTp1.includes('+10.00'), 'TP1 message carries realized P&L');
+
+  // 3) قفل بوقف الخسارة → حدث CLOSED بخسارة
+  const c0 = openBuy(defaultPaperAccount(), sig, 20, 1000);
+  const cBefore = snapshotPaperAccount(c0);
+  const cWork = snapshotPaperAccount(c0);
+  const afterSl = (await import('../server/paperTrading')).markToMarket(
+    cWork,
+    { ETH: 1985 },
+    { ETH: { open: 1999, high: 2000, low: 1984, close: 1985, time: 2000 } },
+    3000,
+  );
+  const evs3 = diffPaperEvents(cBefore, afterSl);
+  const closedEv = evs3.find((e) => e.kind === 'CLOSED');
+  assert(closedEv && closedEv.kind === 'CLOSED' && closedEv.trade?.reason === 'SL', 'stop → CLOSED with reason SL');
+  const htmlSl = buildPaperEventHtml(
+    { kind: 'CLOSED', asset: 'ETH', exitAvg: 1989, pnlUsd: -12.5, reason: 'SL' },
+    'en',
+  );
+  assert(htmlSl.includes('-12.50') && htmlSl.includes('SL'), 'closed message carries negative P&L and reason');
+  assert(htmlSl.includes('Reason'), 'closed message in English');
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

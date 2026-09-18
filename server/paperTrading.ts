@@ -276,3 +276,42 @@ export function resetPaperAccount(): PaperAccount {
   savePaperAccount(fresh);
   return fresh;
 }
+
+/** لقطة سطحية مستقلة — تُستخدم قبل أي تعديل لحساب الفرق (diff) الصحيح للأحداث. */
+export function snapshotPaperAccount(acct: PaperAccount): PaperAccount {
+  return {
+    ...acct,
+    open: acct.open.map((p) => ({ ...p })),
+    closed: acct.closed.slice(),
+    equityCurve: acct.equityCurve.slice(),
+  };
+}
+
+// ─── أحداث المحفظة (لتنبيهات تليجرام) ───
+// نستنتج الأحداث بفرق الحالتين (قبل/بعد) بدل ربط أكواد غير ضرورية في منطق التسيير.
+export type PaperEvent =
+  | { kind: 'OPENED'; asset: SupportedAsset; pos: PaperPosition }
+  | { kind: 'TP1'; asset: SupportedAsset; pos: PaperPosition }
+  | { kind: 'TP2'; asset: SupportedAsset; pos: PaperPosition }
+  | { kind: 'CLOSED'; asset: SupportedAsset; trade?: PaperTrade; posBefore?: PaperPosition };
+
+export function diffPaperEvents(before: PaperAccount, after: PaperAccount): PaperEvent[] {
+  const events: PaperEvent[] = [];
+  const beforeOpen = new Map(before.open.map((p) => [p.id, p] as const));
+  const afterOpen = new Map(after.open.map((p) => [p.id, p] as const));
+
+  for (const [id, b] of beforeOpen) {
+    const a = afterOpen.get(id);
+    if (!a) {
+      const trade = after.closed.find((t) => t.id === id);
+      events.push({ kind: 'CLOSED', asset: b.asset, trade, posBefore: b });
+      continue;
+    }
+    if (!b.tp1Taken && a.tp1Taken) events.push({ kind: 'TP1', asset: a.asset, pos: a });
+    if (!b.tp2Taken && a.tp2Taken) events.push({ kind: 'TP2', asset: a.asset, pos: a });
+  }
+  for (const [id, a] of afterOpen) {
+    if (!beforeOpen.has(id)) events.push({ kind: 'OPENED', asset: a.asset, pos: a });
+  }
+  return events;
+}

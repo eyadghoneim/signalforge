@@ -118,3 +118,68 @@ export function buildTestMessageHtml(): string {
     '<i>أداة بحثية — ليست نصيحة استثمارية.</i>',
   ].join('\n');
 }
+
+// ─── إشعارات أحداث المحفظة الورقية (عربي / إنجليزي) ───
+export type PaperEventKind = 'OPENED' | 'TP1' | 'TP2' | 'CLOSED';
+export type TelegramLang = 'ar' | 'en';
+
+interface PaperEventShape {
+  kind: PaperEventKind;
+  asset: string;
+  qty?: number;
+  entry?: number;
+  exitAvg?: number;
+  pnlUsd?: number;
+  reason?: string;
+}
+
+const PCT: Record<PaperEventKind, { ar: string; en: string; emoji: string }> = {
+  OPENED: { ar: 'فتح صفقة جديدة', en: 'Position opened', emoji: '🔵' },
+  TP1: { ar: 'جني الهدف الأول (TP1) — 50%', en: 'TP1 taken — 50% scaled out', emoji: '✅' },
+  TP2: { ar: 'جني الهدف الثاني (TP2) — 30%', en: 'TP2 taken — 30% scaled out', emoji: '✅' },
+  CLOSED: { ar: 'قفل الصفقة', en: 'Position closed', emoji: '🔻' },
+};
+
+export function buildPaperEventHtml(ev: PaperEventShape, lang: TelegramLang): string {
+  const L = PCT[ev.kind];
+  const ar = lang === 'ar';
+  const lines: string[] = [];
+  lines.push(ar ? `🧾 <b>[المحفظة الورقية]</b> ${L.emoji} ${L.ar}` : `🧾 <b>[Paper wallet]</b> ${L.emoji} ${L.en}`);
+  lines.push('');
+  lines.push(ar ? `<b>الأصل:</b> ${esc(ev.asset)}` : `<b>Asset:</b> ${esc(ev.asset)}`);
+
+  if (ev.kind === 'OPENED') {
+    if (ev.qty !== undefined) lines.push(ar ? `<b>الكمية:</b> ${roundQty(ev.qty)}` : `<b>Qty:</b> ${roundQty(ev.qty)}`);
+    if (ev.entry !== undefined) lines.push(ar ? `<b>الدخول:</b> ${fmtUsd(ev.entry)}` : `<b>Entry:</b> ${fmtUsd(ev.entry)}`);
+  }
+
+  if (ev.kind === 'TP1' || ev.kind === 'TP2') {
+    if (ev.entry !== undefined) lines.push(ar ? `<b>الدخول:</b> ${fmtUsd(ev.entry)}` : `<b>Entry:</b> ${fmtUsd(ev.entry)}`);
+    if (ev.pnlUsd !== undefined) {
+      const sign = ev.pnlUsd >= 0 ? '+' : '';
+      lines.push(ar ? `<b>المحصَّل حتى الآن:</b> 🟢 ${sign}${ev.pnlUsd.toFixed(2)}` : `<b>Realized so far:</b> 🟢 ${sign}${ev.pnlUsd.toFixed(2)}`);
+    }
+  }
+
+  if (ev.kind === 'CLOSED') {
+    if (ev.exitAvg !== undefined) lines.push(ar ? `<b>متوسط الخروج:</b> ${fmtUsd(ev.exitAvg)}` : `<b>Avg exit:</b> ${fmtUsd(ev.exitAvg)}`);
+    if (ev.reason) {
+      const reasonAr = ev.reason === 'TP3' ? 'الهدف الثالث' : ev.reason === 'SL' ? 'وقف الخسارة' : 'إشارة بيع';
+      lines.push(ar ? `<b>السبب:</b> ${reasonAr}` : `<b>Reason:</b> ${esc(ev.reason)}`);
+    }
+    if (ev.pnlUsd !== undefined) {
+      const sign = ev.pnlUsd >= 0 ? '+' : '';
+      const cls = ev.pnlUsd >= 0 ? '🟢' : '🔴';
+      lines.push(ar ? `<b>الربح/الخسارة:</b> ${cls} ${sign}${ev.pnlUsd.toFixed(2)}` : `<b>P&L:</b> ${cls} ${sign}${ev.pnlUsd.toFixed(2)}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(`<i>${ar ? 'SignalForge — محاكاة بحثية، ليست نصيحة استثمارية.' : 'SignalForge — research simulation, not investment advice.'}</i>`);
+  return lines.join('\n');
+}
+
+function roundQty(v: number): string {
+  if (!Number.isFinite(v)) return '—';
+  return v >= 1 ? v.toFixed(2) : v.toFixed(6);
+}

@@ -41,6 +41,8 @@ export const DEFAULT_CONFIG: BotConfig = {
   adminToken: '',
   regimeEnabled: true,
   digestEnabled: true,
+  paperAlertsEnabled: true,
+  telegramLang: 'ar',
   protection: DEFAULT_PROTECTION,
 };
 

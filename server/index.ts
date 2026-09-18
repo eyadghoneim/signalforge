@@ -38,7 +38,7 @@ import {
   appendLesson,
   listLessons,
 } from './persistence';
-import { buildSignalMessageHtml, buildTestMessageHtml, sendTelegramMessage, verdictOf, verdictLabel } from './telegram';
+import { buildSignalMessageHtml, buildTestMessageHtml, buildPaperEventHtml, sendTelegramMessage, verdictOf, verdictLabel } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
@@ -55,6 +55,8 @@ import {
   openBuy,
   closeBySellSignal,
   currentEquity,
+  snapshotPaperAccount,
+  diffPaperEvents,
   PAPER_INITIAL_EQUITY,
   type PaperAccount,
   type PaperCandle,
@@ -398,6 +400,8 @@ app.get('/api/config', (_req, res) => {
       adminRequired: Boolean(config.adminToken || process.env.BOT_ADMIN_TOKEN),
       regimeEnabled: config.regimeEnabled,
       digestEnabled: config.digestEnabled,
+      paperAlertsEnabled: config.paperAlertsEnabled,
+      telegramLang: config.telegramLang,
       protection: config.protection,
     },
   });
@@ -412,6 +416,8 @@ app.post('/api/config', requireAdmin, (req, res) => {
   if (typeof body.telegramEnabled === 'boolean') patch.telegramEnabled = body.telegramEnabled;
   if (typeof body.regimeEnabled === 'boolean') patch.regimeEnabled = body.regimeEnabled;
   if (typeof body.digestEnabled === 'boolean') patch.digestEnabled = body.digestEnabled;
+  if (typeof body.paperAlertsEnabled === 'boolean') patch.paperAlertsEnabled = body.paperAlertsEnabled;
+  if (body.telegramLang === 'ar' || body.telegramLang === 'en') patch.telegramLang = body.telegramLang;
   if (typeof body.telegramToken === 'string' && body.telegramToken.trim()) patch.telegramToken = body.telegramToken.trim();
   if (typeof body.telegramChatId === 'string' && body.telegramChatId.trim()) patch.telegramChatId = body.telegramChatId.trim();
   if (body.gates && typeof body.gates === 'object') {
@@ -502,6 +508,8 @@ async function runScanCycle(): Promise<void> {
         void sendTelegramMessage(btToken, btChat, '<b>Circuit breaker</b>: ' + breaker.realizedR + 'R today (limit -' + breaker.limit + 'R). New BUY signals paused until 00:00 UTC.');
       }
     }
+    // لقطة المحفظة قبل تغييرات هذه الدورة — لنشتق أحداث فتح/جني/قفل بدقة.
+    const paperBefore = snapshotPaperAccount(paperAccount);
     for (const asset of SUPPORTED_ASSETS) {
       try {
         const [candles1h, candles4h, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
@@ -651,6 +659,44 @@ async function runScanCycle(): Promise<void> {
       }
     } catch {
       // غير قاتل — المحاولة القادمة
+    }
+
+    // ─── إشعارات أحداث المحفظة الورقية (فتح / جني TP / قفل) ───
+    try {
+      const paperAfter = snapshotPaperAccount(paperAccount);
+      const events = diffPaperEvents(paperBefore, paperAfter);
+      if (events.length > 0 && config.paperAlertsEnabled) {
+        const pwToken = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
+        const pwChat = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
+        if (config.telegramEnabled && pwToken && pwChat) {
+          const tgLang = config.telegramLang ?? 'ar';
+          for (const ev of events) {
+            let html = '';
+            if (ev.kind === 'OPENED') {
+              html = buildPaperEventHtml({ kind: 'OPENED', asset: ev.asset, qty: ev.pos.qty, entry: ev.pos.entry }, tgLang);
+            } else if (ev.kind === 'TP1' || ev.kind === 'TP2') {
+              html = buildPaperEventHtml({ kind: ev.kind, asset: ev.asset, entry: ev.pos.entry, pnlUsd: ev.pos.pnlAccum }, tgLang);
+            } else {
+              html = buildPaperEventHtml(
+                {
+                  kind: 'CLOSED',
+                  asset: ev.asset,
+                  exitAvg: ev.trade?.exitAvg,
+                  pnlUsd: ev.trade?.pnlUsd,
+                  reason: ev.trade?.reason,
+                },
+                tgLang,
+              );
+            }
+            const pwResult = await sendTelegramMessage(pwToken, pwChat, html);
+            if (!pwResult.ok) {
+              appendLog('WARN', `Paper alert ${ev.kind} ${ev.asset}: ${pwResult.error ?? 'failed'}`);
+            }
+          }
+        }
+      }
+    } catch {
+      // إشعارات المحفظة غير قاتلة — لا توقف المسح
     }
 
     // تحديث عدّاد الأداء (Attribution) للإشارات المفتوحة

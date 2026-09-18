@@ -110,6 +110,8 @@ export interface BotConfig {
   regimeEnabled: boolean;
   protection: ProtectionConfig;
   digestEnabled: boolean;
+  paperAlertsEnabled: boolean;
+  telegramLang: 'ar' | 'en';
 }
 
 // ─── تقارير الأداء والباك تست (مشتركة بين السيرفر والواجهة) ───

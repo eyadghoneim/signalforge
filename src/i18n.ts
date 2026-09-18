@@ -203,6 +203,11 @@ const DICT = {
     setSaved: 'حُفظت الإعدادات — المسح الآلي هيلتقطها في الدورة القادمة',
     setTestOk: '✅ وصلت رسالة الاختبار لتليجرام — الربط سليم',
     setTestFail: 'فشل الاختبار:',
+    setPaperAlerts: 'إشعارات المحفظة الورقية',
+    setPaperAlertsDesc: 'فتح صفقة، جني TP1/TP2، قفل الصفقة بالربح/الخسارة — على تليجرام وقت ما تحصل',
+    setTelegramLang: 'لغة رسائل تليجرام',
+    langArabic: 'العربية',
+    langEnglish: 'English',
   },
   en: {
     // شريط علوي
@@ -403,6 +408,11 @@ const DICT = {
     setSaved: 'Settings saved — the auto-scan will pick them up next cycle',
     setTestOk: '✅ Test message reached Telegram — link is healthy',
     setTestFail: 'Test failed:',
+    setPaperAlerts: 'Paper wallet alerts',
+    setPaperAlertsDesc: 'Position opened, TP1/TP2 taken, position closed with P&L — sent to Telegram when they happen',
+    setTelegramLang: 'Telegram message language',
+    langArabic: 'العربية',
+    langEnglish: 'English',
   },
 } as const;
 

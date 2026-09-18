@@ -12,6 +12,8 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
   const [enabled, setEnabled] = useState(false);
   const [regimeEnabled, setRegimeEnabled] = useState(true);
   const [digestEnabled, setDigestEnabled] = useState(true);
+  const [paperAlertsEnabled, setPaperAlertsEnabled] = useState(true);
+  const [telegramLang, setTelegramLang] = useState<'ar' | 'en'>('ar');
   const [dailyLossLimitR, setDailyLossLimitR] = useState(3);
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [expiryHours, setExpiryHours] = useState(3);
@@ -33,6 +35,8 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
         setEnabled(res.config.telegramEnabled);
         setRegimeEnabled(res.config.regimeEnabled);
         setDigestEnabled(res.config.digestEnabled);
+        setPaperAlertsEnabled(res.config.paperAlertsEnabled);
+        setTelegramLang(res.config.telegramLang ?? 'ar');
         if (res.config.protection) {
           setDailyLossLimitR(res.config.protection.dailyLossLimitR);
           setMaxConcurrent(res.config.protection.maxConcurrentSignals);
@@ -58,6 +62,8 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
         telegramEnabled: enabled,
         regimeEnabled,
         digestEnabled,
+        paperAlertsEnabled,
+        telegramLang,
         gates,
         protection: {
           dailyLossLimitR,
@@ -134,6 +140,28 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
             </div>
             <input type="checkbox" checked={digestEnabled} onChange={(e) => setDigestEnabled(e.target.checked)} className="mt-1 h-4 w-4 accent-amber-400" />
           </label>
+
+          <label className="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+            <div>
+              <div className="text-xs font-bold text-zinc-200">{t(lang, 'setPaperAlerts')}</div>
+              <div className="text-[10px] leading-4 text-zinc-500">{t(lang, 'setPaperAlertsDesc')}</div>
+            </div>
+            <input type="checkbox" checked={paperAlertsEnabled} onChange={(e) => setPaperAlertsEnabled(e.target.checked)} className="mt-1 h-4 w-4 accent-amber-400" />
+          </label>
+
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+            <div>
+              <div className="text-xs font-bold text-zinc-200">{t(lang, 'setTelegramLang')}</div>
+            </div>
+            <select
+              value={telegramLang}
+              onChange={(e) => setTelegramLang(e.target.value === 'en' ? 'en' : 'ar')}
+              className="rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200"
+            >
+              <option value="ar">{t(lang, 'langArabic')}</option>
+              <option value="en">{t(lang, 'langEnglish')}</option>
+            </select>
+          </div>
 
           <div>
             <div className="mb-1 text-[11px] font-bold text-zinc-400">Bot Token</div>

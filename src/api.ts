@@ -69,6 +69,8 @@ export interface ConfigInfo {
   adminRequired: boolean;
   regimeEnabled: boolean;
   digestEnabled: boolean;
+  paperAlertsEnabled: boolean;
+  telegramLang: 'ar' | 'en';
   protection: ProtectionConfig;
 }
 
@@ -184,6 +186,8 @@ export const api = {
     telegramChatId?: string;
     regimeEnabled?: boolean;
     digestEnabled?: boolean;
+    paperAlertsEnabled?: boolean;
+    telegramLang?: 'ar' | 'en';
     gates?: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean };
     protection?: Partial<ProtectionConfig>;
   }) => j<{ ok: true }>('/api/config', { method: 'POST', body: JSON.stringify(body) }),
