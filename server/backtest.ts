@@ -14,7 +14,7 @@ import {
   relativeVolume,
   type IndicatorSnapshot,
 } from '../shared/indicators';
-import { computeRiskTargets, STRATEGY_RISK_MULTIPLIERS } from '../shared/strategyConstants';
+import { computeRiskTargets, STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
 import { computePerformanceStats } from './performance';
 import { buildSignal } from './signalEngine';
 
@@ -204,9 +204,12 @@ export function runBacktest(
           recordAndClose(pos, avgExit, 'TP3', candle.time, pos.realizedPnl);
         }
       }
-      // Trailing stop after TP2: lock in profits as price extends (2x entry ATR below peak).
+      // freqtrade-style active trailing after TP2: wait for 1×ATR profit, then
+      // follow the peak with 2×ATR margin, tightening to 1×ATR above 2×ATR profit.
       if (position && position.tp2Taken) {
-        position.stop = computeTrailingStop(position.stop, position.trailPeak, candle.high, position.trailAtr);
+        if (trailingActivated(position.entry, candle.high, position.trailAtr)) {
+          position.stop = computeTrailingStop(position.stop, position.trailPeak, candle.high, position.trailAtr, 2, position.entry);
+        }
         position.trailPeak = Math.max(position.trailPeak, candle.high);
       }
     }
@@ -415,7 +418,11 @@ export function runRobustness(
 }
 
 /**
- * Pure trailing-stop rule: stop only ratchets up to (running peak - atrMultiplier * ATR).
+ * Pure trailing-stop rule with freqtrade-style activation offset:
+ * the stop does not ratchet until the running peak clears `entry + activationAtr * ATR`,
+ * then it follows the peak with `offsetAtr * ATR` margin, tightening to `tightOffsetAtr`
+ * once the peak profit reaches `tightAfterAtr * ATR`.
+ * The stop may only ratchet up, never down.
  */
 export function computeTrailingStop(
   currentStop: number,
@@ -423,10 +430,31 @@ export function computeTrailingStop(
   candleHigh: number,
   trailAtr: number,
   atrMultiplier = 2,
+  entry?: number,
 ): number {
   const peak = Math.max(trailPeak, candleHigh);
-  const candidate = peak - atrMultiplier * trailAtr;
+  const offset = entry !== undefined ? resolveTrailingOffset(entry, peak, trailAtr, atrMultiplier) : atrMultiplier;
+  const candidate = peak - offset * trailAtr;
   return Math.max(currentStop, candidate);
+}
+
+/** يختار هامش الرحل: مضيق فوق العتبة العليا، وإلا الافتراضي. */
+export function resolveTrailingOffset(
+  entry: number,
+  peak: number,
+  trailAtr: number,
+  defaultMultiplier = 2,
+): number {
+  const profitAtr = trailAtr > 0 ? (peak - entry) / trailAtr : 0;
+  if (profitAtr >= TRAILING.TIGHT_AFTER_ATR) return TRAILING.TIGHT_OFFSET_ATR;
+  if (profitAtr >= TRAILING.ACTIVATE_AFTER_ATR) return TRAILING.OFFSET_ATR;
+  // دون العتبة: لم يفعل الرحل — نحافظ على الوقف الحالي (الهامش عديم الأثر عملياً)
+  return defaultMultiplier;
+}
+
+/** هل فعّل الرحل عند هذه القمة؟ (نفس عتبة التفعيل الرسمية) */
+export function trailingActivated(entry: number, peak: number, trailAtr: number): boolean {
+  return trailAtr > 0 && peak - entry >= TRAILING.ACTIVATE_AFTER_ATR * trailAtr;
 }
 
 /**

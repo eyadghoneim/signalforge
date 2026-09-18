@@ -29,6 +29,16 @@ export const STRATEGY_RISK_MULTIPLIERS = {
   STOP_SLIPPAGE_ATR: 0.15, // انزلاق تنفيذي واقعي لأوامر Stop-Market عند ضرب الوقف (كنسبة من ATR)
 } as const;
 
+// ─── وقف متحرك مدرّج (freqtrade-style: trailing_only_offset_is_reached) ───
+// لا يتحرك الإيقاف قبل أن يتجاوز الربح العتبة؛ بعدها يتبع القمة بهامش،
+// ويضيق الهامش تلقائياً عند مستويات ربح أعلى لقفل المزيد من الأرباح.
+export const TRAILING = {
+  ACTIVATE_AFTER_ATR: 1.0, // الربح (من الدخول) اللازم لتفعيل الرحل — يمنع الطرد المبكر
+  OFFSET_ATR: 2.0, // هامش الرحل الافتراضي: القمة − 2×ATR
+  TIGHT_OFFSET_ATR: 1.0, // هامش مضيق لقفل الأرباح أعلى
+  TIGHT_AFTER_ATR: 2.0, // يعمل الهامش المضيق عندما يبلغ ربح القمة 2×ATR+
+} as const;
+
 export const ATTRIBUTION_WINDOWS_HOURS = [4, 24, 72] as const;
 
 export const TELEGRAM_COOLDOWN_MS = 30 * 60 * 1000;

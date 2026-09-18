@@ -475,12 +475,22 @@ console.log('\n=== 9. Performance analytics v3 ===');
 }
 console.log('\n=== 10. Walk-forward + trailing stop v3 ===');
 {
-  const { computeTrailingStop, runWalkForward } = await import('../server/backtest');
+  const { computeTrailingStop, resolveTrailingOffset, trailingActivated, runWalkForward } = await import('../server/backtest');
 
   assert(computeTrailingStop(100, 110, 112, 2) === 108, `trail ratchets to peak-2ATR (got ${computeTrailingStop(100, 110, 112, 2)})`);
   assert(computeTrailingStop(108, 110, 105, 2) === 108, 'trail never moves down');
   assert(computeTrailingStop(100, 0, 120, 2) === 116, `trail from running high (got ${computeTrailingStop(100, 0, 120, 2)})`);
   assert(computeTrailingStop(100, 110, 112, 2, 3) === 106, `custom ATR multiplier respected (got ${computeTrailingStop(100, 110, 112, 2, 3)})`);
+
+  // freqtrade-style staged trailing (entry-aware)
+  // entry=100, ATR=2 → العتبة 102 (1×ATR)، التضييق عند 104 (2×ATR)
+  assert(trailingActivated(100, 120, 2) === true, 'profit ≥ 1×ATR activates trailing');
+  assert(trailingActivated(100, 101.5, 2) === false, 'profit < 1×ATR does not activate');
+  assert(resolveTrailingOffset(100, 120, 2) === 1, 'above 2×ATR profit → tight 1×ATR offset');
+  assert(resolveTrailingOffset(100, 103, 2) === 2, 'between 1×ATR and 2×ATR → standard 2×ATR offset');
+  // دون العتبة: لا يتحرك الوقف (نفس الوقف الحالي)
+  const flat = computeTrailingStop(100, 100, 101, 2, 2, 100);
+  assert(flat === 100, 'no ratchet below activation threshold');
 
   const wf = runWalkForward('BTC', syntheticCandles(2600, 8));
   assert(wf.results.length === 16, `walk-forward grid = 16 configs (got ${wf.results.length})`);
@@ -1032,6 +1042,10 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   const eq = currentEquity(closedBySell, { BTC: 101 });
   // حساب يدوي: رأس 10000، ربنا من TP1 + القيمة المتبقية والمقفلة عند البيع
   assert(Number.isFinite(eq) && eq > 10000 && eq < 10300, `equity ~ 10142 after TP1 (got ${eq})`);
+
+  // 7) وقف متحرك مدرّج (freqtrade-style): المرآة والثوابت متوحدتان
+  const { TRAILING: TRAIL_C } = await import('../shared/strategyConstants');
+  assert(TRAIL_C.ACTIVATE_AFTER_ATR === 1 && TRAIL_C.TIGHT_AFTER_ATR === 2 && TRAIL_C.OFFSET_ATR === 2, 'trailing constants centralized');
 }
 
 console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (Telegram) ===');

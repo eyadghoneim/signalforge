@@ -91,16 +91,27 @@ if (!IS_DEV) {
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 const RATE_BUCKETS_MAX = 10_000; // سقف أمان ضد النمو غير المحدود
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 240; // 240 طلب/دقيقة لكل عنوان
 app.use('/api', (req, res, next) => {
   const ip = req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const bucket = rateBuckets.get(ip);
   if (!bucket || bucket.resetAt <= now) {
-    rateBuckets.set(ip, { count: 1, resetAt: now + 60_000 });
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return next();
   }
   bucket.count++;
-  if (bucket.count > 240) return res.status(429).json({ ok: false, error: 'Too many requests' });
+  // رؤوس معلوماتية قياسية — تساعد العملاء على ضبط الإيقاع (freqtrade-style).
+  const remaining = Math.max(0, RATE_LIMIT_MAX - bucket.count);
+  res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
+  res.setHeader('X-RateLimit-Remaining', String(remaining));
+  res.setHeader('X-RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+  if (bucket.count > RATE_LIMIT_MAX) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(429).json({ ok: false, error: 'Too many requests', retryAfterSeconds: retryAfter });
+  }
   next();
 });
 // تنظيف دوري: يمسح الإدخالات المنتهية + يفرض السقف الأقصى — يمنع تسريب الذاكرة

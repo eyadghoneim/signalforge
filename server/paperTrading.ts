@@ -7,13 +7,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Signal, SupportedAsset } from '../shared/types';
-import { STRATEGY_RISK_MULTIPLIERS } from '../shared/strategyConstants';
+import { STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
 
 export const PAPER_INITIAL_EQUITY = 10_000;
 export const PAPER_RISK_PERCENT = 1; // مخاطرة لكل صفقة: 1% من الرصيد المتاح
 const TP1_RATIO = 0.5; // أول جني: نصف الكمية
 const TP2_RATIO = 0.3; // ثاني جني: 30% من الكمية الأصلية
-const PAPER_TRAIL_ATR = 2; // إيقاف متحرك بعد TP2: قمة − 2×ATR
+// (تم توحيد ثوابت الرحل في shared/strategyConstants.ts → TRAILING)
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const PAPER_FILE = path.join(DATA_DIR, 'paper.json');
@@ -194,11 +194,16 @@ export function markToMarket(
       continue;
     }
 
-    // 0) الإيقاف المتحرك بعد TP2 ينزلق مع القمم القريبة
+    // 0) وقف متحرك مدرّج (freqtrade-style) بعد TP2: لا يتحرك قبل 1×ATR ربح،
+    // ثم يتبع القمة بهامش 2×ATR ويضيق إلى 1×ATR فوق 2×ATR ربح.
     if (p.tp2Taken) {
       p.trailPeak = Math.max(p.trailPeak, candle.high);
-      const trail = p.trailPeak - p.atrEntry * PAPER_TRAIL_ATR;
-      if (trail > p.stop) p.stop = trail;
+      const profitAtr = p.atrEntry > 0 ? (p.trailPeak - p.entry) / p.atrEntry : 0;
+      if (profitAtr >= TRAILING.ACTIVATE_AFTER_ATR) {
+        const offset = profitAtr >= TRAILING.TIGHT_AFTER_ATR ? TRAILING.TIGHT_OFFSET_ATR : TRAILING.OFFSET_ATR;
+        const trail = p.trailPeak - p.atrEntry * offset;
+        if (trail > p.stop) p.stop = trail;
+      }
     }
 
     // 1) الوقف أولاً (متحفظ — نفس ترتيب الباك تست) بانزلاق الثوابت
