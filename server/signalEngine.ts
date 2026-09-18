@@ -21,6 +21,7 @@ import { openInterestAdjustment } from './oiFactor';
 import { biasForReasonsRegime } from './learning';
 import { fngAdjustment } from './fng';
 import { whaleAdjustmentInner } from './whaleAlert';
+import { resolvePatternAdjustment } from './candlePatterns';
 
 export { openInterestAdjustment };
 
@@ -48,6 +49,7 @@ export interface BuildSignalContext {
   tagBias?: Record<string, number>;
   fng?: FngPoint | null;
   whale?: { netInflowUsd: number; txCount: number } | null;
+  candles?: import('../shared/types').Candle[] | null;
 }
 
 // Log-scaled funding squeeze penalty (review backlog item 5). Flat -12 replaced
@@ -161,6 +163,15 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     const wAdj = whaleAdjustmentInner(wn);
     if (wAdj !== 0) {
       add('WHALE', wAdj, `Whale netflow 1h: ${(wn > 0 ? '+' : '')}${(wn / 1_000_000).toFixed(1)}M USD`);
+    }
+  }
+  // أنماط الشموع اليابانية: تأكيد أو تحذير من البنية اللحظية (عامل #15)
+  if (ctx.candles && ctx.candles.length > 0) {
+    const p = resolvePatternAdjustment(ctx.candles);
+    if (p.adjustment !== 0 && p.hit) {
+      add('PATTERN', p.adjustment, `نمط شموع ${p.hit.nameAr} (${p.hit.nameEn})`);
+    } else if (p.hits.length > 0) {
+      reasons.push({ tag: 'PATTERN', adjustment: 0, textAr: `نمط شموع غير حاسم: ${p.hits.map((h) => h.nameAr).join('، ')}` });
     }
   }
   score = Math.min(100, Math.max(0, Math.round(score)));

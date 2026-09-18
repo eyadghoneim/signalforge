@@ -2,7 +2,7 @@
 import type { SignalType, SpotAction } from './types';
 
 export const ENGINE_SIGNATURE =
-  'SignalForge Deterministic Engine v3.0 (MTF+Daily+Regime+SMC+RVOL+Funding+FNG+Whale+OI) + Attribution + Learning';
+  'SignalForge Deterministic Engine v3.1 (MTF+Daily+Regime+SMC+RVOL+Funding+FNG+Whale+OI+Pattern) + Attribution + Learning';
 
 export const STRATEGY_THRESHOLDS = {
   ENTRY_QUALITY_MIN_SCORE: 70, // الحد الأدنى للسماح بشراء

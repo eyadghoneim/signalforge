@@ -1120,6 +1120,85 @@ console.log('\n=== 23. طبقة ccxt (شبكة أمان البيانات) ===');
   assert(['binance', 'bybit', 'okx', 'kucoin', 'gate', 'mexc', 'htx', 'bitget'].every((id) => typeof (pkg as Record<string, unknown>)[id] === 'function'), 'ccxt exposes fallback exchanges');
 }
 
+console.log('\n=== 24. أنماط الشموع اليابانية (عامل PATTERN) ===');
+{
+  const { resolvePatternAdjustment, detectCandlePatterns } = await import('../server/candlePatterns');
+  const { computeSnapshot } = await import('../shared/indicators');
+  const { buildSignal } = await import('../server/signalEngine');
+  // Candle factories — نتحكم في OHLC يدوياً
+  const c = (o: number, h: number, l: number, cl: number, t = 1_700_000_000): import('../shared/types').Candle => ({
+    time: t, open: o, high: h, low: l, close: cl, volume: 100,
+  });
+
+  // 0) دوجي: جسم شبه معدوم بالنسبة للمدى → كشف الدوجي (حياد بشفافية)
+  {
+    const dojiCandles = [c(100, 103, 97, 100.1, 1_700_000_000)];
+    const hits = detectCandlePatterns(dojiCandles);
+    assert(hits.some((h) => h.id === 'doji'), `كشف الدوجي (got ${hits.map((h) => h.id).join(',') || 'none'})`);
+  }
+
+  // 1) المطرقة: جسم صغير وفتيل سفلي طويل وفتيل علوي شبه معدوم
+  const hammerOnly = [
+    c(100, 102, 99, 101, 1_700_000_000 - 2 * 3600),
+    c(101, 103.5, 97, 101.5, 1_700_000_000 - 1 * 3600), // prev
+    c(101, 101.2, 96, 100.5, 1_700_000_000), // last: جسم 0.5، فتيل سفلي 4.5، علوي 0.2 → مطرقة
+  ];
+  {
+    const res = resolvePatternAdjustment(hammerOnly);
+    assert(res.adjustment > 0, `المطرقة ترفع الدرجة (+${res.adjustment})`);
+    assert(res.hit?.id === 'hammer', `كشف المطرقة (got ${res.hit?.id})`);
+  }
+
+  // 2) ابتلاع هابط: شمعة حمراء كبيرة تبتلع الخضراء السابقة
+  const engulf = [
+    c(100, 102, 99, 101, 1_700_000_000 - 3600), // prev bull small
+    c(102, 103, 95, 96, 1_700_000_000),         // last bear big: open 102 > close 101 ✅ engulf
+  ];
+  {
+    const res = resolvePatternAdjustment(engulf);
+    assert(res.adjustment < 0, `الابتلاع الهابط يخفض الدرجة (${res.adjustment})`);
+    assert(res.hit?.id === 'bearish-engulfing', `كشف الابتلاع الهابط (got ${res.hit?.id})`);
+  }
+
+  // 3) حياد: شموع عادية (ترند بسيط) → لا أنماط قوية
+  {
+    const res = resolvePatternAdjustment(syntheticCandles(80, 5));
+    assert(res.adjustment === 0 || Math.abs(res.adjustment) <= 5, `سلسلة عادية لا تولد أنماطاً مبالغاً فيها (got ${res.adjustment})`);
+  }
+
+  // 4) التكامل مع المحرك: candles مفقودة → لا بلوك كسر، والقائمة تظل نظيفة
+  {
+    const snap = computeSnapshot(syntheticCandles(240, 30));
+    if (snap) {
+      const sig = buildSignal({
+        asset: 'BTC', snapshot: snap, htf: null, fundingPct8h: 0, change24h: 0,
+        dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+        // candles غير ممررة عمداً → يجب ألا ينفجر
+      });
+      assert(typeof sig.convictionScore === 'number' && sig.convictionScore >= 0 && sig.convictionScore <= 100, 'المحرك يعمل بلا candles (عامل اختياري)');
+    }
+  }
+
+  // 5) ربط السبب: صفقة تدخل نمط صاعد فعلي → PAYTERN في الأسباب
+  {
+    const bullCandles = syntheticCandles(240, 30);
+    // نجعل آخر شمعة ابتلاع صاعد حقيقي
+    const lastIdx = bullCandles.length - 1;
+    bullCandles[lastIdx - 1] = { time: bullCandles[lastIdx - 1].time, open: 100, high: 101, low: 99, close: 99.5, volume: 100 };
+    bullCandles[lastIdx] = { time: bullCandles[lastIdx].time, open: 99, high: 104, low: 98.5, close: 101, volume: 100 };
+    const snap = computeSnapshot(bullCandles);
+    if (snap) {
+      const sig = buildSignal({
+        asset: 'BTC', snapshot: snap, htf: null, fundingPct8h: 1, change24h: 4,
+        dataSource: 'LIVE', gates: { htf: true, chop: true, rvol: true, funding: true },
+        candles: bullCandles,
+      });
+      const hasPattern = sig.reasons.some((r) => r.tag === 'PATTERN');
+      assert(hasPattern, 'السبب PATTERN يظهر عند وجود نمط شموع فعلي');
+    }
+  }
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

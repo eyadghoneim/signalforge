@@ -298,6 +298,7 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
     liquidity,
     daily,
     entryZone,
+    candles: candles1h,
     tagBias,
   });
 }
@@ -556,6 +557,7 @@ async function runScanCycle(): Promise<void> {
           daily,
           entryZone,
           tagBias,
+          candles: candles1h,
         });
 
         const gateBlocked = signal.regimeGateStatus !== 'CLEAR';

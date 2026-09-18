@@ -17,6 +17,7 @@ const TAG_KEY: Record<string, TKey> = {
   WHALE: 'tagWhale',
   FNG: 'tagFng',
   OI: 'tagOi',
+  PATTERN: 'tagPattern',
 };
 
 export default function AttributionPanel({ summary, lang }: { summary: AttributionSummary; lang: Lang }) {

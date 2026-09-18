@@ -97,6 +97,7 @@ const DICT = {
     tagWhale: 'تدفق الحيتان',
     tagFng: 'الخوف والجشع',
     tagOi: 'الفائدة المفتوحة',
+    tagPattern: 'أنماط الشموع',
     // الأصول
     assetBTC: 'البيتكوين',
     assetETH: 'الإيثريوم',
@@ -302,6 +303,7 @@ const DICT = {
     tagWhale: 'Whale flow',
     tagFng: 'Fear & Greed',
     tagOi: 'Open interest',
+    tagPattern: 'Candlestick patterns',
     // Assets
     assetBTC: 'Bitcoin',
     assetETH: 'Ethereum',

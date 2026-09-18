@@ -42,7 +42,8 @@ export type ReasonTag =
   | 'LIQUIDITY'
   | 'OI'
   | 'FNG'
-  | 'WHALE';
+  | 'WHALE'
+  | 'PATTERN';
 
 export interface SignalReason {
   tag: ReasonTag;
