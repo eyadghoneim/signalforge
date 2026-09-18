@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, CandlestickSeries, LineSeries, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
-import { ema } from '../../shared/indicators';
+import { ema, normalizeCandlesForChart } from '../../shared/indicators';
 import { api, type SupportedAsset, type Candle } from '../api';
 import { t, type Lang, type TKey } from '../i18n';
 
@@ -80,7 +80,7 @@ export default function PriceChart({ asset, lang }: Props) {
       try {
         const res = await api.klines(asset, '1h', 300);
         if (!cancelled) {
-          setCandles(res.candles);
+          setCandles(normalizeCandlesForChart(res.candles));
           setError(null);
         }
       } catch (e) {
@@ -100,10 +100,11 @@ export default function PriceChart({ asset, lang }: Props) {
   // تحديث السلاسل
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || !candleSeriesRef.current || candles.length === 0) return;
+    const ordered = normalizeCandlesForChart(candles);
+    if (!chart || !candleSeriesRef.current || ordered.length === 0) return;
 
     candleSeriesRef.current.setData(
-      candles.map((c) => ({
+      ordered.map((c) => ({
         time: c.time as UTCTimestamp,
         open: c.open,
         high: c.high,
@@ -112,14 +113,14 @@ export default function PriceChart({ asset, lang }: Props) {
       })),
     );
 
-    const closes = candles.map((c) => c.close);
+    const closes = ordered.map((c) => c.close);
     const e21 = ema(closes, 21);
     const e50 = ema(closes, 50);
     ema21Ref.current?.setData(
-      candles.map((c, i) => ({ time: c.time as UTCTimestamp, value: e21[i] })).filter((p) => Number.isFinite(p.value)),
+      ordered.map((c, i) => ({ time: c.time as UTCTimestamp, value: e21[i] })).filter((p) => Number.isFinite(p.value)),
     );
     ema50Ref.current?.setData(
-      candles.map((c, i) => ({ time: c.time as UTCTimestamp, value: e50[i] })).filter((p) => Number.isFinite(p.value)),
+      ordered.map((c, i) => ({ time: c.time as UTCTimestamp, value: e50[i] })).filter((p) => Number.isFinite(p.value)),
     );
 
     if (lastAssetRef.current !== asset) {

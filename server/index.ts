@@ -614,7 +614,7 @@ async function runScanCycle(): Promise<void> {
           });
         }
         if (!gateBlocked && signal.spotAction === 'SPOT_BUY') {
-          paperAccount = openBuy(paperAccount, signal, snapshot.atr14, Date.now());
+          paperAccount = openBuy(paperAccount, signal, snapshot.atr14, Date.now(), protection.maxConcurrentSignals);
         } else if (!gateBlocked && signal.spotAction === 'SPOT_SELL_ALL') {
           paperAccount = closeBySellSignal(paperAccount, asset, ticker.price, Date.now());
         }

@@ -253,6 +253,22 @@ export interface HtfSnapshot {
 const MIN_CANDLES = 70;
 const MIN_HTF_CANDLES = STRATEGY_THRESHOLDS.HTF_EMA_PERIOD + 30;
 
+/** Sort candles ascending and keep one valid candle per timestamp for chart APIs. */
+export function normalizeCandlesForChart(candles: Candle[]): Candle[] {
+  if (!Array.isArray(candles)) return [];
+  const byTime = new Map<number, Candle>();
+  for (const candle of candles) {
+    if (
+      !candle ||
+      !Number.isFinite(candle.time) ||
+      ![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite) ||
+      candle.close <= 0
+    ) continue;
+    byTime.set(candle.time, candle);
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
 export function computeSnapshot(candles: Candle[], index?: number): IndicatorSnapshot | null {
   if (!Array.isArray(candles) || candles.length < MIN_CANDLES) return null;
   const i = typeof index === 'number' ? index : candles.length - 1;

@@ -39,7 +39,7 @@ function syntheticCandles(n: number, drift: number, seed = 42): import('../share
 
 console.log('\n=== 1. المؤشرات الفنية ===');
 {
-  const { ema, rsi, macd, atr, adx, bollinger, relativeVolume, resample, computeSnapshot, computeHtfSnapshot, computeDailyTrend } = await import('../shared/indicators');
+  const { ema, rsi, macd, atr, adx, bollinger, relativeVolume, resample, computeSnapshot, computeHtfSnapshot, computeDailyTrend, normalizeCandlesForChart } = await import('../shared/indicators');
 
   const rising = Array.from({ length: 300 }, (_, i) => 100 + i);
   const emaOut = ema(rising, 21);
@@ -87,6 +87,15 @@ console.log('\n=== 1. المؤشرات الفنية ===');
   assert(computeSnapshot(null as unknown as import('../shared/types').Candle[]) === null, 'رد غير Array لا يكسر computeSnapshot');
   assert(computeHtfSnapshot({} as unknown as import('../shared/types').Candle[]) === null, 'رد غير Array لا يكسر HTF snapshot');
   assert(computeDailyTrend({} as unknown as import('../shared/types').Candle[]) === null, 'رد غير Array لا يكسر daily snapshot');
+  const chartRows = [
+    { time: 300, open: 30, high: 31, low: 29, close: 30, volume: 1 },
+    { time: 100, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+    { time: 200, open: 20, high: 21, low: 19, close: 20, volume: 1 },
+    { time: 200, open: 20, high: 22, low: 19, close: 21, volume: 2 },
+  ];
+  const normalizedChart = normalizeCandlesForChart(chartRows);
+  assert(normalizedChart.length === 3 && normalizedChart[0].time === 100 && normalizedChart[2].time === 300, 'الشارت يرتب الشموع ويزيل timestamp المكرر');
+  assert(normalizedChart[1].close === 21, 'عند التكرار يحتفظ بآخر شمعة لنفس الوقت');
 }
 
 console.log('\n=== 2. الثوابت والدوال المركزية ===');
@@ -1009,6 +1018,19 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   // 2) نفس الأصل مايتكرارش (مركز واحد لكل عملة)
   const dup = openBuy(opened, sig, 0.5, 2000);
   assert(dup.open.length === 1, 'one position per asset');
+
+  // 2b) سقف المراكز داخل المحفظة نفسها — لا يعتمد فقط على protectionVerdict.
+  const capAccount = defaultPaperAccount();
+  const ethSig = { ...sig, asset: 'ETH' as const, dedupHash: 'paper-eth' };
+  const solSig = { ...sig, asset: 'SOL' as const, dedupHash: 'paper-sol' };
+  openBuy(capAccount, sig, 0.5, 1000);
+  openBuy(capAccount, ethSig, 0.5, 2000);
+  openBuy(capAccount, solSig, 0.5, 3000);
+  assert(capAccount.open.length === 2, 'paper wallet enforces default max of two positions');
+  const onePositionCap = defaultPaperAccount();
+  openBuy(onePositionCap, sig, 0.5, 1000, 1);
+  openBuy(onePositionCap, ethSig, 0.5, 2000, 1);
+  assert(onePositionCap.open.length === 1, 'paper wallet respects configured position cap');
 
   // 3) تسيير على شمعة تجيب الوقف → خسارة، والقيمة النهائية < البداية
   const post = markToMarket(

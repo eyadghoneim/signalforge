@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Signal, SupportedAsset } from '../shared/types';
 import { STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
+import { DEFAULT_PROTECTION } from './protection';
 
 export const PAPER_INITIAL_EQUITY = 10_000;
 export const PAPER_RISK_PERCENT = 1; // مخاطرة لكل صفقة: 1% من الرصيد المتاح
@@ -95,11 +96,19 @@ export function currentEquity(acct: PaperAccount, prices: Partial<Record<Support
 }
 
 /** يفتح صفقة شراء ورقية من إشارة حقيقية — حجم محسوب بـ 1% مخاطرة من الرصيد. */
-export function openBuy(acct: PaperAccount, signal: Signal, atrEntry: number, nowMs: number): PaperAccount {
+export function openBuy(
+  acct: PaperAccount,
+  signal: Signal,
+  atrEntry: number,
+  nowMs: number,
+  maxOpenPositions = DEFAULT_PROTECTION.maxConcurrentSignals,
+): PaperAccount {
   const entry = signal.entryPrice;
   const stop = signal.stopLoss;
   const riskDistance = entry - stop;
   if (!Number.isFinite(entry) || entry <= 0 || !(riskDistance > 0)) return acct;
+  const positionCap = Math.max(1, Math.floor(Number(maxOpenPositions) || DEFAULT_PROTECTION.maxConcurrentSignals));
+  if (acct.open.length >= positionCap) return acct;
   if (acct.open.some((p) => p.asset === signal.asset)) return acct; // مركز واحد لكل أصل
 
   const riskAmount = acct.cash * (PAPER_RISK_PERCENT / 100);
