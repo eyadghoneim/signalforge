@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Brain, Loader2 } from 'lucide-react';
 import { api, type LearningInfo } from '../api';
+import { t, type Lang } from '../i18n';
 
-export default function LearningPanel() {
+export default function LearningPanel({ lang }: { lang: Lang }) {
   const [data, setData] = useState<LearningInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,55 +44,55 @@ export default function LearningPanel() {
     </div>
   );
 
-  const activeالانحيازes = Object.values(data.biases).filter((v) => v !== 0).length;
+  const activeBiases = Object.values(data.biases).filter((v) => v !== 0).length;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
         <Brain size={16} className="text-violet-400" />
-        <span className="text-sm font-bold text-zinc-300">نظام التعلم - أوزان العوامل مستنتجة من إشارات البوت المحسومة</span>
+        <span className="text-sm font-bold text-zinc-300">{t(lang, 'learnTitle')}</span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {stat('الربح الأساسي %', String(data.baselineWinRatePercent))}
-        {stat('إشارات محسومة', String(data.totalResolved))}
-        {stat('انحيازات نشطة', String(activeالانحيازes), 'text-violet-300')}
-        {stat('دروس مسجلة', String(data.lessons.length))}
+        {stat(t(lang, 'learnBaseline'), String(data.baselineWinRatePercent))}
+        {stat(t(lang, 'learnResolved'), String(data.totalResolved))}
+        {stat(t(lang, 'learnActiveBiases'), String(activeBiases), 'text-violet-300')}
+        {stat(t(lang, 'learnLessons'), String(data.lessons.length))}
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-zinc-800">
         <div className="border-b border-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-300">
-          أدلة العوامل والانحياز (تعديل بسيط للدرجة عند ظهور العامل، بحد أقصى 3+/-، يحتاج 10+ إشارات محسومة)
+          {t(lang, 'learnTableTitle')}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead>
               <tr className="border-b border-zinc-800 text-[10px] text-zinc-500">
-                <th className="px-3 py-2 font-medium">العامل</th>
-                <th className="px-3 py-2 font-medium">عينات</th>
-                <th className="px-3 py-2 font-medium">رابحة</th>
-                <th className="px-3 py-2 font-medium">خاسرة</th>
-                <th className="px-3 py-2 font-medium">الربح %</th>
-                <th className="px-3 py-2 font-medium">صافي R</th>
-                <th className="px-3 py-2 font-medium">الانحياز</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colFactor')}</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colSamples')}</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colWins')}</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colLosses')}</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colWinPct')}</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colNetR')}</th>
+                <th className="px-3 py-2 font-medium">{t(lang, 'colBias')}</th>
               </tr>
             </thead>
             <tbody>
-              {data.perTag.map((t) => (
-                <tr key={t.tag} className="border-b border-zinc-800/50">
-                  <td className="px-3 py-1.5 font-mono text-zinc-300" dir="ltr">{t.tag}</td>
-                  <td className="px-3 py-1.5 tabular-nums text-zinc-400" dir="ltr">{t.samples}</td>
-                  <td className="px-3 py-1.5 tabular-nums text-emerald-300" dir="ltr">{t.wins}</td>
-                  <td className="px-3 py-1.5 tabular-nums text-rose-300" dir="ltr">{t.losses}</td>
-                  <td className={`px-3 py-1.5 tabular-nums font-bold ${t.winRatePercent >= data.baselineWinRatePercent ? 'text-emerald-300' : 'text-amber-300'}`} dir="ltr">{t.winRatePercent}%</td>
-                  <td className="px-3 py-1.5 tabular-nums text-zinc-300" dir="ltr">{t.netR > 0 ? '+' : ''}{t.netR}</td>
-                  <td className={`px-3 py-1.5 tabular-nums font-extrabold ${(data.biases[t.tag] ?? 0) > 0 ? 'text-emerald-300' : (data.biases[t.tag] ?? 0) < 0 ? 'text-rose-300' : 'text-zinc-500'}`} dir="ltr">
-                    {(data.biases[t.tag] ?? 0) > 0 ? '+' : ''}{data.biases[t.tag] ?? 0}
+              {data.perTag.map((x) => (
+                <tr key={x.tag} className="border-b border-zinc-800/50">
+                  <td className="px-3 py-1.5 font-mono text-zinc-300" dir="ltr">{x.tag}</td>
+                  <td className="px-3 py-1.5 tabular-nums text-zinc-400" dir="ltr">{x.samples}</td>
+                  <td className="px-3 py-1.5 tabular-nums text-emerald-300" dir="ltr">{x.wins}</td>
+                  <td className="px-3 py-1.5 tabular-nums text-rose-300" dir="ltr">{x.losses}</td>
+                  <td className={`px-3 py-1.5 tabular-nums font-bold ${x.winRatePercent >= data.baselineWinRatePercent ? 'text-emerald-300' : 'text-amber-300'}`} dir="ltr">{x.winRatePercent}%</td>
+                  <td className="px-3 py-1.5 tabular-nums text-zinc-300" dir="ltr">{x.netR > 0 ? '+' : ''}{x.netR}</td>
+                  <td className={`px-3 py-1.5 tabular-nums font-extrabold ${(data.biases[x.tag] ?? 0) > 0 ? 'text-emerald-300' : (data.biases[x.tag] ?? 0) < 0 ? 'text-rose-300' : 'text-zinc-500'}`} dir="ltr">
+                    {(data.biases[x.tag] ?? 0) > 0 ? '+' : ''}{data.biases[x.tag] ?? 0}
                   </td>
                 </tr>
               ))}
               {data.perTag.length === 0 && (
-                <tr><td className="px-3 py-4 text-center text-zinc-500" colSpan={7}>لا إشارات محسومة بعد - البوت يتعلم مع تحسم كل إشارة (هدف أو وقف).</td></tr>
+                <tr><td className="px-3 py-4 text-center text-zinc-500" colSpan={7}>{t(lang, 'learnNoResolved')}</td></tr>
               )}
             </tbody>
           </table>
@@ -99,9 +100,9 @@ export default function LearningPanel() {
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <div className="mb-2 text-xs font-bold text-zinc-300">سجل الدروس (كل تغيير موثق بدليله)</div>
+        <div className="mb-2 text-xs font-bold text-zinc-300">{t(lang, 'learnLogTitle')}</div>
         {data.lessons.length === 0 ? (
-          <div className="text-xs text-zinc-500">لا تغييرات بعد - كل تغيير هيتم توثيقه هنا بدليله.</div>
+          <div className="text-xs text-zinc-500">{t(lang, 'learnNoChanges')}</div>
         ) : (
           <div className="space-y-1.5">
             {data.lessons.map((l, i) => (

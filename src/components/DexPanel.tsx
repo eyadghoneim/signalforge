@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Droplets, ExternalLink, Loader2, Search } from 'lucide-react';
 import { api, type DexPairInfo } from '../api';
+import { t, type Lang } from '../i18n';
 
 /** معلومات شرائح DEX الحية من DexScreener — سيولة وحجم تداول خارج البورصات المركزية. */
-export default function DexPanel() {
+export default function DexPanel({ lang }: { lang: Lang }) {
   const [query, setQuery] = useState('BTC');
   const [pairs, setPairs] = useState<DexPairInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -15,7 +16,7 @@ export default function DexPanel() {
     try {
       const res = await api.dexPairs(q);
       setPairs(res.pairs ?? []);
-      if (!res.pairs?.length) setError('مفيش أزواج بالسيولة الكافية للبحث ده');
+      if (!res.pairs?.length) setError(t(lang, 'dexNoPairs'));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPairs([]);
@@ -26,6 +27,7 @@ export default function DexPanel() {
 
   useEffect(() => {
     void load('BTC');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fmtUsd = (v: number | null) =>
@@ -40,7 +42,7 @@ export default function DexPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && void load(query.trim() || 'BTC')}
-            placeholder="BTC / ETH / أي زوج"
+            placeholder={t(lang, 'dexPlaceholder')}
             className="w-44 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
           />
         </div>
@@ -49,9 +51,9 @@ export default function DexPanel() {
           disabled={loading}
           className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-bold text-amber-300 transition hover:bg-amber-400/20 disabled:opacity-50"
         >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : 'بحث'}
+          {loading ? <Loader2 size={14} className="animate-spin" /> : t(lang, 'dexSearch')}
         </button>
-        <span className="text-[11px] text-zinc-500">حسب السيولة — من DexScreener (مصدر إرشادي، مش داخل في التقييم)</span>
+        <span className="text-[11px] text-zinc-500">{t(lang, 'dexNote')}</span>
       </div>
 
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-rose-300">{error}</div>}
@@ -75,19 +77,19 @@ export default function DexPanel() {
             </div>
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div>
-                <div className="text-zinc-500">السعر</div>
+                <div className="text-zinc-500">{t(lang, 'dexPrice')}</div>
                 <div className="font-bold tabular-nums text-zinc-100" dir="ltr">{p.priceUsd !== null ? `$${p.priceUsd.toLocaleString('en-US')}` : '—'}</div>
               </div>
               <div>
-                <div className="text-zinc-500">السيولة</div>
+                <div className="text-zinc-500">{t(lang, 'dexLiquidity')}</div>
                 <div className="font-bold tabular-nums text-sky-300" dir="ltr">{fmtUsd(p.liquidityUsd)}</div>
               </div>
               <div>
-                <div className="text-zinc-500">حجم 24h</div>
+                <div className="text-zinc-500">{t(lang, 'dexVolume')}</div>
                 <div className="font-bold tabular-nums text-zinc-300" dir="ltr">{fmtUsd(p.volume24hUsd)}</div>
               </div>
               <div>
-                <div className="text-zinc-500">تغير 24h</div>
+                <div className="text-zinc-500">{t(lang, 'dexChange')}</div>
                 <div className={`font-bold tabular-nums ${(p.priceChange24hPercent ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`} dir="ltr">
                   {p.priceChange24hPercent !== null ? `${p.priceChange24hPercent > 0 ? '+' : ''}${p.priceChange24hPercent.toFixed(2)}%` : '—'}
                 </div>

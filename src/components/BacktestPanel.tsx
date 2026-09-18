@@ -2,9 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Beaker, Download, Loader2, Play, Timer } from 'lucide-react';
 import { createChart, LineSeries, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import { api, type BacktestResult, type SupportedAsset, type RobustnessCell, type WalkForwardResult } from '../api';
-import { SUPPORTED_ASSETS, ASSET_LABELS_AR } from '../../shared/types';
+import { SUPPORTED_ASSETS } from '../../shared/types';
+import { t, type Lang, type TKey } from '../i18n';
 
-export default function BacktestPanel() {
+const ASSET_OPTION_KEY: Record<SupportedAsset, TKey> = {
+  BTC: 'assetBTC',
+  ETH: 'assetETH',
+  SOL: 'assetSOL',
+  PAXG: 'assetPAXG',
+};
+
+export default function BacktestPanel({ lang }: { lang: Lang }) {
   const [asset, setAsset] = useState<SupportedAsset>('BTC');
   const [running, setRunning] = useState(false);
   const [robustRunning, setRobustRunning] = useState(false);
@@ -30,11 +38,12 @@ export default function BacktestPanel() {
     });
     chartRef.current = chart;
     equityRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, title: 'SignalForge' });
-    bhRef.current = chart.addSeries(LineSeries, { color: '#71717a', lineWidth: 1, lineStyle: 2, title: 'شراء واحتفاظ' });
+    bhRef.current = chart.addSeries(LineSeries, { color: '#71717a', lineWidth: 1, lineStyle: 2, title: t(lang, 'btBuyHold') });
     return () => {
       chart.remove();
       chartRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -66,16 +75,16 @@ export default function BacktestPanel() {
   const downloadCsv = () => {
     if (!result || result.trades.length === 0) return;
     const header = 'entry_time,exit_time,entry,exit_avg,qty,pnl_usd,exit_reason,signal_score';
-    const rows = result.trades.map((t) =>
+    const rows = result.trades.map((tr) =>
       [
-        new Date(t.entryTime * 1000).toISOString(),
-        new Date(t.exitTime * 1000).toISOString(),
-        t.entry,
-        t.exitAvgPrice,
-        t.qty,
-        t.pnlUsd,
-        t.exitReason,
-        t.signalScore,
+        new Date(tr.entryTime * 1000).toISOString(),
+        new Date(tr.exitTime * 1000).toISOString(),
+        tr.entry,
+        tr.exitAvgPrice,
+        tr.qty,
+        tr.pnlUsd,
+        tr.exitReason,
+        tr.signalScore,
       ].join(','),
     );
     const csv = [header, ...rows].join('\n');
@@ -87,6 +96,7 @@ export default function BacktestPanel() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
   const stat = (label: string, value: string, cls = 'text-zinc-100') => (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 text-center">
       <div className="text-[10px] text-zinc-500">{label}</div>
@@ -98,14 +108,14 @@ export default function BacktestPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
         <Beaker size={16} className="text-amber-400" />
-        <span className="text-sm font-bold text-zinc-300">باك تست سنة كاملة (شموع حقيقية)</span>
+        <span className="text-sm font-bold text-zinc-300">{t(lang, 'btTitle')}</span>
         <select
           value={asset}
           onChange={(e) => setAsset(e.target.value as SupportedAsset)}
           className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200"
         >
           {SUPPORTED_ASSETS.map((a) => (
-            <option key={a} value={a}>{ASSET_LABELS_AR[a]}</option>
+            <option key={a} value={a}>{t(lang, ASSET_OPTION_KEY[a])}</option>
           ))}
         </select>
         <button
@@ -114,7 +124,7 @@ export default function BacktestPanel() {
           className="flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-1.5 text-sm font-extrabold text-zinc-950 transition hover:bg-amber-300 disabled:opacity-50"
         >
           {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
-          {running ? 'بيحسب…' : 'شغّل الباك تست'}
+          {running ? t(lang, 'btComputing') : t(lang, 'btRun')}
         </button>
         <button
           onClick={() => void run('robustness')}
@@ -122,7 +132,7 @@ export default function BacktestPanel() {
           className="flex items-center gap-2 rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-1.5 text-sm font-bold text-sky-300 transition hover:bg-sky-500/20 disabled:opacity-50"
         >
           {robustRunning ? <Loader2 size={15} className="animate-spin" /> : <Beaker size={15} />}
-          {robustRunning ? 'بيجرب 9 سيناريوهات…' : 'اختبار المتانة (9 سيناريوهات)'}
+          {robustRunning ? t(lang, 'btRobustRunning') : t(lang, 'btRobustness')}
         </button>
         {error && <span className="text-xs text-rose-300">{error}</span>}
         {result && (
@@ -152,13 +162,13 @@ export default function BacktestPanel() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-            {stat('الرصيد النهائي', `$${result.finalEquity.toLocaleString('en-US')}`, result.finalEquity >= result.startEquity ? 'text-emerald-300' : 'text-rose-300')}
-            {stat('شراء واحتفاظ', `$${result.buyHoldFinal.toLocaleString('en-US')}`, 'text-zinc-300')}
-            {stat('عدد الصفقات', String(result.totalTrades))}
-            {stat('نسبة النجاح', `${result.winRatePercent}%`, result.winRatePercent >= 50 ? 'text-emerald-300' : 'text-rose-300')}
-            {stat('عامل الربح', result.profitFactor !== null ? String(result.profitFactor) : '∞', (result.profitFactor ?? 2) >= 1 ? 'text-emerald-300' : 'text-rose-300')}
-            {stat('أقصى تراجع', `${result.maxDrawdownPercent}%`, 'text-amber-300')}
-            {stat('الفترة', `${Math.round((result.period.to - result.period.from) / 86400)} يوم`)}
+            {stat(t(lang, 'btFinalEquity'), `$${result.finalEquity.toLocaleString('en-US')}`, result.finalEquity >= result.startEquity ? 'text-emerald-300' : 'text-rose-300')}
+            {stat(t(lang, 'btBuyHold'), `$${result.buyHoldFinal.toLocaleString('en-US')}`, 'text-zinc-300')}
+            {stat(t(lang, 'btTrades'), String(result.totalTrades))}
+            {stat(t(lang, 'btWinRate'), `${result.winRatePercent}%`, result.winRatePercent >= 50 ? 'text-emerald-300' : 'text-rose-300')}
+            {stat(t(lang, 'btProfitFactor'), result.profitFactor !== null ? String(result.profitFactor) : '∞', (result.profitFactor ?? 2) >= 1 ? 'text-emerald-300' : 'text-rose-300')}
+            {stat(t(lang, 'btMaxDd'), `${result.maxDrawdownPercent}%`, 'text-amber-300')}
+            {stat(t(lang, 'btPeriod'), `${Math.round((result.period.to - result.period.from) / 86400)} ${t(lang, 'btDays')}`)}
           </div>
 
           {result.performance && (
@@ -217,14 +227,14 @@ export default function BacktestPanel() {
           )}
           <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 p-2">
             <div className="flex items-center gap-3 px-2 pt-1 text-[10px] text-zinc-500">
-              <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-amber-400" /> استراتيجية SignalForge</span>
-              <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-zinc-500" /> شراء واحتفاظ</span>
+              <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-amber-400" /> {t(lang, 'btLegendStrategy')}</span>
+              <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-zinc-500" /> {t(lang, 'btBuyHold')}</span>
             </div>
             <div ref={containerRef} className="h-64 w-full" />
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <div className="mb-2 text-xs font-bold text-zinc-400">حدود الباك تست — بصراحة كاملة:</div>
+            <div className="mb-2 text-xs font-bold text-zinc-400">{t(lang, 'btLimitsTitle')}</div>
             <ul className="list-inside list-disc space-y-1 text-[11px] leading-5 text-zinc-500">
               {result.limitsAr.map((l, i) => <li key={i}>{l}</li>)}
             </ul>
@@ -232,15 +242,15 @@ export default function BacktestPanel() {
 
           {result.monthlyStats && result.monthlyStats.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-zinc-800">
-              <div className="border-b border-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-300">التفكيك الشهري — هل الأداء ثابت ولا شهر حظ؟</div>
+              <div className="border-b border-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-300">{t(lang, 'btMonthlyTitle')}</div>
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead>
                     <tr className="border-b border-zinc-800 text-[10px] text-zinc-500">
-                      <th className="px-3 py-2 font-medium">الشهر</th>
-                      <th className="px-3 py-2 font-medium">صفقات</th>
-                      <th className="px-3 py-2 font-medium">نجاح</th>
-                      <th className="px-3 py-2 font-medium">ربح/خسارة</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colMonth')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'btTrades')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'btWinRate')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colPnl')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -263,18 +273,18 @@ export default function BacktestPanel() {
           {robustness && (
             <div className="overflow-hidden rounded-2xl border border-sky-500/25">
               <div className="border-b border-sky-500/20 bg-sky-500/5 px-4 py-2.5 text-xs font-bold text-sky-300">
-                اختبار المتانة — نفس الاستراتيجية على 9 تضبيطات: لو النتائج بتقلب جذري بين الصفوف، ده إنذار curve-fitting
+                {t(lang, 'btRobustTitle')}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead>
                     <tr className="border-b border-zinc-800 text-[10px] text-zinc-500">
-                      <th className="px-3 py-2 font-medium">درجة الدخول ≥</th>
-                      <th className="px-3 py-2 font-medium">أرضية ADX</th>
-                      <th className="px-3 py-2 font-medium">صفقات</th>
-                      <th className="px-3 py-2 font-medium">نجاح</th>
-                      <th className="px-3 py-2 font-medium">عامل الربح</th>
-                      <th className="px-3 py-2 font-medium">الرصيد النهائي</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colEntryScore')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colAdxFloor')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'btTrades')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'btWinRate')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'btProfitFactor')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'btFinalEquity')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -296,28 +306,28 @@ export default function BacktestPanel() {
 
           {result.trades.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-zinc-800">
-              <div className="border-b border-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-300">آخر {result.trades.length} صفقة</div>
+              <div className="border-b border-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-300">{t(lang, 'btLastTrades')} {result.trades.length}</div>
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="sticky top-0 bg-zinc-900">
                     <tr className="text-[10px] text-zinc-500">
-                      <th className="px-3 py-2 font-medium">الدخول</th>
-                      <th className="px-3 py-2 font-medium">الخروج</th>
-                      <th className="px-3 py-2 font-medium">من → إلى</th>
-                      <th className="px-3 py-2 font-medium">الربح/الخسارة</th>
-                      <th className="px-3 py-2 font-medium">السبب</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colEntry')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colExit')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colFromTo')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colPnl')}</th>
+                      <th className="px-3 py-2 font-medium">{t(lang, 'colReason')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {result.trades.map((t, i) => (
+                    {result.trades.map((tr, i) => (
                       <tr key={i} className="border-b border-zinc-800/50">
-                        <td className="px-3 py-1.5 text-zinc-500" dir="ltr">{new Date(t.entryTime * 1000).toLocaleDateString('ar-EG')}</td>
-                        <td className="px-3 py-1.5 text-zinc-500" dir="ltr">{new Date(t.exitTime * 1000).toLocaleDateString('ar-EG')}</td>
-                        <td className="px-3 py-1.5 tabular-nums text-zinc-400" dir="ltr">${t.entry.toLocaleString()} → ${t.exitAvgPrice.toLocaleString()}</td>
-                        <td className={`px-3 py-1.5 font-bold tabular-nums ${t.pnlUsd > 0 ? 'text-emerald-300' : 'text-rose-300'}`} dir="ltr">
-                          {t.pnlUsd > 0 ? '+' : ''}${t.pnlUsd}
+                        <td className="px-3 py-1.5 text-zinc-500" dir="ltr">{new Date(tr.entryTime * 1000).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-GB')}</td>
+                        <td className="px-3 py-1.5 text-zinc-500" dir="ltr">{new Date(tr.exitTime * 1000).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-GB')}</td>
+                        <td className="px-3 py-1.5 tabular-nums text-zinc-400" dir="ltr">${tr.entry.toLocaleString()} → ${tr.exitAvgPrice.toLocaleString()}</td>
+                        <td className={`px-3 py-1.5 font-bold tabular-nums ${tr.pnlUsd > 0 ? 'text-emerald-300' : 'text-rose-300'}`} dir="ltr">
+                          {tr.pnlUsd > 0 ? '+' : ''}${tr.pnlUsd}
                         </td>
-                        <td className="px-3 py-1.5 text-[10px] text-zinc-500" dir="ltr">{t.exitReason}</td>
+                        <td className="px-3 py-1.5 text-[10px] text-zinc-500" dir="ltr">{tr.exitReason}</td>
                       </tr>
                     ))}
                   </tbody>

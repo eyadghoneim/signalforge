@@ -170,7 +170,7 @@ export default function App() {
         {/* ─── الشبكة الرئيسية ─── */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <section className="space-y-4 lg:col-span-2">
-            <PriceChart asset={activeAsset} />
+            <PriceChart asset={activeAsset} lang={lang} />
             {signalError ? (
               <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-5 text-sm text-rose-300">
                 {te('signalError')}: {signalError}
@@ -260,11 +260,11 @@ export default function App() {
             ))}
           </div>
           <div className="pt-4 rise-in">
-            {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} />}
-            {tab === 'backtest' && <BacktestPanel />}
-            {tab === 'dex' && <DexPanel />}
-            {tab === 'learning' && <LearningPanel />}
-            {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} />}
+            {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} lang={lang} />}
+            {tab === 'backtest' && <BacktestPanel lang={lang} />}
+            {tab === 'dex' && <DexPanel lang={lang} />}
+            {tab === 'learning' && <LearningPanel lang={lang} />}
+            {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} lang={lang} />}
           </div>
         </div>
       </main>
@@ -273,7 +273,7 @@ export default function App() {
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowSettings(false)}>
           <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <SettingsPanel onSaved={() => void refreshCore()} />
+            <SettingsPanel onSaved={() => void refreshCore()} lang={lang} />
             <button onClick={() => setShowSettings(false)} className="mt-4 w-full rounded-xl border border-zinc-800 py-2 text-sm font-bold text-zinc-400 hover:text-zinc-200">
               {te('close')}
             </button>

@@ -2,12 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, CandlestickSeries, LineSeries, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import { ema } from '../../shared/indicators';
 import { api, type SupportedAsset, type Candle } from '../api';
+import { t, type Lang, type TKey } from '../i18n';
 
 interface Props {
   asset: SupportedAsset;
+  lang: Lang;
 }
 
-export default function PriceChart({ asset }: Props) {
+const ASSET_TITLE_KEY: Record<SupportedAsset, TKey> = {
+  BTC: 'assetBTC',
+  ETH: 'assetETH',
+  SOL: 'assetSOL',
+  PAXG: 'assetPAXG',
+};
+
+export default function PriceChart({ asset, lang }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -123,7 +132,7 @@ export default function PriceChart({ asset }: Props) {
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
         <div className="text-sm font-bold text-zinc-300">
-          {asset === 'BTC' ? 'البيتكوين' : asset === 'ETH' ? 'الإيثريوم' : 'الذهب الرقمي'} — شموع ساعة مع EMA21/50
+          {t(lang, ASSET_TITLE_KEY[asset])} — {t(lang, 'chartTitleSuffix')}
         </div>
         <div className="flex items-center gap-3 text-[10px] text-zinc-500">
           <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-amber-400" /> EMA21</span>
@@ -131,7 +140,7 @@ export default function PriceChart({ asset }: Props) {
         </div>
       </div>
       {error ? (
-        <div className="flex h-72 items-center justify-center text-sm text-rose-300">بيانات الشموع غير متاحة: {error}</div>
+        <div className="flex h-72 items-center justify-center text-sm text-rose-300">{t(lang, 'chartError')} {error}</div>
       ) : (
         <div ref={containerRef} className="h-72 w-full sm:h-80" />
       )}
