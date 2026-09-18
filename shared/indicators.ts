@@ -254,7 +254,7 @@ const MIN_CANDLES = 70;
 const MIN_HTF_CANDLES = STRATEGY_THRESHOLDS.HTF_EMA_PERIOD + 30;
 
 export function computeSnapshot(candles: Candle[], index?: number): IndicatorSnapshot | null {
-  if (!candles || candles.length < MIN_CANDLES) return null;
+  if (!Array.isArray(candles) || candles.length < MIN_CANDLES) return null;
   const i = typeof index === 'number' ? index : candles.length - 1;
   if (i < MIN_CANDLES - 1 || i >= candles.length) return null;
 
@@ -303,7 +303,7 @@ export function computeSnapshot(candles: Candle[], index?: number): IndicatorSna
 }
 
 export function computeHtfSnapshot(htfCandles: Candle[], index?: number): HtfSnapshot | null {
-  if (!htfCandles || htfCandles.length < MIN_HTF_CANDLES) return null;
+  if (!Array.isArray(htfCandles) || htfCandles.length < MIN_HTF_CANDLES) return null;
   const i = typeof index === 'number' ? index : htfCandles.length - 1;
   if (i < MIN_HTF_CANDLES - 1) return null;
   const closes = htfCandles.map((c) => c.close);
@@ -435,7 +435,7 @@ export function computePullbackZone(
 
 // اتجاه الفريم اليومي (EMA20/50) — تأكيد الماكرو
 export function computeDailyTrend(daily: Candle[], index?: number): DailyTrend | null {
-  if (!daily || daily.length < 70) return null;
+  if (!Array.isArray(daily) || daily.length < 70) return null;
   const i = typeof index === 'number' ? index : daily.length - 1;
   if (i < 69) return null;
   const closes = daily.map((c) => c.close);

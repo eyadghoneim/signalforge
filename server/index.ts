@@ -38,13 +38,14 @@ import {
   appendLesson,
   listLessons,
 } from './persistence';
-import { buildSignalMessageHtml, buildTestMessageHtml, buildPaperEventHtml, sendTelegramMessage, verdictOf, verdictLabel } from './telegram';
+import { buildSignalMessageHtml, buildTestMessageHtml, buildPaperEventHtml, sendTelegramMessage, sendTelegramDedupedMessage, verdictOf, verdictLabel } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
+import { closeCcxtExchangePool } from './ccxtProvider';
 import { getWhaleNetflow } from './whaleAlert';
 import { getLiquidationRadar } from './liquidationRadar';
 import {
@@ -701,7 +702,11 @@ async function runScanCycle(): Promise<void> {
                 tgLang,
               );
             }
-            const pwResult = await sendTelegramMessage(pwToken, pwChat, html);
+            const eventIdentity =
+              ev.kind === 'CLOSED'
+                ? ev.trade?.id ?? ev.posBefore?.id ?? `${ev.asset}:${paperAfter.updatedAt}`
+                : ev.pos.id;
+            const pwResult = await sendTelegramDedupedMessage(pwToken, pwChat, html, `paper:${ev.kind}:${ev.asset}:${eventIdentity}`);
             if (!pwResult.ok) {
               appendLog('WARN', `Paper alert ${ev.kind} ${ev.asset}: ${pwResult.error ?? 'failed'}`);
             }
@@ -828,6 +833,18 @@ async function sendDailyDigestIfDue(): Promise<void> {
 }
 
 let lastDigestAt = 0;
+
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (backgroundTimer) clearTimeout(backgroundTimer);
+  await closeCcxtExchangePool();
+  appendLog('INFO', `Server stopped (${signal})`);
+  process.exit(0);
+}
+process.once('SIGTERM', () => void shutdown('SIGTERM'));
+process.once('SIGINT', () => void shutdown('SIGINT'));
 
 // ═══════════════════ الواجهة ═══════════════════
 

@@ -226,7 +226,10 @@ async function tickerFromOkx(asset: SupportedAsset): Promise<TickerData> {
 }
 
 // ─── الشموع ───
-function mapBinanceKlines(rows: unknown[][]): Candle[] {
+function mapBinanceKlines(rows: unknown): Candle[] {
+  if (!Array.isArray(rows) || !rows.every((r): r is unknown[] => Array.isArray(r))) {
+    throw new Error('binance candles response is not an array');
+  }
   return rows.map((r) => ({
     time: Math.floor(Number(r[0]) / 1000),
     open: parseFloat(String(r[1])),
@@ -238,7 +241,7 @@ function mapBinanceKlines(rows: unknown[][]): Candle[] {
 }
 
 async function candlesFromBinance(asset: SupportedAsset, interval: '1h' | '4h' | '1d', limit: number): Promise<Candle[]> {
-  const d = await fetchJsonWithTimeout<unknown[][]>(
+  const d = await fetchJsonWithTimeout<unknown>(
     `https://api.binance.com/api/v3/klines?symbol=${SYMBOLS[asset].binance}&interval=${interval}&limit=${limit}`,    6000,
   );
   const out = mapBinanceKlines(d);
@@ -287,9 +290,12 @@ async function candlesFromOkx(asset: SupportedAsset, interval: '1h' | '4h' | '1d
 }
 async function candlesFromCoinbase1h(asset: SupportedAsset): Promise<Candle[]> {
   // كوين بيس: 300 شمعة كحد أقصى ودعم 1h فقط — استخدام احتياطي
-  const d = await fetchJsonWithTimeout<number[][]>(
+  const d = await fetchJsonWithTimeout<unknown>(
     `https://api.exchange.coinbase.com/products/${SYMBOLS[asset].coinbase}/candles?granularity=3600`,
   );
+  if (!Array.isArray(d) || !d.every((r): r is number[] => Array.isArray(r))) {
+    throw new Error('coinbase candles response is not an array');
+  }
   const out = d
     .map((r) => ({ time: r[0], low: r[1], high: r[2], open: r[3], close: r[4], volume: r[5] }))
     .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.close > 0)

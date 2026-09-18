@@ -4,6 +4,45 @@ import type { Signal } from '../shared/types';
 export interface TelegramSendResult {
   ok: boolean;
   error?: string;
+  deduplicated?: boolean;
+}
+
+const TELEGRAM_ALERT_TTL_MS = 24 * 60 * 60_000;
+const sentAlertKeys = new Map<string, number>();
+
+function pruneAlertKeys(nowMs: number): void {
+  for (const [key, expiresAt] of sentAlertKeys) {
+    if (expiresAt <= nowMs) sentAlertKeys.delete(key);
+  }
+}
+
+/** Reserve an alert key before sending so overlapping/timeout retries stay at-most-once. */
+export function claimTelegramAlertKey(key: string, chatId: string, nowMs = Date.now()): boolean {
+  const scopedKey = `${chatId.replace(/\s+/g, '')}:${key}`;
+  pruneAlertKeys(nowMs);
+  if (sentAlertKeys.has(scopedKey)) return false;
+  sentAlertKeys.set(scopedKey, nowMs + TELEGRAM_ALERT_TTL_MS);
+  return true;
+}
+
+export function releaseTelegramAlertKey(key: string, chatId: string): void {
+  sentAlertKeys.delete(`${chatId.replace(/\s+/g, '')}:${key}`);
+}
+
+/** Paper-event wrapper: one stable event key cannot produce duplicate Telegram alerts. */
+export async function sendTelegramDedupedMessage(
+  token: string,
+  chatId: string,
+  html: string,
+  eventKey: string,
+  timeoutMs = 6000,
+): Promise<TelegramSendResult> {
+  if (!claimTelegramAlertKey(eventKey, chatId)) return { ok: true, deduplicated: true };
+  const result = await sendTelegramMessage(token, chatId, html, timeoutMs);
+  // A clear API rejection can be retried; an ambiguous timeout stays claimed to
+  // avoid sending a second copy after Telegram may already have accepted it.
+  if (!result.ok && !/abort|timeout/i.test(result.error ?? '')) releaseTelegramAlertKey(eventKey, chatId);
+  return result;
 }
 
 export async function sendTelegramMessage(

@@ -39,7 +39,7 @@ function syntheticCandles(n: number, drift: number, seed = 42): import('../share
 
 console.log('\n=== 1. المؤشرات الفنية ===');
 {
-  const { ema, rsi, macd, atr, adx, bollinger, relativeVolume, resample, computeSnapshot } = await import('../shared/indicators');
+  const { ema, rsi, macd, atr, adx, bollinger, relativeVolume, resample, computeSnapshot, computeHtfSnapshot, computeDailyTrend } = await import('../shared/indicators');
 
   const rising = Array.from({ length: 300 }, (_, i) => 100 + i);
   const emaOut = ema(rising, 21);
@@ -84,6 +84,9 @@ console.log('\n=== 1. المؤشرات الفنية ===');
     assert(snap.emaTrend === 'STRONG_BULLISH' || snap.emaTrend === 'BULLISH', 'ترند صاعد في سلسلة صاعدة');
   }
   assert(computeSnapshot(candles.slice(0, 30)) === null, 'بيانات ناقصة → snapshot فارغ بصراحة');
+  assert(computeSnapshot(null as unknown as import('../shared/types').Candle[]) === null, 'رد غير Array لا يكسر computeSnapshot');
+  assert(computeHtfSnapshot({} as unknown as import('../shared/types').Candle[]) === null, 'رد غير Array لا يكسر HTF snapshot');
+  assert(computeDailyTrend({} as unknown as import('../shared/types').Candle[]) === null, 'رد غير Array لا يكسر daily snapshot');
 }
 
 console.log('\n=== 2. الثوابت والدوال المركزية ===');
@@ -1037,6 +1040,7 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   const closedBySell = closeBySellSignal(post2, 'BTC', 101, 4000);
   assert(closedBySell.open.length === 0, 'sell signal closes position');
   assert(closedBySell.closed.length === 1, 'one closed trade from sell');
+  assert(closedBySell.closed[0].exitAvg === 101.5, `exitAvg weights TP1 + remainder (got ${closedBySell.closed[0].exitAvg})`);
 
   // 6) currentEquity = كاش + قيمة مفتوح (بعد TP1: ربح محقق + مركز مفتوح)
   const eq = currentEquity(closedBySell, { BTC: 101 });
@@ -1051,7 +1055,7 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
 console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (Telegram) ===');
 {
   const { defaultPaperAccount, openBuy, snapshotPaperAccount, diffPaperEvents } = await import('../server/paperTrading');
-  const { buildPaperEventHtml } = await import('../server/telegram');
+  const { buildPaperEventHtml, claimTelegramAlertKey, releaseTelegramAlertKey } = await import('../server/telegram');
 
   // 1) فتح مركز → حدث OPENED
   const a0 = defaultPaperAccount();
@@ -1070,6 +1074,14 @@ console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (
   assert(htmlAr.includes('المحفظة الورقية') && htmlAr.includes('ETH'), 'open message in Arabic');
   const htmlEn = buildPaperEventHtml({ kind: 'OPENED', asset: 'ETH', qty: 2.5, entry: 2000 }, 'en');
   assert(htmlEn.includes('Paper wallet') && htmlEn.includes('Position opened'), 'open message in English');
+
+  // 1b) نفس حدث المحفظة لا يُحجز مرتين لنفس المحادثة، ويُسمح لمحادثة أخرى.
+  const dedupKey = `test-paper-open-${Date.now()}`;
+  assert(claimTelegramAlertKey(dedupKey, 'chat-a', 1000), 'Telegram event key claims once');
+  assert(!claimTelegramAlertKey(dedupKey, 'chat-a', 1001), 'duplicate Telegram event is blocked');
+  assert(claimTelegramAlertKey(dedupKey, 'chat-b', 1001), 'same event may target a different chat');
+  releaseTelegramAlertKey(dedupKey, 'chat-a');
+  releaseTelegramAlertKey(dedupKey, 'chat-b');
 
   // 2) جني TP1 → حدث TP1
   const b0 = openBuy(defaultPaperAccount(), sig, 20, 1000);
@@ -1114,6 +1126,8 @@ console.log('\n=== 23. طبقة ccxt (شبكة أمان البيانات) ===');
   const mod = await import('../server/ccxtProvider');
   assert(typeof mod.tickerFromCcxt === 'function', 'ccxt ticker provider exported');
   assert(typeof mod.candlesFromCcxt === 'function', 'ccxt candles provider exported');
+  assert(typeof mod.closeCcxtExchangePool === 'function', 'ccxt pool exposes graceful cleanup');
+  assert(mod.ccxtExchangePoolSize() === 0, 'ccxt pool starts empty before fallback use');
   // تأكد إن الثنائية والاتجاه في mapCcxtOhlcv منغلقة داخلياً: نتأكد بطلب مجرد عدم انفجار الاستيراد
   const pkg = await import('ccxt');
   assert(typeof pkg.version === 'string' && pkg.version.length > 2, `ccxt library loaded (v${pkg.version})`);

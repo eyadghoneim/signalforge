@@ -140,10 +140,11 @@ function closeRemainder(
 ): void {
   const proceeds = exitPrice * p.qty;
   acct.cash = round2(acct.cash + proceeds);
-  const remRatio = p.qty / p.qtyOpen;
-  // متوسط الخروج موزون: (50% عند TP1) + (30% عند TP2) + (الباقي عند سعر القفل)
-  const exitAvg =
-    p.tp1Taken && p.tp2Taken ? TP1_RATIO * p.tp1 + TP2_RATIO * p.tp2 + remRatio * exitPrice : exitPrice;
+  // متوسط الخروج موزوناً بكل الشرائح المنفذة، بما فيها حالة TP1 فقط.
+  const tp1Ratio = p.tp1Taken ? TP1_RATIO : 0;
+  const tp2Ratio = p.tp2Taken ? TP2_RATIO : 0;
+  const remRatio = Math.max(0, 1 - tp1Ratio - tp2Ratio);
+  const exitAvg = tp1Ratio * p.tp1 + tp2Ratio * p.tp2 + remRatio * exitPrice;
   const totalPnl = round2(p.pnlAccum + (exitPrice - p.entry) * p.qty);
   acct.realizedPnl = round2(acct.realizedPnl + totalPnl);
   acct.closed.push({

@@ -41,6 +41,8 @@ interface CcxtTicker {
 interface CcxtExchangeLike {
   fetchTicker: (symbol: string) => Promise<CcxtTicker>;
   fetchOHLCV: (symbol: string, timeframe: string, since?: number, limit?: number) => Promise<unknown[][]>;
+  close?: () => Promise<void> | void;
+  timeout?: number;
 }
 
 function makeExchange(mod: CcxtModule, id: CcxtExchangeId, timeoutMs: number): CcxtExchangeLike | null {
@@ -54,6 +56,38 @@ function makeExchange(mod: CcxtModule, id: CcxtExchangeId, timeoutMs: number): C
   } catch {
     return null;
   }
+}
+
+// Reuse one REST client per exchange. Creating a new ccxt object for every
+// fallback attempt needlessly recreates its throttling/session state.
+const exchangePool = new Map<CcxtExchangeId, CcxtExchangeLike>();
+
+function getExchange(mod: CcxtModule, id: CcxtExchangeId, timeoutMs: number): CcxtExchangeLike | null {
+  const existing = exchangePool.get(id);
+  if (existing) {
+    if (typeof existing.timeout === 'number') existing.timeout = Math.max(existing.timeout, timeoutMs);
+    return existing;
+  }
+  const created = makeExchange(mod, id, timeoutMs);
+  if (created) exchangePool.set(id, created);
+  return created;
+}
+
+/** Close pooled clients during graceful shutdown/tests and release transports. */
+export async function closeCcxtExchangePool(): Promise<void> {
+  const clients = [...exchangePool.values()];
+  exchangePool.clear();
+  await Promise.all(clients.map(async (client) => {
+    try {
+      await client.close?.();
+    } catch {
+      // Best-effort cleanup; a failed close must not stop shutdown.
+    }
+  }));
+}
+
+export function ccxtExchangePoolSize(): number {
+  return exchangePool.size;
 }
 
 const INTERVAL_CCXT: Record<'1h' | '4h' | '1d', string> = { '1h': '1h', '4h': '4h', '1d': '1d' };
@@ -86,7 +120,7 @@ export async function tickerFromCcxt(asset: SupportedAsset, timeoutMs = 7000): P
   const pair = SYMBOL_BY_ID[asset];
   let lastErr: unknown = null;
   for (const id of CCXT_EXCHANGES) {
-    const ex = makeExchange(mod, id, timeoutMs);
+    const ex = getExchange(mod, id, timeoutMs);
     if (!ex) continue;
     try {
       const t = await ex.fetchTicker(pair);
@@ -122,7 +156,7 @@ export async function candlesFromCcxt(
   const tf = INTERVAL_CCXT[interval];
   let lastErr: unknown = null;
   for (const id of CCXT_EXCHANGES) {
-    const ex = makeExchange(mod, id, timeoutMs);
+    const ex = getExchange(mod, id, timeoutMs);
     if (!ex) continue;
     try {
       const rows = await ex.fetchOHLCV(pair, tf, undefined, Math.min(limit, 1000));
