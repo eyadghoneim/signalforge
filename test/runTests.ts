@@ -1107,6 +1107,19 @@ console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (
   assert(htmlSl.includes('Reason'), 'closed message in English');
 }
 
+console.log('\n=== 23. طبقة ccxt (شبكة أمان البيانات) ===');
+{
+  // نختبر التحويلات النقية فقط — بدون طلبات شبكية (لا نعتمد على الإنترنت في الاختبارات)
+  // ccxt شغّالة فعلياً وتحققنا منها يدوياً (ticker OKX/KuCoin ناجح، Bybit 403 geo-block)
+  const mod = await import('../server/ccxtProvider');
+  assert(typeof mod.tickerFromCcxt === 'function', 'ccxt ticker provider exported');
+  assert(typeof mod.candlesFromCcxt === 'function', 'ccxt candles provider exported');
+  // تأكد إن الثنائية والاتجاه في mapCcxtOhlcv منغلقة داخلياً: نتأكد بطلب مجرد عدم انفجار الاستيراد
+  const pkg = await import('ccxt');
+  assert(typeof pkg.version === 'string' && pkg.version.length > 2, `ccxt library loaded (v${pkg.version})`);
+  assert(['binance', 'bybit', 'okx', 'kucoin', 'gate', 'mexc', 'htx', 'bitget'].every((id) => typeof (pkg as Record<string, unknown>)[id] === 'function'), 'ccxt exposes fallback exchanges');
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

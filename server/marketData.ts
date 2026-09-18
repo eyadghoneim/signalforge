@@ -2,6 +2,7 @@
 import type { Candle, SupportedAsset } from '../shared/types';
 import { getVisionMonthlyKlines } from './vision';
 import { OKX_BAR, OKX_SWAP, hasOkxSwap } from './symbols';
+import { tickerFromCcxt, candlesFromCcxt } from './ccxtProvider';
 
 export class DataUnavailableError extends Error {
   asset: string;
@@ -13,11 +14,11 @@ export class DataUnavailableError extends Error {
   }
 }
 
-const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string; bybit: string; okx: string }> = {
-  BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT', okx: 'BTC-USDT' },
-  ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT', okx: 'ETH-USDT' },
-  PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT', okx: 'PAXG-USDT' },
-  SOL: { binance: 'SOLUSDT', coinbase: 'SOL-USD', coingecko: 'solana', bybit: 'SOLUSDT', okx: 'SOL-USDT' },
+const SYMBOLS: Record<SupportedAsset, { binance: string; coinbase: string; coingecko: string; bybit: string; okx: string; ccxt: string }> = {
+  BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', bybit: 'BTCUSDT', okx: 'BTC-USDT', ccxt: 'BTC/USDT' },
+  ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', bybit: 'ETHUSDT', okx: 'ETH-USDT', ccxt: 'ETH/USDT' },
+  PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', bybit: 'PAXGUSDT', okx: 'PAXG-USDT', ccxt: 'PAXG/USDT' },
+  SOL: { binance: 'SOLUSDT', coinbase: 'SOL-USD', coingecko: 'solana', bybit: 'SOLUSDT', okx: 'SOL-USDT', ccxt: 'SOL/USDT' },
 };
 
 // ─── كاش TTL مع منع الطلبات المكررة المتوازية ───
@@ -187,6 +188,12 @@ export async function getTicker(asset: SupportedAsset): Promise<TickerData> {
         lastErr = e;
       }
     }
+    // شبكة أمان أخيرة: موحدة عبر عدة بورصات ccxt (KuCoin/Gate/MEXC/…).
+    try {
+      return await tickerFromCcxt(asset);
+    } catch (e) {
+      lastErr = e;
+    }
     throw new DataUnavailableError(asset, `ticker (${String((lastErr as Error)?.message || lastErr)})`);
   });
 }
@@ -339,6 +346,12 @@ export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<
         noteProviderHealth('coinbase:candles', true);
         return cb.slice(-limit);
       }
+      // مظلة ccxt: بورصات إضافية كخيار أخير عندما تتعطل المصادر المباشرة.
+      try {
+        return await candlesFromCcxt(asset, '1h', limit);
+      } catch (e3) {
+        noteProviderHealth('ccxt:klines', false, e3 instanceof Error ? e3.message : String(e3));
+      }
       throw e;
     }
   });
@@ -361,6 +374,9 @@ export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<
       } catch {
         out = await candlesFromBybit(asset, '1d', Math.min(limit, 1000));
         noteProviderHealth('bybit:klines', true);
+      }
+      if (out.length < 75) {
+        out = await candlesFromCcxt(asset, '1d', limit);
       }
       if (out.length < 75) throw new DataUnavailableError(asset, 'daily klines (too short)');
       return out;
@@ -386,6 +402,13 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
         } catch {
           rows = await candlesFromBybit(asset, '4h', Math.min(limit, 1000));
           noteProviderHealth('bybit:klines', true);
+        }
+        if (rows.length < 230) {
+          try {
+            rows = await candlesFromCcxt(asset, '4h', limit);
+          } catch (e2) {
+            noteProviderHealth('ccxt:klines', false, e2 instanceof Error ? e2.message : String(e2));
+          }
         }
         if (rows.length < 230) throw new Error('4h too short for HTF gate');
         return rows;
