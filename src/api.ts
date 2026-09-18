@@ -46,6 +46,7 @@ export interface HealthInfo {
   ok: boolean;
   version: string;
   engineSignature: string;
+  persistence?: 'postgres' | 'local_json';
   lastScanAt: number;
   uptimeSec: number;
   protection?: {
@@ -70,6 +71,7 @@ export interface ConfigInfo {
   regimeEnabled: boolean;
   digestEnabled: boolean;
   paperAlertsEnabled: boolean;
+  paperEnginePaused: boolean;
   telegramLang: 'ar' | 'en';
   protection: ProtectionConfig;
 }
@@ -98,6 +100,7 @@ export interface PaperPositionInfo {
   tp3: number;
   qty: number;
   qtyOpen: number;
+  feesPaid?: number;
   pnlAccum: number;
   openedAtSec: number;
   tp1Taken: boolean;
@@ -113,10 +116,12 @@ export interface PaperTradeInfo {
   exitAvg: number;
   qty: number;
   pnlUsd: number;
+  feesUsd?: number;
   reason: 'TP3' | 'SL' | 'SELL_SIGNAL';
 }
 
 export interface PaperAccountInfo {
+  paused?: boolean;
   startingEquity: number;
   cash: number;
   realizedPnl: number;
@@ -197,7 +202,12 @@ export const api = {
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
   dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
-  paper: () => j<{ ok: true; account: PaperAccountInfo; initialEquity: number }>('/api/paper'),
+  paper: () => j<{
+    ok: true;
+    account: PaperAccountInfo;
+    initialEquity: number;
+    execution?: { feeRate: number; slippageRate: number; mode: string };
+  }>('/api/paper'),
   resetPaper: () => j<{ ok: true }>('/api/paper/reset', { method: 'POST', body: '{}' }),
   liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>

@@ -10,8 +10,12 @@ services:
         value: production
       - key: PORT
         value: "3000"
+      # ضع قيمة DATABASE_URL من Supabase Free في إعدادات Render كـ Secret.
+      - key: DATABASE_URL
+        sync: false
     # ملاحظات سريعة:
-    # • البيانات بتتخزن في مجلد data/ جوة الخدمة — لو عايزها تفضل بعد إعادة التشغيل،
-    #   حول المجلد لـ Disk في إعدادات الخدمة (Settings → Disks).
+    # • عند وجود DATABASE_URL ينتقل SignalForge تلقائيًا إلى PostgreSQL دائم
+    #   ويستورد data/*.json مرة واحدة بدون حذف السجل الموجود.
+    # • بدون DATABASE_URL يبقى التشغيل المحلي على JSON كخطة احتياطية فقط.
     # • لو عايز تليجرام: ضيف TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID،
     #   أو فعّلهم من الواجهة نفسها (Settings).

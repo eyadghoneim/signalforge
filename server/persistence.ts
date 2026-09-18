@@ -1,8 +1,9 @@
-// طبقة التخزين المحلية: JSON ذري على القرص (tmp + rename) — بسيطة ومحمولة بلا سحابة
+// طبقة التخزين: PostgreSQL اختياري ودائم عند توفر DATABASE_URL، مع JSON ذري كخطة احتياطية محلية
 import * as fs from 'fs';
 import * as path from 'path';
 import type { BotConfig, StoredSignal, SignalOutcomes, LearningLesson } from '../shared/types';
 import { DEFAULT_PROTECTION } from './protection';
+import { createDurableStore, type DurableStore } from './durablePersistence';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -10,6 +11,27 @@ const SIGNALS_FILE = path.join(DATA_DIR, 'signals.json');
 const LOGS_FILE = path.join(DATA_DIR, 'logs.json');
 const LEARNING_FILE = path.join(DATA_DIR, 'learning.json');
 const LESSONS_FILE = path.join(DATA_DIR, 'lessons.json');
+
+let durableStore: DurableStore | null = null;
+
+export async function initializeDurablePersistence(): Promise<boolean> {
+  if (durableStore) return true;
+  const store = await createDurableStore(DEFAULT_CONFIG);
+  if (!store) return false;
+  durableStore = store;
+  return true;
+}
+
+export function getDurablePersistence(): DurableStore | null {
+  return durableStore;
+}
+
+export async function closeDurablePersistence(): Promise<void> {
+  if (!durableStore) return;
+  const store = durableStore;
+  durableStore = null;
+  await store.close();
+}
 
 function ensureDir(): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -43,10 +65,12 @@ export const DEFAULT_CONFIG: BotConfig = {
   digestEnabled: true,
   paperAlertsEnabled: true,
   telegramLang: 'ar',
+  paperEnginePaused: false,
   protection: DEFAULT_PROTECTION,
 };
 
 export function loadConfig(): BotConfig {
+  if (durableStore) return durableStore.loadConfig(DEFAULT_CONFIG);
   const stored = readJson<Partial<BotConfig>>(CONFIG_FILE, {});
   return {
     ...DEFAULT_CONFIG,
@@ -65,7 +89,8 @@ export function saveConfig(partial: Partial<BotConfig>): BotConfig {
     protection: { ...current.protection, ...(partial.protection || {}) },
   };
   next.scanIntervalSeconds = Math.min(3600, Math.max(30, Math.round(next.scanIntervalSeconds)));
-  writeJson(CONFIG_FILE, next);
+  if (durableStore) durableStore.saveConfig(next);
+  else writeJson(CONFIG_FILE, next);
   return next;
 }
 
@@ -82,17 +107,23 @@ export function defaultOutcomes(): SignalOutcomes {
 }
 
 export function appendSignal(signal: StoredSignal): void {
+  if (durableStore) {
+    durableStore.appendSignal(signal);
+    return;
+  }
   const list = readJson<StoredSignal[]>(SIGNALS_FILE, []);
   list.push(signal);
   writeJson(SIGNALS_FILE, list.slice(-500)); // سقف 500 إشارة
 }
 
 export function listSignals(limit = 200): StoredSignal[] {
+  if (durableStore) return durableStore.listSignals(limit);
   const list = readJson<StoredSignal[]>(SIGNALS_FILE, []);
   return list.slice(-limit).reverse();
 }
 
 export function getLastSignalForAsset(asset: string): StoredSignal | null {
+  if (durableStore) return durableStore.getLastSignalForAsset(asset);
   const list = readJson<StoredSignal[]>(SIGNALS_FILE, []);
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i].asset === asset) return list[i];
@@ -101,6 +132,7 @@ export function getLastSignalForAsset(asset: string): StoredSignal | null {
 }
 
 export function updateSignalOutcomes(id: string, outcomes: SignalOutcomes): boolean {
+  if (durableStore) return durableStore.updateSignalOutcomes(id, outcomes);
   const list = readJson<StoredSignal[]>(SIGNALS_FILE, []);
   let changed = false;
   for (let i = list.length - 1; i >= 0; i--) {
@@ -115,6 +147,10 @@ export function updateSignalOutcomes(id: string, outcomes: SignalOutcomes): bool
 }
 
 export function markTelegramSent(id: string, sent: boolean): void {
+  if (durableStore) {
+    durableStore.markTelegramSent(id, sent);
+    return;
+  }
   const list = readJson<StoredSignal[]>(SIGNALS_FILE, []);
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i].id === id) {
@@ -133,12 +169,17 @@ export interface BotLog {
 }
 
 export function appendLog(level: BotLog['level'], message: string): void {
+  if (durableStore) {
+    durableStore.appendLog(level, message);
+    return;
+  }
   const list = readJson<BotLog[]>(LOGS_FILE, []);
   list.push({ level, message: message.slice(0, 300), at: Date.now() });
   writeJson(LOGS_FILE, list.slice(-1000));
 }
 
 export function listLogs(limit = 50): BotLog[] {
+  if (durableStore) return durableStore.listLogs(limit);
   return readJson<BotLog[]>(LOGS_FILE, []).slice(-limit).reverse();
 }
 
@@ -151,20 +192,30 @@ export function maskToken(token: string): string {
 
 // --- Learning system storage (v3) ---
 export function loadTagBias(): Record<string, number> {
+  if (durableStore) return durableStore.loadTagBias();
   const state = readJson<{ biases?: Record<string, number> }>(LEARNING_FILE, {});
   return state.biases ?? {};
 }
 
 export function saveTagBias(biases: Record<string, number>): void {
+  if (durableStore) {
+    durableStore.saveTagBias(biases);
+    return;
+  }
   writeJson(LEARNING_FILE, { biases, updatedAt: Date.now() });
 }
 
 export function appendLesson(lesson: LearningLesson): void {
+  if (durableStore) {
+    durableStore.appendLesson(lesson);
+    return;
+  }
   const list = readJson<LearningLesson[]>(LESSONS_FILE, []);
   list.push(lesson);
   writeJson(LESSONS_FILE, list.slice(-200));
 }
 
 export function listLessons(limit = 50): LearningLesson[] {
+  if (durableStore) return durableStore.listLessons(limit);
   return readJson<LearningLesson[]>(LESSONS_FILE, []).slice(-limit).reverse();
 }

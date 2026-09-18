@@ -43,6 +43,13 @@ export const ATTRIBUTION_WINDOWS_HOURS = [4, 24, 72] as const;
 
 export const TELEGRAM_COOLDOWN_MS = 30 * 60 * 1000;
 
+// Paper execution model: deterministic costs, never random, so tests and live
+// paper results remain reproducible while approximating real taker execution.
+export const PAPER_EXECUTION = {
+  FEE_RATE: 0.00075, // 0.075% per filled side
+  SLIPPAGE_RATE: 0.0005, // 0.05% adverse price movement per fill
+} as const;
+
 // دالة التحويل المركزية — لا يُسمح لأي كود آخر باستنتاج النوع من الدرجة
 export function deriveSignalTypeAndAction(score: number): {
   signalType: SignalType;

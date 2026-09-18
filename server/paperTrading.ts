@@ -7,8 +7,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Signal, SupportedAsset } from '../shared/types';
-import { STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
+import { PAPER_EXECUTION, STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
 import { DEFAULT_PROTECTION } from './protection';
+import { getDurablePersistence } from './persistence';
 
 export const PAPER_INITIAL_EQUITY = 10_000;
 export const PAPER_RISK_PERCENT = 1; // مخاطرة لكل صفقة: 1% من الرصيد المتاح
@@ -39,6 +40,7 @@ export interface PaperPosition {
   tp3: number;
   qty: number; // الكمية المتبقية حالياً
   qtyOpen: number; // الكمية الأصلية
+  feesPaid?: number; // entry + partial exit fees; optional for legacy JSON positions
   pnlAccum: number; // الربح المحصَّل من الجني الجزئي (TP1/TP2)
   openedAtSec: number;
   tp1Taken: boolean;
@@ -56,6 +58,7 @@ export interface PaperTrade {
   exitAvg: number;
   qty: number;
   pnlUsd: number;
+  feesUsd?: number;
   reason: 'TP3' | 'SL' | 'SELL_SIGNAL';
 }
 
@@ -71,6 +74,18 @@ export interface PaperAccount {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function feeFor(notional: number): number {
+  return Math.max(0, notional) * PAPER_EXECUTION.FEE_RATE;
+}
+
+function buyFillPrice(markPrice: number): number {
+  return markPrice * (1 + PAPER_EXECUTION.SLIPPAGE_RATE);
+}
+
+function sellFillPrice(markPrice: number): number {
+  return Math.max(0, markPrice * (1 - PAPER_EXECUTION.SLIPPAGE_RATE));
 }
 
 export function defaultPaperAccount(): PaperAccount {
@@ -89,8 +104,8 @@ export function defaultPaperAccount(): PaperAccount {
 export function currentEquity(acct: PaperAccount, prices: Partial<Record<SupportedAsset, number>>): number {
   let openValue = 0;
   for (const p of acct.open) {
-    const price = prices[p.asset] ?? p.entry;
-    openValue += p.qty * price;
+    const price = sellFillPrice(prices[p.asset] ?? p.entry);
+    openValue += p.qty * price - feeFor(p.qty * price);
   }
   return round2(acct.cash + openValue);
 }
@@ -103,21 +118,27 @@ export function openBuy(
   nowMs: number,
   maxOpenPositions = DEFAULT_PROTECTION.maxConcurrentSignals,
 ): PaperAccount {
-  const entry = signal.entryPrice;
+  const markEntry = signal.entryPrice;
+  const entry = buyFillPrice(markEntry);
   const stop = signal.stopLoss;
   const riskDistance = entry - stop;
-  if (!Number.isFinite(entry) || entry <= 0 || !(riskDistance > 0)) return acct;
+  if (!Number.isFinite(markEntry) || markEntry <= 0 || !Number.isFinite(entry) || !(riskDistance > 0)) return acct;
   const positionCap = Math.max(1, Math.floor(Number(maxOpenPositions) || DEFAULT_PROTECTION.maxConcurrentSignals));
   if (acct.open.length >= positionCap) return acct;
   if (acct.open.some((p) => p.asset === signal.asset)) return acct; // مركز واحد لكل أصل
 
   const riskAmount = acct.cash * (PAPER_RISK_PERCENT / 100);
   let qty = riskAmount / riskDistance;
+  // Keep the whole entry outlay (notional + entry fee) within the 95% cash cap.
+  const maxEntryOutlay = acct.cash * 0.95;
+  const maxEntryNotional = maxEntryOutlay / (1 + PAPER_EXECUTION.FEE_RATE);
   const notional = qty * entry;
-  if (notional > acct.cash * 0.95) qty = (acct.cash * 0.95) / entry;
+  if (notional > maxEntryNotional) qty = maxEntryNotional / entry;
   if (!(qty > 0)) return acct;
 
-  acct.cash = round2(acct.cash - qty * entry);
+  const entryNotional = qty * entry;
+  const entryFee = feeFor(entryNotional);
+  acct.cash = round2(acct.cash - entryNotional - entryFee);
   acct.open.push({
     id: `${signal.asset}-${nowMs}`,
     asset: signal.asset,
@@ -128,7 +149,8 @@ export function openBuy(
     tp3: signal.target3,
     qty,
     qtyOpen: qty,
-    pnlAccum: 0,
+    feesPaid: entryFee,
+    pnlAccum: -entryFee,
     openedAtSec: Math.floor(nowMs / 1000),
     tp1Taken: false,
     tp2Taken: false,
@@ -147,14 +169,19 @@ function closeRemainder(
   reason: PaperTrade['reason'],
   nowMs: number,
 ): void {
-  const proceeds = exitPrice * p.qty;
-  acct.cash = round2(acct.cash + proceeds);
+  const fillPrice = sellFillPrice(exitPrice);
+  const proceeds = fillPrice * p.qty;
+  const exitFee = feeFor(proceeds);
+  acct.cash = round2(acct.cash + proceeds - exitFee);
   // متوسط الخروج موزوناً بكل الشرائح المنفذة، بما فيها حالة TP1 فقط.
   const tp1Ratio = p.tp1Taken ? TP1_RATIO : 0;
   const tp2Ratio = p.tp2Taken ? TP2_RATIO : 0;
   const remRatio = Math.max(0, 1 - tp1Ratio - tp2Ratio);
-  const exitAvg = tp1Ratio * p.tp1 + tp2Ratio * p.tp2 + remRatio * exitPrice;
-  const totalPnl = round2(p.pnlAccum + (exitPrice - p.entry) * p.qty);
+  const tp1Fill = p.tp1Taken ? sellFillPrice(p.tp1) : 0;
+  const tp2Fill = p.tp2Taken ? sellFillPrice(p.tp2) : 0;
+  const exitAvg = tp1Ratio * tp1Fill + tp2Ratio * tp2Fill + remRatio * fillPrice;
+  const totalFees = round2((p.feesPaid ?? 0) + exitFee);
+  const totalPnl = round2(p.pnlAccum + (fillPrice - p.entry) * p.qty - exitFee);
   acct.realizedPnl = round2(acct.realizedPnl + totalPnl);
   acct.closed.push({
     id: p.id,
@@ -165,6 +192,7 @@ function closeRemainder(
     exitAvg: round2(exitAvg),
     qty: round2(p.qtyOpen),
     pnlUsd: totalPnl,
+    feesUsd: totalFees,
     reason,
   });
   if (acct.closed.length > MAX_CLOSED) acct.closed.splice(0, acct.closed.length - MAX_CLOSED);
@@ -227,17 +255,25 @@ export function markToMarket(
     // 2) جني TP1 ثم TP2 (كميات ثابتة من الكمية الأصلية)
     if (!p.tp1Taken && candle.high >= p.tp1) {
       const out = p.qtyOpen * TP1_RATIO;
+      const fillPrice = sellFillPrice(p.tp1);
+      const proceeds = fillPrice * out;
+      const exitFee = feeFor(proceeds);
       p.qty = round2(p.qty - out);
-      p.pnlAccum = round2(p.pnlAccum + (p.tp1 - p.entry) * out);
-      acct.cash = round2(acct.cash + p.tp1 * out);
+      p.feesPaid = round2((p.feesPaid ?? 0) + exitFee);
+      p.pnlAccum = round2(p.pnlAccum + (fillPrice - p.entry) * out - exitFee);
+      acct.cash = round2(acct.cash + proceeds - exitFee);
       p.tp1Taken = true;
       p.stop = Math.max(p.stop, p.entry); // وقف تعادل بعد TP1
     }
     if (p.tp1Taken && !p.tp2Taken && candle.high >= p.tp2) {
       const out = p.qtyOpen * TP2_RATIO;
+      const fillPrice = sellFillPrice(p.tp2);
+      const proceeds = fillPrice * out;
+      const exitFee = feeFor(proceeds);
       p.qty = round2(p.qty - out);
-      p.pnlAccum = round2(p.pnlAccum + (p.tp2 - p.entry) * out);
-      acct.cash = round2(acct.cash + p.tp2 * out);
+      p.feesPaid = round2((p.feesPaid ?? 0) + exitFee);
+      p.pnlAccum = round2(p.pnlAccum + (fillPrice - p.entry) * out - exitFee);
+      acct.cash = round2(acct.cash + proceeds - exitFee);
       p.tp2Taken = true;
     }
 
@@ -264,6 +300,8 @@ export function markToMarket(
 
 // ─── الاستمرارية: ذري (tmp + rename) — مثل طبقة التخزين ───
 export function loadPaperAccount(): PaperAccount {
+  const durable = getDurablePersistence();
+  if (durable) return durable.loadPaperAccount(defaultPaperAccount());
   try {
     if (fs.existsSync(PAPER_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(PAPER_FILE, 'utf-8')) as PaperAccount;
@@ -276,6 +314,11 @@ export function loadPaperAccount(): PaperAccount {
 }
 
 export function savePaperAccount(acct: PaperAccount): void {
+  const durable = getDurablePersistence();
+  if (durable) {
+    durable.savePaperAccount(acct);
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${PAPER_FILE}.tmp`;

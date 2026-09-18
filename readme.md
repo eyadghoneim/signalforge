@@ -53,12 +53,24 @@ npm run dev        # dashboard on http://localhost:3000
 |---|---|
 | `npm run dev` | Run the server + serve the dashboard |
 | `npm run lint` | TypeScript check (strict) |
-| `npm test` | 195 deterministic tests |
+| `npm test` | deterministic test suite |
 | `npm run build` | Production build (vite + esbuild server bundle) |
 | `npm start` | Run the built server |
 
 Telegram notifications are optional - configure a bot token and chat id in the dashboard settings
-(step-by-step guide included in the UI).
+(step-by-step guide included in the UI). When enabled, the authorized chat can also send these
+**paper-only** commands: `/status`, `/balance`, `/pause`, `/resume`, and `/panic`. The bot never
+creates an exchange order; `/panic` closes only paper positions using the latest market ticker.
+
+### Free durable storage (Supabase)
+
+For a deployment whose filesystem can reset (such as Render Free), create a Supabase Free project
+and add its PostgreSQL connection string as `DATABASE_URL` (or `SUPABASE_DB_URL`). On the first
+startup SignalForge creates its tables and imports the existing `data/config.json`, `signals.json`,
+`logs.json`, `learning.json`, `lessons.json`, and `paper.json` without overwriting rows already in
+the database. Subsequent reads use the database-backed cache and writes are queued durably. If the
+variable is absent, local JSON remains available as a development fallback; it is not a guarantee
+of persistence on an ephemeral host. Supabase Free has usage limits and may pause inactive projects.
 
 ## How the learning works
 

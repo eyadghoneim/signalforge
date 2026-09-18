@@ -993,6 +993,7 @@ console.log('\n=== 20. R-consistency + explicit verdict ===');
 console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
 {
   const { defaultPaperAccount, openBuy, markToMarket, currentEquity, closeBySellSignal } = await import('../server/paperTrading');
+  const { PAPER_EXECUTION } = await import('../shared/strategyConstants');
 
   // 1) فتح صفقة بحجم 1% مخاطرة: القيود الرياضية
   const acct0 = defaultPaperAccount();
@@ -1009,9 +1010,13 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   assert(opened.open.length === 1, 'buy opens one position');
   const pos0 = opened.open[0];
   assert(pos0.qty > 0, 'qty positive');
-  // كمية 1% مخاطرة = $100 على مسافة $1 → qty=100، لكن سقف 95% من الرصيد
-  // ($9,500) يقص الكمية لـ 95 — السقف شغال صح، والكمية ضمن نطاقها
-  assert(pos0.qty === 95, `qty = 95 via cash cap (got ${pos0.qty.toFixed(2)})`);
+  // الرسوم والانزلاق حتميان: شراء أسوأ بـ 0.05% + رسم 0.075% على الجانب.
+  const expectedEntry = entry * (1 + PAPER_EXECUTION.SLIPPAGE_RATE);
+  assert(Math.abs(pos0.entry - expectedEntry) < 1e-9, `buy slippage is deterministic (got ${pos0.entry})`);
+  const expectedQty = (10000 * 0.95) / (expectedEntry * (1 + PAPER_EXECUTION.FEE_RATE));
+  assert(Math.abs(pos0.qty - expectedQty) < 1e-9, `qty respects cash cap after slippage and fee (got ${pos0.qty.toFixed(2)})`);
+  const expectedEntryFee = pos0.qty * pos0.entry * PAPER_EXECUTION.FEE_RATE;
+  assert(Math.abs(opened.cash - (10000 - pos0.qty * pos0.entry - expectedEntryFee)) < 0.01, 'entry fee deducted from cash');
   assert(opened.cash < 10000, 'cash reduced by position cost');
   assert(pos0.qty * entry <= 10000 * 0.95 + 0.01, 'position never exceeds 95% of equity');
 
@@ -1062,7 +1067,9 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   const closedBySell = closeBySellSignal(post2, 'BTC', 101, 4000);
   assert(closedBySell.open.length === 0, 'sell signal closes position');
   assert(closedBySell.closed.length === 1, 'one closed trade from sell');
-  assert(closedBySell.closed[0].exitAvg === 101.5, `exitAvg weights TP1 + remainder (got ${closedBySell.closed[0].exitAvg})`);
+  const expectedExitAvg = Number(((0.5 * 102 * (1 - PAPER_EXECUTION.SLIPPAGE_RATE)) + (0.5 * 101 * (1 - PAPER_EXECUTION.SLIPPAGE_RATE))).toFixed(2));
+  assert(closedBySell.closed[0].exitAvg === expectedExitAvg, `exitAvg weights TP1 + remainder after slippage (got ${closedBySell.closed[0].exitAvg})`);
+  assert((closedBySell.closed[0].feesUsd ?? 0) > 0, 'closed trade reports accumulated fees');
 
   // 6) currentEquity = كاش + قيمة مفتوح (بعد TP1: ربح محقق + مركز مفتوح)
   const eq = currentEquity(closedBySell, { BTC: 101 });
@@ -1077,7 +1084,10 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
 console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (Telegram) ===');
 {
   const { defaultPaperAccount, openBuy, snapshotPaperAccount, diffPaperEvents } = await import('../server/paperTrading');
-  const { buildPaperEventHtml, claimTelegramAlertKey, releaseTelegramAlertKey } = await import('../server/telegram');
+  const { buildPaperEventHtml, claimTelegramAlertKey, releaseTelegramAlertKey, parseTelegramCommand } = await import('../server/telegram');
+  assert(parseTelegramCommand('/status') === 'status', 'Telegram parses /status');
+  assert(parseTelegramCommand('/balance@signalforge_bot') === 'balance', 'Telegram strips bot username');
+  assert(parseTelegramCommand('status') === null, 'Telegram rejects non-slash text');
 
   // 1) فتح مركز → حدث OPENED
   const a0 = defaultPaperAccount();

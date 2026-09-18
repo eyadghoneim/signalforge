@@ -113,6 +113,7 @@ export interface BotConfig {
   digestEnabled: boolean;
   paperAlertsEnabled: boolean;
   telegramLang: 'ar' | 'en';
+  paperEnginePaused: boolean;
 }
 
 // ─── تقارير الأداء والباك تست (مشتركة بين السيرفر والواجهة) ───
