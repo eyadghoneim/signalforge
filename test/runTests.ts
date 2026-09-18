@@ -1203,14 +1203,17 @@ console.log('\n=== 25. إصلاح جلب أزواج DEX ===');
 {
   const { normalizeDexPairs } = await import('../server/dexscreener');
   const raw = [
-    { chainId: 'ethereum', dexId: 'uniswap', url: 'https://dex/1', priceUsd: '100', liquidity: { usd: 250_000 }, volume: { h24: 10_000 }, priceChange: { h24: 2.5 } },
-    { chainId: 'solana', dexId: 'raydium', url: 'https://dex/2', priceUsd: '99', liquidity: { usd: 900_000 }, volume: { h24: 20_000 }, priceChange: { h24: -1.2 } },
+    { chainId: 'ethereum', dexId: 'uniswap', url: 'https://dex/1', baseToken: { address: '0xCANON', symbol: 'WBTC' }, quoteToken: { address: '0xQUOTE', symbol: 'WETH' }, priceUsd: '100', liquidity: { usd: 250_000 }, volume: { h24: 10_000 }, priceChange: { h24: 2.5 } },
+    { chainId: 'solana', dexId: 'raydium', url: 'https://dex/2', baseToken: { address: 'SOL-CANON', symbol: 'SOL' }, quoteToken: { address: 'USDC', symbol: 'USDC' }, priceUsd: '99', liquidity: { usd: 900_000 }, volume: { h24: 20_000 }, priceChange: { h24: -1.2 } },
     { chainId: 'unknown', dexId: 'bad', liquidity: { usd: 'not-a-number' } },
   ];
   const pairs = normalizeDexPairs(raw);
   assert(pairs.length === 2, `الأزواج الصالحة فقط تظهر (got ${pairs.length})`);
   assert(pairs[0].dexId === 'raydium' && pairs[0].liquidityUsd === 900_000, 'الترتيب حسب السيولة صحيح');
+  assert(pairs[0].baseTokenSymbol === 'SOL' && pairs[0].quoteTokenSymbol === 'USDC', 'رموز الزوج تظهر بوضوح');
   assert(pairs[1].priceChange24hPercent === 2.5, 'تغيير السعر يتحول لرقم صحيح');
+  const verifiedOnly = normalizeDexPairs(raw, { chainId: 'ethereum', address: '0xCANON', wrappedSymbol: 'WBTC' });
+  assert(verifiedOnly.length === 1 && verifiedOnly[0].baseTokenSymbol === 'WBTC', 'فلترة العنوان والشبكة الرسمية تمنع التوكن المقلد');
   assert(normalizeDexPairs(null).length === 0 && normalizeDexPairs({ pairs: raw }).length === 0, 'الرد غير الصالح لا يكسر المسار');
 }
 

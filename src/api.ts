@@ -150,6 +150,8 @@ export interface DexPairInfo {
   chainId: string;
   dexId: string;
   pairUrl: string;
+  baseTokenSymbol: string;
+  quoteTokenSymbol: string;
   priceUsd: number | null;
   liquidityUsd: number | null;
   volume24hUsd: number | null;

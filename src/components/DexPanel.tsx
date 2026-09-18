@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Droplets, ExternalLink, Loader2, Search } from 'lucide-react';
+import { CheckCircle2, Droplets, ExternalLink, Loader2, Search } from 'lucide-react';
 import { api, type DexPairInfo } from '../api';
+import { SUPPORTED_ASSETS, ASSET_LABELS_AR, type SupportedAsset } from '../../shared/types';
 import { t, type Lang } from '../i18n';
 
-/** معلومات شرائح DEX الحية من DexScreener — سيولة وحجم تداول خارج البورصات المركزية. */
+const ASSET_LABELS_EN: Record<SupportedAsset, string> = {
+  BTC: 'Bitcoin',
+  ETH: 'Ethereum',
+  PAXG: 'PAX Gold',
+  SOL: 'Solana',
+};
+
+/** Verified canonical DEX pools only — no ambiguous ticker-symbol search. */
 export default function DexPanel({ lang }: { lang: Lang }) {
-  const [query, setQuery] = useState('BTC');
+  const [asset, setAsset] = useState<SupportedAsset>('BTC');
   const [pairs, setPairs] = useState<DexPairInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async (q: string) => {
+  const load = async (q: SupportedAsset) => {
     setLoading(true);
     setError(null);
     try {
@@ -38,16 +46,21 @@ export default function DexPanel({ lang }: { lang: Lang }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2">
           <Search size={14} className="text-zinc-500" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void load(query.trim() || 'BTC')}
-            placeholder={t(lang, 'dexPlaceholder')}
-            className="w-44 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
-          />
+          <select
+            value={asset}
+            onChange={(e) => setAsset(e.target.value as SupportedAsset)}
+            aria-label={t(lang, 'dexPlaceholder')}
+            className="w-52 bg-transparent text-sm font-bold text-zinc-100 outline-none"
+          >
+            {SUPPORTED_ASSETS.map((a) => (
+              <option key={a} value={a} className="bg-zinc-900">
+                {a} — {lang === 'ar' ? ASSET_LABELS_AR[a] : ASSET_LABELS_EN[a]}
+              </option>
+            ))}
+          </select>
         </div>
         <button
-          onClick={() => void load(query.trim() || 'BTC')}
+          onClick={() => void load(asset)}
           disabled={loading}
           className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-bold text-amber-300 transition hover:bg-amber-400/20 disabled:opacity-50"
         >
@@ -60,13 +73,16 @@ export default function DexPanel({ lang }: { lang: Lang }) {
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {pairs.map((p, i) => (
-          <div key={i} className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 transition hover:border-zinc-700">
+          <div key={`${p.chainId}:${p.dexId}:${p.pairUrl}:${i}`} className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 transition hover:border-zinc-700">
             <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Droplets size={15} className="text-sky-400" />
                 <span className="text-sm font-bold text-zinc-200">{p.dexId}</span>
                 <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-400" dir="ltr">
                   {p.chainId}
+                </span>
+                <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300" dir="ltr">
+                  {p.baseTokenSymbol}/{p.quoteTokenSymbol}
                 </span>
               </div>
               {p.pairUrl && (
@@ -74,6 +90,10 @@ export default function DexPanel({ lang }: { lang: Lang }) {
                   <ExternalLink size={13} />
                 </a>
               )}
+            </div>
+            <div className="mb-3 flex items-center gap-1 text-[10px] text-emerald-400/80">
+              <CheckCircle2 size={12} />
+              {t(lang, 'dexVerified')}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div>
