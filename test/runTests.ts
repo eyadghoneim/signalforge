@@ -1199,6 +1199,21 @@ console.log('\n=== 24. أنماط الشموع اليابانية (عامل PATT
   }
 }
 
+console.log('\n=== 25. إصلاح جلب أزواج DEX ===');
+{
+  const { normalizeDexPairs } = await import('../server/dexscreener');
+  const raw = [
+    { chainId: 'ethereum', dexId: 'uniswap', url: 'https://dex/1', priceUsd: '100', liquidity: { usd: 250_000 }, volume: { h24: 10_000 }, priceChange: { h24: 2.5 } },
+    { chainId: 'solana', dexId: 'raydium', url: 'https://dex/2', priceUsd: '99', liquidity: { usd: 900_000 }, volume: { h24: 20_000 }, priceChange: { h24: -1.2 } },
+    { chainId: 'unknown', dexId: 'bad', liquidity: { usd: 'not-a-number' } },
+  ];
+  const pairs = normalizeDexPairs(raw);
+  assert(pairs.length === 2, `الأزواج الصالحة فقط تظهر (got ${pairs.length})`);
+  assert(pairs[0].dexId === 'raydium' && pairs[0].liquidityUsd === 900_000, 'الترتيب حسب السيولة صحيح');
+  assert(pairs[1].priceChange24hPercent === 2.5, 'تغيير السعر يتحول لرقم صحيح');
+  assert(normalizeDexPairs(null).length === 0 && normalizeDexPairs({ pairs: raw }).length === 0, 'الرد غير الصالح لا يكسر المسار');
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

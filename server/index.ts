@@ -379,7 +379,7 @@ app.get('/api/liquidity-regime', async (_req, res) => {
 app.get('/api/dex/pairs', async (req, res) => {
   const raw = String(req.query.asset || 'BTC');
   // حد أمان: مصطلح البحث أقصاه 30 حرف — يمنع نص عشوائي طويل يتكدس في الكاش
-  const asset = raw.toUpperCase().slice(0, 30);
+  const asset = raw.trim().toUpperCase().slice(0, 30);
   try {
     const pairs = await getTopDexPairs(asset);
     res.json({ ok: true, pairs: pairs ?? [] });
