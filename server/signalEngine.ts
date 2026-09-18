@@ -283,7 +283,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     chaseWarning: s.close - s.ema21 > STRATEGY_THRESHOLDS.CHASE_ATR_DISTANCE * s.atr14,
     smc: ctx.smc ?? null,
     liquidity: ctx.liquidity
-      ? { adjustment: ctx.liquidity.totalAdjustment, verdict: ctx.liquidity.verdict, summaryAr: ctx.liquidity.summaryAr }
+      ? { adjustment: ctx.liquidity.totalAdjustment, verdict: ctx.liquidity.verdict, summaryAr: ctx.liquidity.summaryAr, summaryEn: ctx.liquidity.summaryEn }
       : null,
     dailyTrend: ctx.daily
       ? ctx.daily.bullish && !ctx.daily.bearish

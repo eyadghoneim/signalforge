@@ -75,7 +75,7 @@ export interface Signal {
   entryZone?: { low: number; high: number; basisAr: string; priceInside: boolean } | null;
   chaseWarning?: boolean;
   smc?: SmcSnapshot | null;
-  liquidity?: { adjustment: number; verdict: string; summaryAr: string } | null;
+  liquidity?: { adjustment: number; verdict: string; summaryAr: string; summaryEn?: string } | null;
   dailyTrend?: 'BULLISH' | 'BEARISH' | 'UNKNOWN';
 }
 
@@ -198,7 +198,8 @@ export interface LiquidityRegime {
   totalAdjustment: number; // محدود ±8
   verdict: 'RISK_ON' | 'NEUTRAL' | 'RISK_OFF';
   summaryAr: string;
-  components: { nameAr: string; change7dPercent: number | null; adjustment: number }[];
+  summaryEn: string;
+  components: { nameAr: string; nameEn?: string; change7dPercent: number | null; adjustment: number }[];
   updatedAt: number;
   sourcesOk: number;
   sourcesTotal: number;

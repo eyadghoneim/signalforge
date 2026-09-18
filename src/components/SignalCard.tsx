@@ -181,8 +181,10 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
         </span>
         <span dir="ltr" className="font-mono">{signal.engineSignature.slice(0, 44)}…</span>
       </div>
-      {signal.liquidity && signal.liquidity.summaryAr && (
-        <div className="mt-1.5 text-[9px] text-zinc-600">🌐 {signal.liquidity.summaryAr}</div>
+      {signal.liquidity && (signal.liquidity.summaryAr || signal.liquidity.summaryEn) && (
+        <div className="mt-1.5 text-[9px] text-zinc-600">
+          🌐 {lang === 'en' && signal.liquidity.summaryEn ? signal.liquidity.summaryEn : signal.liquidity.summaryAr}
+        </div>
       )}
     </div>
   );

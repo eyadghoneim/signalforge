@@ -366,6 +366,11 @@ console.log('\n=== 8. طبقات v2.0 — SMC ومنطقة الدخول والي
   const missing = aggregateLiquidity(null, null, null);
   assert(missing.totalAdjustment === 0 && missing.sourcesOk === 0, 'كل المصادر ناقصة → تعديل صفر بصراحة');
 
+  const withOi = aggregateLiquidity(3.5, 1.2, 15, 20);
+  assert(withOi.sourcesOk === 4 && withOi.sourcesTotal === 4, `4 مصادر (منها OI) → sourcesOk=4 (فعلي: ${withOi.sourcesOk}/${withOi.sourcesTotal})`);
+  assert(withOi.components.length === 4 && withOi.components[3].nameAr.includes('الفائدة'), 'مكوّن الفائدة المفتوحة موجود');
+  assert(withOi.summaryEn.length > 10 && withOi.summaryEn.includes('%'), 'ملخص إنجليزي تم توليده');
+
   const bullV2 = syntheticCandles(300, 22, 7);
   const snapV2 = computeSnapshot(bullV2);
   assert(snapV2 !== null, 'لقطة v2 جاهزة');
@@ -1079,7 +1084,7 @@ console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (
   );
   const evs3 = diffPaperEvents(cBefore, afterSl);
   const closedEv = evs3.find((e) => e.kind === 'CLOSED');
-  assert(closedEv && closedEv.kind === 'CLOSED' && closedEv.trade?.reason === 'SL', 'stop → CLOSED with reason SL');
+  assert(closedEv !== undefined && closedEv.kind === 'CLOSED' && closedEv.trade?.reason === 'SL', 'stop → CLOSED with reason SL');
   const htmlSl = buildPaperEventHtml(
     { kind: 'CLOSED', asset: 'ETH', exitAvg: 1989, pnlUsd: -12.5, reason: 'SL' },
     'en',

@@ -24,7 +24,7 @@ export function LiquidityCard({ regime, lang }: { regime: LiquidityRegime | null
       <div className="space-y-1.5">
         {regime.components.map((c) => (
           <div key={c.nameAr} className="flex items-center justify-between text-[11px]">
-            <span className="text-zinc-400">{c.nameAr}</span>
+            <span className="text-zinc-400">{lang === 'en' && c.nameEn ? c.nameEn : c.nameAr}</span>
             <span className="flex items-center gap-1.5" dir="ltr">
               <span className={c.change7dPercent === null ? 'text-zinc-600' : c.change7dPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
                 {c.change7dPercent === null ? t(lang, 'unavailable') : `${c.change7dPercent > 0 ? '+' : ''}${c.change7dPercent}%`}
