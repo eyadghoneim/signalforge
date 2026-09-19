@@ -1,6 +1,7 @@
 // عدّاد الأداء: يتابع كل إشارة محفوظة — MFE/MAE ومن ضرب أولاً TP1 أم SL
 import type { Candle, StoredSignal, AttributionWindow, AttributionSummary, TagStat } from '../shared/types';
 import { ATTRIBUTION_WINDOWS_HOURS } from '../shared/strategyConstants';
+import { updateSignalOutcomes } from './persistence';
 
 const WINDOW_HOURS: Record<AttributionWindow, number> = { h4: 4, h24: 24, h72: 72 };
 
@@ -29,6 +30,7 @@ export async function updateOutcomes(signals: StoredSignal[], getCandles: Candle
           const h72 = computed.windows.h72;
           const resolution = h72.hitTp1BeforeSl === true ? 'TP1_FIRST' : h72.hitTp1BeforeSl === false ? 'SL_FIRST' : 'EXPIRED';
           sig.outcomes = { windows: computed.windows, resolution, resolvedAt: Date.now() };
+          updateSignalOutcomes(sig.id, sig.outcomes);
           changed++;
         }
       } catch {
@@ -44,8 +46,9 @@ export async function updateOutcomes(signals: StoredSignal[], getCandles: Candle
       const h72 = computed.windows.h72;
       const resolution: StoredSignal['outcomes']['resolution'] =
         h72.hitTp1BeforeSl === true ? 'TP1_FIRST' : h72.hitTp1BeforeSl === false ? 'SL_FIRST' : 'OPEN';
-      if (resolution !== 'OPEN') sig.outcomes.resolvedAt = Date.now();
-      sig.outcomes = { windows: computed.windows, resolution };
+      const resolvedAt = resolution !== 'OPEN' ? Date.now() : undefined;
+      sig.outcomes = resolvedAt ? { windows: computed.windows, resolution, resolvedAt } : { windows: computed.windows, resolution };
+      updateSignalOutcomes(sig.id, sig.outcomes);
       changed++;
     } catch {
       // تجاهل — المحاولة القادمة

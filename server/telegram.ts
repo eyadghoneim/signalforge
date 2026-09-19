@@ -160,7 +160,10 @@ export async function sendTelegramMessage(
     if (!res.ok || !json.ok) return { ok: false, error: json.description || `HTTP ${res.status}` };
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // Never return the request URL: it contains the bot token and could be
+    // persisted by callers in logs. Preserve timeout semantics for dedupe.
+    const timedOut = controller.signal.aborted || (e instanceof Error && e.name === 'AbortError');
+    return { ok: false, error: timedOut ? 'timeout' : 'network error' };
   } finally {
     clearTimeout(timer);
   }

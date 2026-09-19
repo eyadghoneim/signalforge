@@ -27,7 +27,9 @@ export default function BacktestPanel({ lang }: { lang: Lang }) {
   const bhRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    // The chart container is rendered only after a result exists. Creating the
+    // chart on the initial result transition avoids a one-time null-ref exit.
+    if (!result || !containerRef.current) return;
     const chart = createChart(containerRef.current, {
       autoSize: true,
       height: 260,
@@ -42,16 +44,17 @@ export default function BacktestPanel({ lang }: { lang: Lang }) {
     return () => {
       chart.remove();
       chartRef.current = null;
+      equityRef.current = null;
+      bhRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [result, lang]);
 
   useEffect(() => {
     if (!result || result.equityCurve.length === 0) return;
     equityRef.current?.setData(result.equityCurve.map((p) => ({ time: p.time as UTCTimestamp, value: p.equity })));
     bhRef.current?.setData(result.equityCurve.map((p) => ({ time: p.time as UTCTimestamp, value: p.buyHold })));
     chartRef.current?.timeScale().fitContent();
-  }, [result]);
+  }, [result, lang]);
 
   const run = async (mode: 'standard' | 'robustness' | 'walkforward' = 'standard') => {
     if (mode === 'robustness') setRobustRunning(true);

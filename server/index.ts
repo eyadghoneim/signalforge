@@ -108,7 +108,7 @@ const RATE_BUCKETS_MAX = 10_000; // سقف أمان ضد النمو غير ال�
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 240; // 240 طلب/دقيقة لكل عنوان
 app.use('/api', (req, res, next) => {
-  const ip = req.socket.remoteAddress || 'unknown';
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const bucket = rateBuckets.get(ip);
   if (!bucket || bucket.resetAt <= now) {
@@ -647,6 +647,18 @@ async function runScanCycle(): Promise<void> {
           getTicker(asset),
           config.regimeEnabled ? getLiquidityRegime().catch(() => null) : Promise.resolve(null),
         ]);
+        // Keep the latest completed candle fresh even when no new signal is
+        // emitted; open paper positions must still receive stop/TP evaluation.
+        const lastClosed = candles1h[candles1h.length - 2] ?? candles1h[candles1h.length - 1];
+        if (lastClosed) {
+          lastPaperCandles.set(asset, {
+            open: lastClosed.open,
+            high: lastClosed.high,
+            low: lastClosed.low,
+            close: lastClosed.close,
+            time: lastClosed.time,
+          });
+        }
         const snapshot = computeSnapshot(candles1h);
         if (!snapshot) continue;
         const [candles1d] = await Promise.all([getCandles1d(asset, 400).catch(() => null)]);
@@ -715,17 +727,7 @@ async function runScanCycle(): Promise<void> {
 
         // ─── المحفظة الورقية: فتح شراء / قفل على بيع ───
         // نقيّم على آخر شمعة مكتملة فقط (نستبعد الشمعة الجارية لتجنب تسرب زمني).
-        const lastClosed = candles1h[candles1h.length - 2] ?? candles1h[candles1h.length - 1];
         if (!paperEnginePaused) {
-          if (lastClosed) {
-            lastPaperCandles.set(asset, {
-              open: lastClosed.open,
-              high: lastClosed.high,
-              low: lastClosed.low,
-              close: lastClosed.close,
-              time: lastClosed.time,
-            });
-          }
           if (!gateBlocked && signal.spotAction === 'SPOT_BUY') {
             paperAccount = openBuy(paperAccount, signal, snapshot.atr14, Date.now(), protection.maxConcurrentSignals);
           } else if (!gateBlocked && signal.spotAction === 'SPOT_SELL_ALL') {

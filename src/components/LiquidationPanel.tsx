@@ -34,10 +34,13 @@ export default function LiquidationPanel({ asset, lang }: { asset: SupportedAsse
     let alive = true;
     setLoading(true);
     const load_ = async () => {
-      const r = await api.liquidations(asset);
-      if (alive) {
-        setRadar(r.radar);
-        setLoading(false);
+      try {
+        const r = await api.liquidations(asset);
+        if (alive) setRadar(r.radar);
+      } catch {
+        if (alive) setRadar(null);
+      } finally {
+        if (alive) setLoading(false);
       }
     };
     void load_();
