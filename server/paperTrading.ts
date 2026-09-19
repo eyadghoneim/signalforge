@@ -12,7 +12,7 @@ import { DEFAULT_PROTECTION } from './protection';
 import { getDurablePersistence } from './persistence';
 
 export const PAPER_INITIAL_EQUITY = 10_000;
-export const PAPER_RISK_PERCENT = 1; // مخاطرة لكل صفقة: 1% من الرصيد المتاح
+export const PAPER_RISK_PERCENT = 1; // مخاطرة لكل صفقة: 1% من إجمالي Equity المتاح
 const TP1_RATIO = 0.5; // أول جني: نصف الكمية
 const TP2_RATIO = 0.3; // ثاني جني: 30% من الكمية الأصلية
 // (تم توحيد ثوابت الرحل في shared/strategyConstants.ts → TRAILING)
@@ -112,13 +112,14 @@ export function currentEquity(acct: PaperAccount, prices: Partial<Record<Support
   return round2(acct.cash + openValue);
 }
 
-/** يفتح صفقة شراء ورقية من إشارة حقيقية — حجم محسوب بـ 1% مخاطرة من الرصيد. */
+/** يفتح صفقة شراء ورقية من إشارة حقيقية — حجم محسوب بـ 1% مخاطرة من إجمالي Equity، مع قيد الكاش. */
 export function openBuy(
   acct: PaperAccount,
   signal: Signal,
   atrEntry: number,
   nowMs: number,
   maxOpenPositions = DEFAULT_PROTECTION.maxConcurrentSignals,
+  markPrices: Partial<Record<SupportedAsset, number>> = {},
 ): PaperAccount {
   const markEntry = signal.entryPrice;
   const entry = buyFillPrice(markEntry);
@@ -129,7 +130,8 @@ export function openBuy(
   if (acct.open.length >= positionCap) return acct;
   if (acct.open.some((p) => p.asset === signal.asset)) return acct; // مركز واحد لكل أصل
 
-  const riskAmount = acct.cash * (PAPER_RISK_PERCENT / 100);
+  const sizingEquity = currentEquity(acct, markPrices);
+  const riskAmount = sizingEquity * (PAPER_RISK_PERCENT / 100);
   let qty = riskAmount / riskDistance;
   // Keep the whole entry outlay (notional + entry fee) within the 95% cash cap.
   const maxEntryOutlay = acct.cash * 0.95;

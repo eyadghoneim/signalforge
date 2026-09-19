@@ -681,6 +681,7 @@ async function runScanCycle(): Promise<void> {
     }
     // لقطة المحفظة قبل تغييرات هذه الدورة — لنشتق أحداث فتح/جني/قفل بدقة.
     const paperBefore = snapshotPaperAccount(paperAccount);
+    const paperSizingPrices = !paperEnginePaused && paperAccount.open.length > 0 ? await getOpenPaperPrices() : {};
     for (const asset of SUPPORTED_ASSETS) {
       try {
         const [candles1h, candles4h, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
@@ -775,7 +776,14 @@ async function runScanCycle(): Promise<void> {
         // نقيّم على آخر شمعة مكتملة فقط (نستبعد الشمعة الجارية لتجنب تسرب زمني).
         if (!paperEnginePaused) {
           if (!gateBlocked && signal.spotAction === 'SPOT_BUY') {
-            paperAccount = openBuy(paperAccount, signal, snapshot.atr14, Date.now(), protection.maxConcurrentSignals);
+            paperAccount = openBuy(
+              paperAccount,
+              signal,
+              snapshot.atr14,
+              Date.now(),
+              protection.maxConcurrentSignals,
+              { ...paperSizingPrices, [asset]: ticker.price },
+            );
           } else if (!gateBlocked && signal.spotAction === 'SPOT_SELL_ALL') {
             paperAccount = closeBySellSignal(paperAccount, asset, ticker.price, Date.now());
           }

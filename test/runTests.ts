@@ -1070,6 +1070,17 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   openBuy(onePositionCap, ethSig, 0.5, 2000, 1);
   assert(onePositionCap.open.length === 1, 'paper wallet respects configured position cap');
 
+  // 2c) حجم الصفقة الثانية يعتمد على Equity الكلي لا على الكاش وحده.
+  const wideRiskSig = { ...sig, stopLoss: 50, target1: 110, target2: 120, target3: 130, dedupHash: 'wide-risk-btc' };
+  const equitySizingAccount = defaultPaperAccount();
+  openBuy(equitySizingAccount, wideRiskSig, 0.5, 1000);
+  const cashBeforeSecond = equitySizingAccount.cash;
+  const equitySizingEth = { ...wideRiskSig, asset: 'ETH' as const, dedupHash: 'wide-risk-eth' };
+  openBuy(equitySizingAccount, equitySizingEth, 0.5, 2000);
+  const fillEntry = wideRiskSig.entryPrice * (1 + PAPER_EXECUTION.SLIPPAGE_RATE);
+  const cashOnlyQty = (cashBeforeSecond * 0.01) / (fillEntry - wideRiskSig.stopLoss);
+  assert(equitySizingAccount.open[1].qty > cashOnlyQty, 'Paper sizing uses total Equity for the next position');
+
   // 3) تسيير على شمعة تجيب الوقف → خسارة، والقيمة النهائية < البداية
   const post = markToMarket(
     dup,
