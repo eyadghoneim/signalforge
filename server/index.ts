@@ -93,20 +93,28 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
-// ─── أمان: CSP في الإنتاج + rate limit بسيط ───
+// ─── أمان: رؤوس CSP عامة في الإنتاج + rate limit بسيط ───
 if (!IS_DEV) {
   app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'");
-    }
+    const isApi = req.path.startsWith('/api');
+    const csp = isApi
+      ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none';"
+      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none';";
+    res.setHeader('Content-Security-Policy', csp);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
   });
 }
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const backtestBuckets = new Map<string, { count: number; resetAt: number }>();
 const RATE_BUCKETS_MAX = 10_000; // سقف أمان ضد النمو غير المحدود
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 240; // 240 طلب/دقيقة لكل عنوان
+const BACKTEST_WINDOW_MS = 10 * 60_000;
+const BACKTEST_MAX_STANDARD = 12;
+const BACKTEST_MAX_HEAVY = 3;
 app.use('/api', (req, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -135,12 +143,38 @@ function sweepRateBuckets(): void {
   for (const [ip, b] of rateBuckets) {
     if (b.resetAt <= now) rateBuckets.delete(ip);
   }
+  for (const [ip, b] of backtestBuckets) {
+    if (b.resetAt <= now) backtestBuckets.delete(ip);
+  }
   if (rateBuckets.size > RATE_BUCKETS_MAX) {
     const oldest = [...rateBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
     for (const [ip] of oldest.slice(0, rateBuckets.size - RATE_BUCKETS_MAX)) rateBuckets.delete(ip);
   }
+  if (backtestBuckets.size > RATE_BUCKETS_MAX) {
+    const oldest = [...backtestBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
+    for (const [ip] of oldest.slice(0, backtestBuckets.size - RATE_BUCKETS_MAX)) backtestBuckets.delete(ip);
+  }
 }
 setInterval(sweepRateBuckets, 60_000).unref();
+
+function allowBacktestRequest(req: express.Request, res: express.Response, heavy: boolean): boolean {
+  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const max = heavy ? BACKTEST_MAX_HEAVY : BACKTEST_MAX_STANDARD;
+  const bucket = backtestBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    backtestBuckets.set(key, { count: 1, resetAt: now + BACKTEST_WINDOW_MS });
+    return true;
+  }
+  bucket.count++;
+  if (bucket.count <= max) return true;
+  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  res.setHeader('Retry-After', String(retryAfter));
+  res.setHeader('X-Backtest-RateLimit-Limit', String(max));
+  res.setHeader('X-Backtest-RateLimit-Remaining', '0');
+  res.status(429).json({ ok: false, error: 'Backtest rate limit exceeded', retryAfterSeconds: retryAfter });
+  return false;
+}
 
 // ─── أدمن: توكن صريح أو ثقة محلية (localhost فقط) ───
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -367,6 +401,7 @@ app.post('/api/backtest', async (req, res) => {
   const body = (req.body || {}) as { asset?: string; days?: number; robustness?: boolean; walkforward?: boolean };
   const asset = String(body.asset || 'BTC').toUpperCase() as SupportedAsset;
   if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
+  if (!allowBacktestRequest(req, res, Boolean(body.robustness || body.walkforward))) return;
   const days = Math.min(1095, Math.max(90, Number(body.days) || 365));
   try {
     const candles = await getHistoricalCandlesDeep(asset, Math.min(30000, days * 24));

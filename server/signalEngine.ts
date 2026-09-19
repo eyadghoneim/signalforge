@@ -251,6 +251,9 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   // ─── أهداف المخاطرة من ملف الثوابت حصراً ───
   const entryPrice = s.close;
   const targets = computeRiskTargets(entryPrice, s.atr14);
+  // Deduplicate within a completed candle, not by rounded price. A price-based
+  // key turns ordinary intrabar movement into a new signal for the same setup.
+  const dedupCandleTime = ctx.candles?.[ctx.candles.length - 2]?.time ?? ctx.candles?.[ctx.candles.length - 1]?.time;
 
   const summaryAr =
     signalType === 'STRONG_BUY' ? 'قناعة شرائية قوية — كل الشروط الفنية متوافقة'
@@ -278,7 +281,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     reasons,
     summaryAr,
     generatedAt: Date.now(),
-    dedupHash: fnv1a64Hex(`${asset}|${signalType}|${regimeGateStatus}|${Math.round(entryPrice)}`),
+    dedupHash: fnv1a64Hex(`${asset}|${signalType}|${regimeGateStatus}|${dedupCandleTime ?? 'runtime'}`),
     dataSource: ctx.dataSource,
     htfAvailable: htf !== null,
     // ─── حقول v2.0 ───

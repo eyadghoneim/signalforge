@@ -126,15 +126,18 @@ export interface ExposureState {
 }
 
 export function currentExposure(signals: StoredSignal[], config: ProtectionConfig): ExposureState {
-  let openCount = 0;
+  const openAssets = new Set<string>();
   let hasBtcLong = false;
   let hasEthLong = false;
   for (const s of signals) {
     if (!isActionableOpenBuy(s)) continue;
-    openCount++;
+    // Exposure is a position count, not a signal-history count. Repeated BUY
+    // signals for one asset must not freeze every other asset at the cap.
+    openAssets.add(s.asset);
     if (s.asset === 'BTC') hasBtcLong = true;
     if (s.asset === 'ETH') hasEthLong = true;
   }
+  const openCount = openAssets.size;
   const correlatedPairBonus = config.correlationGuard && hasBtcLong && hasEthLong ? 1 : 0;
   return { openCount, correlatedPairBonus, effectiveExposure: openCount + correlatedPairBonus, hasBtcLong, hasEthLong };
 }
@@ -142,12 +145,12 @@ export function currentExposure(signals: StoredSignal[], config: ProtectionConfi
 /** Exposure after a candidate BUY on the given asset would be opened. */
 export function projectedExposure(signals: StoredSignal[], config: ProtectionConfig, candidateAsset: string): number {
   const cur = currentExposure(signals, config);
-  const pairBonus =
-    config.correlationGuard &&
-    ((candidateAsset === 'BTC' && cur.hasEthLong) || (candidateAsset === 'ETH' && cur.hasBtcLong))
-      ? 1
-      : 0;
-  return cur.effectiveExposure + pairBonus + 1;
+  const candidateAlreadyOpen = signals.some((s) => isActionableOpenBuy(s) && s.asset === candidateAsset);
+  const nextOpenCount = cur.openCount + (candidateAlreadyOpen ? 0 : 1);
+  const nextHasBtcLong = cur.hasBtcLong || candidateAsset === 'BTC';
+  const nextHasEthLong = cur.hasEthLong || candidateAsset === 'ETH';
+  const nextPairBonus = config.correlationGuard && nextHasBtcLong && nextHasEthLong ? 1 : 0;
+  return nextOpenCount + nextPairBonus;
 }
 
 export interface ExpiryCandidate {

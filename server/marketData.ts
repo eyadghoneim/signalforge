@@ -348,15 +348,19 @@ export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<
         noteProviderHealth('binance:klines', false, e2 instanceof Error ? e2.message : String(e2));
       }
       if (limit <= 300) {
-        const cb = await candlesFromCoinbase1h(asset);
-        noteProviderHealth('coinbase:candles', true);
-        return cb.slice(-limit);
+        try {
+          const cb = await candlesFromCoinbase1h(asset);
+          noteProviderHealth('coinbase:candles', true);
+          return cb.slice(-limit);
+        } catch (e3) {
+          noteProviderHealth('coinbase:candles', false, e3 instanceof Error ? e3.message : String(e3));
+        }
       }
       // مظلة ccxt: بورصات إضافية كخيار أخير عندما تتعطل المصادر المباشرة.
       try {
         return await candlesFromCcxt(asset, '1h', limit);
-      } catch (e3) {
-        noteProviderHealth('ccxt:klines', false, e3 instanceof Error ? e3.message : String(e3));
+      } catch (e4) {
+        noteProviderHealth('ccxt:klines', false, e4 instanceof Error ? e4.message : String(e4));
       }
       throw e;
     }

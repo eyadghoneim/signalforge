@@ -536,6 +536,7 @@ console.log('\n=== 11. Capital protection v3 ===');
     asset?: 'BTC' | 'ETH' | 'PAXG';
     blocked?: boolean;
     sell?: boolean;
+    entryPrice?: number;
     resolution?: 'OPEN' | 'TP1_FIRST' | 'SL_FIRST' | 'EXPIRED';
     generatedAt?: number;
     resolvedAt?: number;
@@ -545,7 +546,7 @@ console.log('\n=== 11. Capital protection v3 ===');
     convictionScore: 80,
     signalType: opts.sell ? 'SELL' : 'STRONG_BUY',
     spotAction: opts.sell ? 'SPOT_SELL_ALL' : 'SPOT_BUY',
-    entryPrice: 50000,
+    entryPrice: opts.entryPrice ?? 50000,
     stopLoss: 49000,
     target1: 51000,
     target2: 52000,
@@ -612,6 +613,18 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(exp.correlatedPairBonus === 1 && exp.effectiveExposure === 3, `BTC+ETH pair bonus -> effective 3 (got ${exp.effectiveExposure})`);
   const expNoGuard = currentExposure(openSignals, { ...DEFAULT_PROTECTION, correlationGuard: false });
   assert(expNoGuard.effectiveExposure === 2, 'correlation guard off -> no bonus');
+  const duplicateBtc = { ...mkSignal({ asset: 'BTC' }), id: 'duplicate-btc' };
+  const duplicateExposure = currentExposure([...openSignals, duplicateBtc], DEFAULT_PROTECTION);
+  assert(duplicateExposure.openCount === 2 && duplicateExposure.effectiveExposure === 3, 'duplicate BUY signals do not inflate exposure');
+  const steppedScanHistory = [100, 101, 102].map((price, cycle) => ({
+    ...mkSignal({ asset: 'BTC', entryPrice: price, generatedAt: 1_700_000_000_000 + cycle * 3_600_000 }),
+    id: `stepped-btc-${cycle}`,
+  }));
+  for (let cycle = 1; cycle <= steppedScanHistory.length; cycle++) {
+    const steppedExposure = currentExposure(steppedScanHistory.slice(0, cycle), DEFAULT_PROTECTION);
+    assert(steppedExposure.openCount === 1, `three stepped scan cycles keep one BTC exposure (cycle ${cycle})`);
+    assert(projectedExposure(steppedScanHistory.slice(0, cycle), DEFAULT_PROTECTION, 'ETH') === 3, `ETH projection remains bounded after stepped cycle ${cycle}`);
+  }
 
   // Projected exposure with a new PAXG candidate.
   assert(projectedExposure(openSignals, DEFAULT_PROTECTION, 'PAXG') === 4, `projected PAXG = 4 (got ${projectedExposure(openSignals, DEFAULT_PROTECTION, 'PAXG')})`);
@@ -781,6 +794,13 @@ console.log('\n=== 15. Review-response fixes v3 ===');
     // THE review fix: the label must match the FINAL (post-bias) score.
     const re = deriveSignalTypeAndAction(biased.convictionScore);
     assert(re.signalType === biased.signalType && re.spotAction === biased.spotAction, 'label matches final score - no stale label');
+    const hashCandles = [
+      { time: 1000, open: 100, high: 101, low: 99, close: 100, volume: 1 },
+      { time: 2000, open: 100, high: 101, low: 99, close: 100, volume: 1 },
+    ];
+    const sameCandleA = buildSignal({ ...baseCtx, candles: hashCandles });
+    const sameCandleB = buildSignal({ ...baseCtx, snapshot: { ...snap, close: snap.close + 0.01 }, candles: hashCandles });
+    assert(sameCandleA.dedupHash === sameCandleB.dedupHash, 'dedup key is stable across intrabar price movement');
   }
 
   // Slippage: same data, same trades, strictly worse equity.
