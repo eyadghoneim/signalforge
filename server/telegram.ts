@@ -302,7 +302,7 @@ export function buildPaperEventHtml(ev: PaperEventShape, lang: TelegramLang): st
   if (ev.kind === 'CLOSED') {
     if (ev.exitAvg !== undefined) lines.push(ar ? `<b>متوسط الخروج:</b> ${fmtUsd(ev.exitAvg)}` : `<b>Avg exit:</b> ${fmtUsd(ev.exitAvg)}`);
     if (ev.reason) {
-      const reasonAr = ev.reason === 'TP3' ? 'الهدف الثالث' : ev.reason === 'SL' ? 'وقف الخسارة' : 'إشارة بيع';
+      const reasonAr = ev.reason === 'TP3' ? 'الهدف الثالث' : ev.reason === 'SL' ? 'وقف الخسارة' : ev.reason === 'TIME' ? 'حد مدة الصفقة' : 'إشارة بيع';
       lines.push(ar ? `<b>السبب:</b> ${reasonAr}` : `<b>Reason:</b> ${esc(ev.reason)}`);
     }
     if (ev.pnlUsd !== undefined) {

@@ -530,10 +530,10 @@ console.log('\n=== 11. Capital protection v3 ===');
 {
   const { computePerformanceStats: _unused } = await import('../server/performance');
   void _unused;
-  const { DEFAULT_PROTECTION, clampProtection, dayRealizedR, evaluateCircuitBreaker, currentExposure, projectedExposure, findExpiredSignals, protectionVerdict, utcDayStart } = await import('../server/protection');
+  const { DEFAULT_PROTECTION, clampProtection, choppyCooldownActive, choppyCooldownState, dayRealizedR, evaluateCircuitBreaker, currentExposure, projectedExposure, findExpiredSignals, protectionVerdict, utcDayStart } = await import('../server/protection');
 
   const mkSignal = (opts: {
-    asset?: 'BTC' | 'ETH' | 'PAXG';
+    asset?: 'BTC' | 'ETH' | 'PAXG' | 'SOL';
     blocked?: boolean;
     sell?: boolean;
     entryPrice?: number;
@@ -600,6 +600,18 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(tripped.tripped && tripped.realizedR === -3, `breaker trips at -3R (got ${tripped.realizedR}, tripped=${tripped.tripped})`);
   const okState = evaluateCircuitBreaker(pnlSignals, { ...DEFAULT_PROTECTION, dailyLossLimitR: 3 }, now);
   assert(!okState.tripped, 'breaker stays off at +1R');
+  const paperLosses = [
+    { closedAt: now - 3 * 3600_000, outcome: 'SL_FIRST' as const },
+    { closedAt: now - 2 * 3600_000, outcome: 'SL_FIRST' as const },
+    { closedAt: now - 1 * 3600_000, outcome: 'SL_FIRST' as const },
+  ];
+  const choppy = choppyCooldownState(paperLosses, 3, 24, now);
+  assert(choppy.consecutiveLosses === 3 && choppy.active, 'three consecutive Paper losses start the 24h choppy cooldown');
+  assert(choppyCooldownActive([...paperLosses, { closedAt: now, outcome: 'TP1_FIRST' as const }], 3, 24, now) === false, 'a resolved Paper win resets the consecutive-loss cooldown');
+  assert(choppyCooldownActive([...paperLosses, { closedAt: now, outcome: 'TIME' as const }], 3, 24, now) === false, 'a Paper TIME exit breaks the SL_FIRST streak');
+  assert(!choppyCooldownActive(paperLosses, 3, 24, now + 25 * 3600_000), 'choppy cooldown expires after its configured window');
+  const choppyVerdict = protectionVerdict(lossy, { ...DEFAULT_PROTECTION, dailyLossLimitR: 20 }, 'SOL', now, paperLosses);
+  assert(!choppyVerdict.allow && choppyVerdict.reason === 'CHOPPY_COOLDOWN', `new BUY refused by CHOPPY_COOLDOWN (got ${choppyVerdict.reason})`);
 
   // Exposure: open buys counted, gate-blocked and sells excluded, BTC+ETH bonus applied.
   const openSignals = [
@@ -649,8 +661,8 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(expired[0].ageHours === 4, `expiry age = 4h (got ${expired[0].ageHours})`);
 
   // Clamp guards.
-  const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true, stoplossGuardMax: 99, stoplossGuardHours: 999, lossCooldownHours: -5 });
-  assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1 && clamped.stoplossGuardMax === 10 && clamped.stoplossGuardHours === 72 && clamped.lossCooldownHours === 0, 'clampProtection bounds all values');
+  const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true, stoplossGuardMax: 99, stoplossGuardHours: 999, lossCooldownHours: -5, choppyLossStreak: 99, choppyCooldownHours: 999, paperMaxHoldHours: 9999 });
+  assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1 && clamped.stoplossGuardMax === 10 && clamped.stoplossGuardHours === 72 && clamped.lossCooldownHours === 0 && clamped.choppyLossStreak === 10 && clamped.choppyCooldownHours === 168 && clamped.paperMaxHoldHours === 720, 'clampProtection bounds all values');
 }
 console.log('\n=== 12. Learning system v2 (regime-keyed, decay, realized-R) ===');
 {
@@ -788,6 +800,7 @@ console.log('\n=== 15. Review-response fixes v3 ===');
       dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
     };
     const base = buildSignal(baseCtx);
+    assert(base.entryQuality === base.convictionScore && Array.isArray(base.qualityBreakdown), 'entry quality breakdown is exposed with the deterministic signal');
     const biased = buildSignal({ ...baseCtx, tagBias: { TREND: -3 } });
     assert(biased.learningBias === -3, `learningBias surfaced on the signal (got ${biased.learningBias})`);
     assert(biased.convictionScore === Math.max(0, base.convictionScore - 3), `score shifted by bias (got ${biased.convictionScore} vs ${base.convictionScore})`);
@@ -1067,6 +1080,7 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   assert(post.open.length === 0, 'stop closes the position');
   assert(post.closed.length === 1, 'one closed trade');
   assert(post.closed[0].pnlUsd < 0, `stop exit loses money (got ${post.closed[0].pnlUsd})`);
+  assert(post.closed[0].outcome === 'SL_FIRST', 'stop trade records SL_FIRST Paper outcome');
 
   // 4) جني TP1 ثم وقف تعادل (لا خسارة بعد TP1)
   const acct1 = defaultPaperAccount();
@@ -1090,13 +1104,22 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   const expectedExitAvg = Number(((0.5 * 102 * (1 - PAPER_EXECUTION.SLIPPAGE_RATE)) + (0.5 * 101 * (1 - PAPER_EXECUTION.SLIPPAGE_RATE))).toFixed(2));
   assert(closedBySell.closed[0].exitAvg === expectedExitAvg, `exitAvg weights TP1 + remainder after slippage (got ${closedBySell.closed[0].exitAvg})`);
   assert((closedBySell.closed[0].feesUsd ?? 0) > 0, 'closed trade reports accumulated fees');
+  assert(closedBySell.closed[0].outcome === 'TP1_FIRST', 'partial target trade records TP1_FIRST Paper outcome');
 
   // 6) currentEquity = كاش + قيمة مفتوح (بعد TP1: ربح محقق + مركز مفتوح)
   const eq = currentEquity(closedBySell, { BTC: 101 });
   // حساب يدوي: رأس 10000، ربنا من TP1 + القيمة المتبقية والمقفلة عند البيع
   assert(Number.isFinite(eq) && eq > 10000 && eq < 10300, `equity ~ 10142 after TP1 (got ${eq})`);
 
-  // 7) وقف متحرك مدرّج (freqtrade-style): المرآة والثوابت متوحدتان
+  // 7) حد مدة الصفقة الورقية: إغلاق TIME بسعر السوق بعد 24h في هذا الاختبار.
+  const timedAccount = openBuy(defaultPaperAccount(), sig, 0.5, 1000);
+  const beforeTimeLimit = markToMarket(timedAccount, { BTC: 101 }, {}, 1_000 + 23 * 3600_000, 24);
+  assert(beforeTimeLimit.open.length === 1, 'paper position remains before max hold age');
+  const timeClosed = markToMarket(beforeTimeLimit, { BTC: 101 }, {}, 1_000 + 24 * 3600_000, 24);
+  assert(timeClosed.open.length === 0 && timeClosed.closed.at(-1)?.reason === 'TIME', 'paper position closes with TIME after max hold age');
+  assert(timeClosed.closed.at(-1)?.outcome === 'TIME', 'TIME exit records a non-loss Paper outcome');
+
+  // 8) وقف متحرك مدرّج (freqtrade-style): المرآة والثوابت متوحدتان
   const { TRAILING: TRAIL_C } = await import('../shared/strategyConstants');
   assert(TRAIL_C.ACTIVATE_AFTER_ATR === 1 && TRAIL_C.TIGHT_AFTER_ATR === 2 && TRAIL_C.OFFSET_ATR === 2, 'trailing constants centralized');
 }

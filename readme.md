@@ -20,9 +20,10 @@ measured results - with a full audit trail.
 | | |
 |---|---|
 | **Deterministic signal engine** | Multi-timeframe scoring (1h/4h/daily) with regime gates: HTF trend, chop (ADX), volume (RVOL) and funding squeeze - signals are reproducible, not hand-waved |
+| **Entry quality transparency** | Every signal exposes its 0–100 entry-quality score and the grouped positive/negative factor contributions in Arabic and English |
 | **Advanced measurement** | Win rate, profit factor, expectancy (R), payoff, per-trade Sharpe, max drawdown + duration, streaks, time-in-market, score-bucket and exit-reason diagnostics, equity curve with buy & hold benchmark, CSV export |
 | **Honest walk-forward optimizer** | Grid-search on the first half of the data, verdict on the unseen second half - ranking uses in-sample performance only, so the validation result cannot flatter itself |
-| **Capital protection** | Daily loss circuit breaker (R-based), max concurrent exposure with a BTC/ETH correlation guard, automatic expiry of stale unexecuted signals |
+| **Capital protection** | Daily loss circuit breaker (R-based), unique-asset exposure cap with a BTC/ETH correlation guard, automatic expiry of stale signals, 3-loss choppy-market cooldown, and configurable Paper max-hold exit |
 | **Self-learning** | Every resolved signal feeds a bounded per-factor bias (clamped, evidence-gated at 10+ samples, >= 8pt deviation from baseline). Every bias change is logged with its evidence in a lessons ledger |
 | **Open interest factor** | 24h open-interest change from Binance futures confirms or warns on the prevailing move (graceful degradation when unavailable) |
 | **Multi-source market data** | OKX (reachable from restricted regions incl. SA) + Binance, Bybit, Coinbase, CoinGecko with automatic failover and per-provider health tracking |

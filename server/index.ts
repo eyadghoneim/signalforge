@@ -53,7 +53,7 @@ import {
   verdictLabel,
 } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
-import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
+import { choppyCooldownState, clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
@@ -201,8 +201,11 @@ let lastScanAt = 0;
 
 app.get('/api/health', (_req, res) => {
   const protection = loadConfig().protection;
-  const breaker = evaluateCircuitBreaker(listSignals(500), protection, Date.now());
-  const exposure = currentExposure(listSignals(500), protection);
+  const signals = listSignals(500);
+  const now = Date.now();
+  const breaker = evaluateCircuitBreaker(signals, protection, now);
+  const exposure = currentExposure(signals, protection);
+  const choppy = choppyCooldownState(paperAccount.closed, protection.choppyLossStreak, protection.choppyCooldownHours, now);
   res.json({
     ok: true,
     version: VERSION,
@@ -217,6 +220,11 @@ app.get('/api/health', (_req, res) => {
       openSignals: exposure.openCount,
       effectiveExposure: exposure.effectiveExposure,
       maxConcurrentSignals: protection.maxConcurrentSignals,
+      choppyCooldown: {
+        active: choppy.active,
+        consecutiveLosses: choppy.consecutiveLosses,
+        cooldownUntil: choppy.cooldownUntil,
+      },
     },
   });
 });
@@ -509,6 +517,9 @@ app.post('/api/config', requireAdmin, (req, res) => {
       stoplossGuardMax: typeof pr.stoplossGuardMax === 'number' ? pr.stoplossGuardMax : cur.stoplossGuardMax,
       stoplossGuardHours: typeof pr.stoplossGuardHours === 'number' ? pr.stoplossGuardHours : cur.stoplossGuardHours,
       lossCooldownHours: typeof pr.lossCooldownHours === 'number' ? pr.lossCooldownHours : cur.lossCooldownHours,
+      choppyLossStreak: typeof pr.choppyLossStreak === 'number' ? pr.choppyLossStreak : cur.choppyLossStreak,
+      choppyCooldownHours: typeof pr.choppyCooldownHours === 'number' ? pr.choppyCooldownHours : cur.choppyCooldownHours,
+      paperMaxHoldHours: typeof pr.paperMaxHoldHours === 'number' ? pr.paperMaxHoldHours : cur.paperMaxHoldHours,
     });
   }
   const next = saveConfig(patch);
@@ -739,7 +750,7 @@ async function runScanCycle(): Promise<void> {
 
         // Capital protection: refuse BUY candidates when breaker tripped or exposure cap is full.
         if (eligible && signal.spotAction === 'SPOT_BUY' && !gateBlocked) {
-          const verdict = protectionVerdict(signalsNow, protection, asset, Date.now());
+          const verdict = protectionVerdict(signalsNow, protection, asset, Date.now(), paperAccount.closed);
           if (!verdict.allow) {
             appendLog('WARN', `${asset}: ${signal.signalType} REFUSED by ${verdict.reason} @ ${signal.entryPrice}`);
             continue;
@@ -819,7 +830,7 @@ async function runScanCycle(): Promise<void> {
         for (const a of lastPaperCandles.keys()) {
           candleMap[a] = lastPaperCandles.get(a) as PaperCandle;
         }
-        paperAccount = markToMarket(paperAccount, prices, candleMap, Date.now());
+        paperAccount = markToMarket(paperAccount, prices, candleMap, Date.now(), protection.paperMaxHoldHours);
         savePaperAccount(paperAccount);
       }
     } catch {

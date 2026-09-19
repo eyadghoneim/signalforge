@@ -255,6 +255,13 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   // key turns ordinary intrabar movement into a new signal for the same setup.
   const dedupCandleTime = ctx.candles?.[ctx.candles.length - 2]?.time ?? ctx.candles?.[ctx.candles.length - 1]?.time;
 
+  const qualityTotals = new Map<SignalReason['tag'], number>();
+  for (const reason of reasons) {
+    if (reason.adjustment === 0) continue;
+    qualityTotals.set(reason.tag, (qualityTotals.get(reason.tag) ?? 0) + reason.adjustment);
+  }
+  const qualityBreakdown = [...qualityTotals.entries()].map(([tag, adjustment]) => ({ tag, adjustment }));
+
   const summaryAr =
     signalType === 'STRONG_BUY' ? 'قناعة شرائية قوية — كل الشروط الفنية متوافقة'
     : signalType === 'BUY' ? 'إشارة شراء بدرجة كافية لتجاوز بوابة الجودة'
@@ -268,6 +275,8 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     engineSignature: ENGINE_SIGNATURE,
     learningBias: learningBiasValue !== 0 ? learningBiasValue : undefined,
     convictionScore: score,
+    entryQuality: score,
+    qualityBreakdown,
     signalType,
     spotAction,
     entryPrice,

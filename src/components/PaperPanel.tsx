@@ -306,7 +306,7 @@ export default function PaperPanel({ lang }: { lang: Lang }) {
           {acct.closed.slice(0, 8).map((t2) => (
             <div key={t2.id} className="flex items-center justify-between text-[10px]">
               <span className="font-bold text-zinc-300" dir="ltr">{t2.asset}</span>
-              <span className={`font-mono text-[9px] ${t2.reason === 'SELL_SIGNAL' ? 'text-amber-300' : t2.reason === 'SL' ? 'text-rose-300' : 'text-emerald-300'}`}>
+              <span className={`font-mono text-[9px] ${t2.reason === 'SELL_SIGNAL' || t2.reason === 'TIME' ? 'text-amber-300' : t2.reason === 'SL' ? 'text-rose-300' : 'text-emerald-300'}`}>
                 {t2.reason}
               </span>
               <span className="text-zinc-500" dir="ltr">{x.fees} {t2.feesUsd?.toFixed(2) ?? '—'}</span>

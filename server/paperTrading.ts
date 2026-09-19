@@ -6,7 +6,7 @@
 // التزامن: الكتابة على القرص ذرية (tmp + rename) — نفس نمط الـ persistence.
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Signal, SupportedAsset } from '../shared/types';
+import type { PaperTradeOutcome, Signal, SupportedAsset } from '../shared/types';
 import { PAPER_EXECUTION, STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
 import { DEFAULT_PROTECTION } from './protection';
 import { getDurablePersistence } from './persistence';
@@ -59,7 +59,9 @@ export interface PaperTrade {
   qty: number;
   pnlUsd: number;
   feesUsd?: number;
-  reason: 'TP3' | 'SL' | 'SELL_SIGNAL';
+  reason: 'TP3' | 'SL' | 'SELL_SIGNAL' | 'TIME';
+  /** First decisive paper outcome, used by the deterministic protection streak. */
+  outcome?: PaperTradeOutcome;
 }
 
 export interface PaperAccount {
@@ -182,6 +184,11 @@ function closeRemainder(
   const exitAvg = tp1Ratio * tp1Fill + tp2Ratio * tp2Fill + remRatio * fillPrice;
   const totalFees = round2((p.feesPaid ?? 0) + exitFee);
   const totalPnl = round2(p.pnlAccum + (fillPrice - p.entry) * p.qty - exitFee);
+  const outcome: PaperTradeOutcome =
+    reason === 'SL' && !p.tp1Taken ? 'SL_FIRST'
+    : p.tp1Taken || reason === 'TP3' ? 'TP1_FIRST'
+    : reason === 'TIME' ? 'TIME'
+    : 'SELL_SIGNAL';
   acct.realizedPnl = round2(acct.realizedPnl + totalPnl);
   acct.closed.push({
     id: p.id,
@@ -194,6 +201,7 @@ function closeRemainder(
     pnlUsd: totalPnl,
     feesUsd: totalFees,
     reason,
+    outcome,
   });
   if (acct.closed.length > MAX_CLOSED) acct.closed.splice(0, acct.closed.length - MAX_CLOSED);
 }
@@ -220,14 +228,25 @@ export function markToMarket(
   prices: Partial<Record<SupportedAsset, number>>,
   candles: Partial<Record<SupportedAsset, PaperCandle>>,
   nowMs: number,
+  maxHoldHours = DEFAULT_PROTECTION.paperMaxHoldHours,
 ): PaperAccount {
   const surviving: PaperPosition[] = [];
   for (const p of acct.open) {
     const candle = candles[p.asset];
     const price = prices[p.asset] ?? p.entry;
-    void price;
-    // لا نقيّم على شمعة فتح المركز (منع أي تسرب زمني داخل نفس الشمعة).
-    if (!candle || candle.time <= p.openedAtSec) {
+    const holdExpired = maxHoldHours > 0 && nowMs - p.openedAtSec * 1000 >= maxHoldHours * 3600_000;
+    const hasNewCandle = Boolean(candle && candle.time > p.openedAtSec);
+    // Do not evaluate price targets on the opening candle. A time limit still
+    // closes at the current mark when no newer candle is available.
+    if (!hasNewCandle) {
+      if (holdExpired) {
+        closeRemainder(acct, p, price, 'TIME', nowMs);
+        continue;
+      }
+      surviving.push(p);
+      continue;
+    }
+    if (!candle) {
       surviving.push(p);
       continue;
     }
@@ -280,6 +299,13 @@ export function markToMarket(
     // 3) الهدف الثالث: قفل الكمية المتبقية كاملة (يُقيَّم بعد تجهيز أي جني في نفس الشمعة)
     if (p.tp2Taken && p.tp3 > 0 && candle.high >= p.tp3) {
       closeRemainder(acct, p, p.tp3, 'TP3', nowMs);
+      continue;
+    }
+
+    // Time exit is deliberately checked after stop/targets so same-candle price
+    // protection remains conservative and deterministic.
+    if (holdExpired) {
+      closeRemainder(acct, p, price, 'TIME', nowMs);
       continue;
     }
 

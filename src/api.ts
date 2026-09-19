@@ -11,6 +11,7 @@ import type {
   WalkForwardResult,
   LiquidityRegime,
   ProviderHealthInfo,
+  PaperTradeOutcome,
   ProtectionConfig,
   TagLearningStat,
   LearningLesson,
@@ -28,6 +29,7 @@ export type {
   WalkForwardResult,
   LiquidityRegime,
   ProviderHealthInfo,
+  PaperTradeOutcome,
   ProtectionConfig,
   TagLearningStat,
   LearningLesson,
@@ -56,6 +58,11 @@ export interface HealthInfo {
     openSignals: number;
     effectiveExposure: number;
     maxConcurrentSignals: number;
+    choppyCooldown?: {
+      active: boolean;
+      consecutiveLosses: number;
+      cooldownUntil: number | null;
+    };
   };
 }
 
@@ -117,7 +124,8 @@ export interface PaperTradeInfo {
   qty: number;
   pnlUsd: number;
   feesUsd?: number;
-  reason: 'TP3' | 'SL' | 'SELL_SIGNAL';
+  reason: 'TP3' | 'SL' | 'SELL_SIGNAL' | 'TIME';
+  outcome?: PaperTradeOutcome;
 }
 
 export interface PaperAccountInfo {
