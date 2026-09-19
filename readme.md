@@ -40,6 +40,8 @@ The backtest is transparent about its own edge cases instead of hiding them:
 | **Same-candle ambiguity** | If a stop and a target are both inside one candle, the stop is assumed FIRST (conservative). The engine never pretends the target won; it assumes the worse outcome. |
 | **Stop-loss execution slippage** | Stop-market orders fill worse than the stop price in gaps/flash moves. The backtest now applies a realistic slippage of `STOP_SLIPPAGE_ATR` (15% of ATR) on stop exits instead of a perfect fill. |
 | **Funding gate disabled in backtests** | Historical funding is not freely available, so this gate is off in the simulation (disclosed, not silent). |
+| **24h momentum disabled in backtests** | Historical daily change is not available in the simulation, so `change24h` is zero; live and backtest signals should not be compared literally. |
+| **Live candle timing** | Live scans may read the latest still-forming 1h candle, while the backtest replays historical candles; signal timing can therefore differ. |
 | **Liquidity layer disabled in backtests** | DefiLlama history is not freely available; the layer is off in the simulation (disclosed). |
 
 ## Quick start

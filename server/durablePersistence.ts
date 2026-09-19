@@ -104,9 +104,10 @@ export class PostgresDurableStore implements DurableStore {
       max: Number(process.env.DATABASE_POOL_MAX) > 0 ? Number(process.env.DATABASE_POOL_MAX) : 4,
       connectionTimeoutMillis: 8_000,
       idleTimeoutMillis: 30_000,
-      // Supabase's external connection requires TLS. rejectUnauthorized=false is
-      // intentional here because the platform connection string is the trust boundary.
-      ssl: { rejectUnauthorized: false },
+      // Supabase's external connection requires TLS. Keep the compatible default,
+      // with an opt-in strict certificate check for deployments that provide the
+      // platform CA chain (PGSSL_STRICT=1).
+      ssl: { rejectUnauthorized: process.env.PGSSL_STRICT === '1' || process.env.PGSSL_STRICT === 'true' },
     });
 
     try {
