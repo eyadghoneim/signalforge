@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Database, Download, Play, RefreshCw, Zap, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Database, Download, Play, RefreshCw, Zap, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight, Bookmark, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { api, type DuneWhaleTrade, type DuneTopToken } from '../api';
 import type { Lang } from '../i18n';
 
@@ -10,6 +10,15 @@ interface Props {
 type ViewMode = 'whales' | 'tokens' | 'sql';
 
 const STABLE_SYMBOLS = "('USDT','USDC','DAI','USDS','FDUSD','USDe','PYUSD','crvUSD','FRAX','BUSD','GUSD','LUSD','sUSD')";
+
+interface SavedQuery {
+  id: string;
+  name: string;
+  sql: string;
+  createdAt: number;
+}
+
+const STORAGE_KEY_SAVED_QUERIES = 'signalforge_user_dune_queries';
 
 const PRESET_QUERIES = [
   {
@@ -83,6 +92,22 @@ GROUP BY token_bought_symbol
 ORDER BY total_usd_volume DESC
 LIMIT 10`,
   },
+  {
+    nameAr: 'أكبر مجمعات سيولة على Uniswap v3',
+    nameEn: 'Top Uniswap v3 Pool Swaps',
+    sql: `SELECT
+  CAST(block_time AS VARCHAR) as block_time,
+  project,
+  token_bought_symbol,
+  token_sold_symbol,
+  round(amount_usd, 2) as amount_usd
+FROM dex.trades
+WHERE block_time > now() - interval '12' hour
+  AND project = 'uniswap'
+  AND amount_usd >= 200000
+ORDER BY amount_usd DESC
+LIMIT 15`,
+  },
 ];
 
 export default function DunePanel({ lang }: Props) {
@@ -100,6 +125,70 @@ export default function DunePanel({ lang }: Props) {
   const [executionTime, setExecutionTime] = useState<number | null>(null);
   const [sqlLoading, setSqlLoading] = useState(false);
   const [sqlError, setSqlError] = useState<string | null>(null);
+
+  // Custom Query Library state
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SAVED_QUERIES);
+      return raw ? (JSON.parse(raw) as SavedQuery[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [newQueryName, setNewQueryName] = useState('');
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+
+  // Telegram test alert
+  const [tgTesting, setTgTesting] = useState(false);
+  const [tgFeedback, setTgFeedback] = useState<string | null>(null);
+
+  const saveQueryToLibrary = () => {
+    const trimmed = newQueryName.trim();
+    if (!trimmed || !customSql.trim()) return;
+    const item: SavedQuery = {
+      id: `query_${Date.now()}`,
+      name: trimmed,
+      sql: customSql.trim(),
+      createdAt: Date.now(),
+    };
+    const updated = [item, ...savedQueries];
+    setSavedQueries(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_SAVED_QUERIES, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    setNewQueryName('');
+    setSaveSuccessMsg(true);
+    setTimeout(() => setSaveSuccessMsg(false), 2500);
+  };
+
+  const deleteSavedQuery = (id: string) => {
+    const updated = savedQueries.filter((q) => q.id !== id);
+    setSavedQueries(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_SAVED_QUERIES, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleTestTelegramWhale = async () => {
+    setTgTesting(true);
+    setTgFeedback(null);
+    try {
+      const res = await api.telegramTestWhaleAlert();
+      if (res.ok) {
+        setTgFeedback(isAr ? 'تم إرسال إشعار الحوت التجريبي لتليجرام بنجاح!' : 'Test whale alert sent to Telegram successfully!');
+      } else {
+        setTgFeedback(res.error || (isAr ? 'تعذر الإرسال. تحقق من إعدادات البوت' : 'Failed to send. Check bot settings'));
+      }
+    } catch (e) {
+      setTgFeedback(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTgTesting(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -203,15 +292,33 @@ export default function DunePanel({ lang }: Props) {
           </div>
         </div>
 
-        <button
-          onClick={() => void loadData()}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-3.5 py-2 text-xs font-medium text-zinc-200 transition hover:bg-zinc-700 disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          {isAr ? 'تحديث البيانات' : 'Refresh Data'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void loadData()}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-3.5 py-2 text-xs font-medium text-zinc-200 transition hover:bg-zinc-700 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            {isAr ? 'تحديث البيانات' : 'Refresh Data'}
+          </button>
+          <button
+            onClick={() => void handleTestTelegramWhale()}
+            disabled={tgTesting}
+            className="flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3.5 py-2 text-xs font-semibold text-sky-300 transition hover:bg-sky-500/20 disabled:opacity-50"
+            title={isAr ? 'إرسال نموذج تنبيه صفقة حوت فورية لتليجرام' : 'Send a test whale trade alert to Telegram'}
+          >
+            <Send size={14} className={tgTesting ? 'animate-pulse' : ''} />
+            {tgTesting ? (isAr ? 'جاري الإرسال…' : 'Sending…') : (isAr ? 'تجربة تنبيه الحوت 🐋' : 'Test Whale Alert 🐋')}
+          </button>
+        </div>
       </div>
+
+      {tgFeedback && (
+        <div className="flex items-center justify-between rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-200">
+          <span>{tgFeedback}</span>
+          <button onClick={() => setTgFeedback(null)} className="text-sky-400 hover:text-white">✕</button>
+        </div>
+      )}
 
       {/* التبويبات الداخلية */}
       <div className="flex gap-2 border-b border-zinc-800 pb-2">
@@ -390,6 +497,75 @@ export default function DunePanel({ lang }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* مكتبة الاستعلامات المحفوظة الخاصة بك */}
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-zinc-300">
+                <Bookmark size={15} className="text-orange-400" />
+                <span>{isAr ? 'مكتبة استعلاماتي الخاصة المحفوظة' : 'My Saved Custom Queries'}</span>
+                <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+                  {savedQueries.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newQueryName}
+                  onChange={(e) => setNewQueryName(e.target.value)}
+                  placeholder={isAr ? 'اسم الاستعلام لحفظه…' : 'Query name to save…'}
+                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-orange-500 focus:outline-none"
+                />
+                <button
+                  onClick={saveQueryToLibrary}
+                  disabled={!newQueryName.trim()}
+                  className="flex items-center gap-1 rounded-lg bg-orange-600/90 px-3 py-1 text-xs font-semibold text-white transition hover:bg-orange-500 disabled:opacity-40"
+                >
+                  <Bookmark size={12} />
+                  {isAr ? 'حفظ الكود الحالي' : 'Save Current'}
+                </button>
+              </div>
+            </div>
+
+            {saveSuccessMsg && (
+              <div className="flex items-center gap-1 text-[11px] text-emerald-400">
+                <CheckCircle2 size={13} />
+                <span>{isAr ? 'تم حفظ الاستعلام بنجاح في مكتبتك المحلية!' : 'Query saved to your local library!'}</span>
+              </div>
+            )}
+
+            {savedQueries.length > 0 ? (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {savedQueries.map((q) => (
+                  <div
+                    key={q.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-200"
+                  >
+                    <button
+                      onClick={() => setCustomSql(q.sql)}
+                      className="font-medium hover:text-orange-400 transition"
+                      title={isAr ? 'تحميل الاستعلام في المحرر' : 'Load query into editor'}
+                    >
+                      {q.name}
+                    </button>
+                    <button
+                      onClick={() => deleteSavedQuery(q.id)}
+                      className="text-zinc-500 hover:text-rose-400 transition ml-1"
+                      title={isAr ? 'حذف من المكتبة' : 'Delete'}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[11px] text-zinc-500">
+                {isAr
+                  ? 'يمكنك حفظ أي استعلام SQL مخصص كتبته هنا للوصول إليه بضغطة زر لاحقاً.'
+                  : 'You can save any custom SQL query here for one-click access later.'}
+              </div>
+            )}
           </div>
 
           <div className="relative">

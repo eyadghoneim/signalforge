@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, Globe, Settings, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Globe, Settings, ShieldCheck, Wifi, WifiOff, FileText } from 'lucide-react';
 import { api, type SupportedAsset, type Signal, type StoredSignal, type TickerSummary, type AttributionSummary, type HealthInfo, type DuneInfo } from './api';
 import { SUPPORTED_ASSETS, ASSET_LABELS_AR } from '../shared/types';
 import PriceChart from './components/PriceChart';
@@ -14,6 +14,7 @@ import LiquidationPanel from './components/LiquidationPanel';
 import PaperPanel from './components/PaperPanel';
 import DuneContextPanel from './components/DuneContextPanel';
 import DuneResearchPanel from './components/DunePanel';
+import DailyReportModal from './components/DailyReportModal';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
@@ -41,6 +42,7 @@ export default function App() {
   const [dune, setDune] = useState<DuneInfo | null>(null);
   const [tab, setTab] = useState<Tab>('history');
   const [showSettings, setShowSettings] = useState(false);
+  const [showDailyReport, setShowDailyReport] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(0);
   const hiddenRef = useRef(false);
 
@@ -131,27 +133,73 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* ─── الترويسة ─── */}
+      {/* ─── الترويسة الشاملة (Terminal Top Bar) ─── */}
       <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950">
-              <Activity size={20} strokeWidth={2.5} />
-            </div>
-            <div className="leading-tight">
-              <div className="text-base font-extrabold">
-                <span className="text-amber-400">SignalForge</span>
+        <div className="mx-auto flex max-w-[1600px] w-full flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+          {/* الجانب الأيمن: الشعار + بطاقات أسعار العملات الفورية */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950 shadow-md">
+                <Activity size={20} strokeWidth={2.5} />
               </div>
-              <div className="text-[10px] text-zinc-500">{te('tagline')}</div>
+              <div className="leading-tight">
+                <div className="text-base font-extrabold tracking-tight">
+                  <span className="text-amber-400">SignalForge</span>
+                </div>
+                <div className="text-[10px] text-zinc-500">{te('tagline')}</div>
+              </div>
+            </div>
+
+            {/* الأصول السريعة المباشرة */}
+            <div className="flex items-center gap-2">
+              {summary.map(priceChip)}
             </div>
           </div>
 
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-            {summary.map(priceChip)}
-            <div className="mx-1 hidden items-center gap-1.5 text-[11px] text-zinc-500 sm:flex">
+          {/* منتصف الترويسة: نبض السوق الفوري ومؤشرات المحرك (استغلال الفراغ باحترافية) */}
+          <div className="hidden items-center gap-4 rounded-xl border border-zinc-800/90 bg-zinc-900/60 px-3.5 py-1.5 text-xs lg:flex shadow-inner">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-500">{lang === 'ar' ? 'وضع السيولة:' : 'Regime:'}</span>
+              <span className={`font-bold ${
+                regime?.verdict === 'RISK_ON'
+                  ? 'text-emerald-400'
+                  : regime?.verdict === 'RISK_OFF'
+                  ? 'text-rose-400'
+                  : 'text-zinc-200'
+              }`}>
+                {regime?.verdict ?? '—'}
+              </span>
+            </div>
+            <div className="h-3 w-px bg-zinc-800" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-500">{lang === 'ar' ? 'قاطع الدائرة:' : 'Circuit:'}</span>
+              <span className={health?.protection?.breakerTripped ? 'font-bold text-rose-400' : 'font-bold text-emerald-400'}>
+                {health?.protection?.breakerTripped ? (lang === 'ar' ? '⚠️ مفعّل' : '⚠️ Tripped') : (lang === 'ar' ? '✅ نشط وآمن' : '✅ Protected')}
+              </span>
+            </div>
+            <div className="h-3 w-px bg-zinc-800" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-500">{lang === 'ar' ? 'شبكة Dune:' : 'Dune On-Chain:'}</span>
+              <span className={dune?.enabled ? 'font-bold text-sky-400' : 'text-zinc-500'}>
+                {dune?.enabled ? (lang === 'ar' ? 'متصل 🐋' : 'Online 🐋') : (lang === 'ar' ? 'جاهز' : 'Standby')}
+              </span>
+            </div>
+          </div>
+
+          {/* الجانب الأيسر: الإجراءات والإعدادات واللغة والتقرير اليومي */}
+          <div className="flex items-center gap-2">
+            <div className="mx-1 hidden items-center gap-1.5 text-[11px] text-zinc-500 md:flex">
               {health ? <Wifi size={13} className="text-emerald-500" /> : <WifiOff size={13} className="text-rose-500" />}
               <span dir="ltr">{lastUpdate ? new Date(lastUpdate).toLocaleTimeString('ar-EG') : '—'}</span>
             </div>
+            <button
+              onClick={() => setShowDailyReport(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20 hover:border-amber-400/60"
+              title={lang === 'ar' ? 'تقرير المحطة اليومي الشامل (JSON / CSV / PDF)' : 'Daily Terminal Report (JSON / CSV / PDF)'}
+            >
+              <FileText size={14} />
+              <span className="hidden sm:inline">{lang === 'ar' ? 'التقرير اليومي' : 'Daily Report'}</span>
+            </button>
             <button
               onClick={() => setLang((l) => (l === 'ar' ? 'en' : 'ar'))}
               className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:border-emerald-400/50 hover:text-emerald-300"
@@ -165,15 +213,16 @@ export default function App() {
               className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:border-amber-400/50 hover:text-amber-300"
             >
               <Settings size={14} />
-              {te('settings')}
+              <span className="hidden sm:inline">{te('settings')}</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-5">
-        {/* ─── الشبكة الرئيسية ─── */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <main className="mx-auto max-w-[1600px] w-full px-4 sm:px-6 py-5">
+        {/* ─── الشبكة المتوازنة (Balanced Grid) ─── */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {/* العمود الرئيسي: الرسم البياني + كارت التوصية + مساحة العمل والتبويبات التحليلية */}
           <section className="space-y-4 lg:col-span-2">
             <PriceChart asset={activeAsset} lang={lang} />
             {health?.protection?.choppyCooldown?.active && (
@@ -197,8 +246,43 @@ export default function App() {
             ) : (
               <div className="h-64 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/40" />
             )}
+
+            {/* مساحة عمل التبويبات مدمجة مباشرة أسفل الإشارة لاستغلال الفراغ الرأسي بالكامل */}
+            <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-4">
+              <div className="flex flex-wrap gap-2 border-b border-zinc-800 pb-2">
+                {([
+                  ['history', te('tabHistory')],
+                  ['backtest', te('tabBacktest')],
+                  ['dex', te('tabDex')],
+                  ['dune', te('tabDune')],
+                  ['learning', te('tabLearning')],
+                  ['settings', te('tabSettings')],
+                ] as [Tab, string][]).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setTab(key)}
+                    className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${
+                      tab === key
+                        ? 'bg-amber-400/15 text-amber-300 border border-amber-400/40 shadow-sm'
+                        : 'border border-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="pt-4 rise-in">
+                {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} lang={lang} />}
+                {tab === 'backtest' && <BacktestPanel lang={lang} />}
+                {tab === 'dex' && <DexPanel lang={lang} />}
+                {tab === 'dune' && <DuneResearchPanel lang={lang} />}
+                {tab === 'learning' && <LearningPanel lang={lang} />}
+                {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} lang={lang} />}
+              </div>
+            </div>
           </section>
 
+          {/* العمود الجانبي: لوحة المراقبة وإدارة المخاطر والسيولة */}
           <aside className="space-y-4">
             {/* حالة المحرك */}
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
@@ -253,38 +337,6 @@ export default function App() {
             </div>
           </aside>
         </div>
-
-        {/* ─── التبويبات ─── */}
-        <div className="mt-6">
-          <div className="flex gap-2 border-b border-zinc-800">
-            {([
-              ['history', te('tabHistory')],
-              ['backtest', te('tabBacktest')],
-              ['settings', te('tabSettings')],
-              ['dex', te('tabDex')],
-              ['dune', te('tabDune')],
-              ['learning', te('tabLearning')],
-            ] as [Tab, string][]).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setTab(key)}
-                className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-bold transition ${
-                  tab === key ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="pt-4 rise-in">
-            {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} lang={lang} />}
-            {tab === 'backtest' && <BacktestPanel lang={lang} />}
-            {tab === 'dex' && <DexPanel lang={lang} />}
-            {tab === 'dune' && <DuneResearchPanel lang={lang} />}
-            {tab === 'learning' && <LearningPanel lang={lang} />}
-            {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} lang={lang} />}
-          </div>
-        </div>
       </main>
 
       {/* نافذة الإعدادات */}
@@ -299,7 +351,14 @@ export default function App() {
         </div>
       )}
 
-      <footer className="mx-auto max-w-7xl px-4 py-8 text-center text-[11px] text-zinc-600">
+      {/* نافذة التقرير اليومي الشامل */}
+      <DailyReportModal
+        lang={lang}
+        isOpen={showDailyReport}
+        onClose={() => setShowDailyReport(false)}
+      />
+
+      <footer className="mx-auto max-w-[1600px] px-4 py-8 text-center text-[11px] text-zinc-600">
         SignalForge v{health?.version ?? '1.0.0'} — {health?.engineSignature ?? ''}
       </footer>
     </div>

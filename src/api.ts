@@ -207,6 +207,49 @@ export interface DuneTopToken {
   total_usd: number;
 }
 
+export interface DailyReportData {
+  ok: boolean;
+  generatedAt: string;
+  timestamp: number;
+  engine: {
+    signature: string;
+    version: string;
+    breakerTripped: boolean;
+    protection: ProtectionConfig;
+  };
+  market: {
+    fearAndGreed: { value: number; classification: string } | null;
+    duneConnected: boolean;
+  };
+  signals: {
+    asset: SupportedAsset;
+    labelAr: string;
+    signalType: string;
+    spotAction: string;
+    convictionScore: number | null;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    target1: number | null;
+    target2: number | null;
+    target3: number | null;
+    regimeGateStatus: string;
+    reasons: string[];
+    generatedAt: number | null;
+  }[];
+  paperTrading: {
+    initialBalance: number;
+    cash: number;
+    equity: number;
+    totalRealizedPnlUsd: number;
+    winRatePercent: number;
+    openPositionsCount: number;
+    closedTradesCount: number;
+    openPositions: PaperAccountInfo['open'];
+    recentClosedTrades: PaperAccountInfo['closed'];
+  };
+  recentMegaWhaleSwaps: DuneWhaleTrade[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'content-type': 'application/json' },
@@ -266,6 +309,8 @@ export const api = {
   }>('/api/paper'),
   resetPaper: () => j<{ ok: true }>('/api/paper/reset', { method: 'POST', body: '{}' }),
   liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
+  dailyReport: () => j<DailyReportData>('/api/report/daily'),
+  telegramTestWhaleAlert: () => j<{ ok: boolean; error?: string }>('/api/telegram/test-whale-alert', { method: 'POST', body: '{}' }),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {
       method: 'POST',

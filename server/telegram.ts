@@ -322,3 +322,30 @@ function roundQty(v: number): string {
   if (!Number.isFinite(v)) return '—';
   return v >= 1 ? v.toFixed(2) : v.toFixed(6);
 }
+
+// ─── تنبيهات صفقات الحيتان الضخمة (Dune DEX Mega Whales) ───
+export interface WhaleAlertShape {
+  blockchain?: string;
+  project: string;
+  boughtSymbol: string;
+  soldSymbol: string;
+  amountUsd: number;
+  blockTime?: string;
+}
+
+export function buildWhaleAlertHtml(alert: WhaleAlertShape, lang: TelegramLang = 'ar'): string {
+  const ar = lang === 'ar';
+  const lines: string[] = [];
+  lines.push(ar ? `🐋 <b>[رادار الحيتان اللامركزي] صفقـة ضخمـة</b> 🚨` : `🐋 <b>[DEX Whale Radar] Mega Swap Alert</b> 🚨`);
+  lines.push('');
+  lines.push(ar ? `<b>المنصة:</b> ${esc((alert.project || 'DEX').toUpperCase())}` : `<b>DEX:</b> ${esc((alert.project || 'DEX').toUpperCase())}`);
+  lines.push(ar ? `<b>حجم الصفقة:</b> 💰 $${alert.amountUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD` : `<b>Amount:</b> 💰 $${alert.amountUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`);
+  lines.push(ar ? `<b>شراء:</b> 🟢 <b>${esc(alert.boughtSymbol)}</b>` : `<b>Bought:</b> 🟢 <b>${esc(alert.boughtSymbol)}</b>`);
+  lines.push(ar ? `<b>بيع:</b> 🔴 <b>${esc(alert.soldSymbol)}</b>` : `<b>Sold:</b> 🔴 <b>${esc(alert.soldSymbol)}</b>`);
+  if (alert.blockTime) {
+    lines.push(ar ? `<b>التوقيت:</b> ⏱️ ${esc(alert.blockTime)}` : `<b>Time:</b> ⏱️ ${esc(alert.blockTime)}`);
+  }
+  lines.push('');
+  lines.push(`<i>${ar ? 'SignalForge On-Chain Radar — رصد فوري للسيولة المؤسسية عبر Dune' : 'SignalForge On-Chain Radar — Real-time institutional liquidity tracked via Dune'}</i>`);
+  return lines.join('\n');
+}
