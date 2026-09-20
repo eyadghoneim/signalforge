@@ -13,6 +13,9 @@ services:
       # ضع قيمة DATABASE_URL من Supabase Free في إعدادات Render كـ Secret.
       - key: DATABASE_URL
         sync: false
+      # Optional Dune read-only research context; set this as a Render Secret.
+      - key: DUNE_API_KEY
+        sync: false
     # ملاحظات سريعة:
     # • عند وجود DATABASE_URL ينتقل SignalForge تلقائيًا إلى PostgreSQL دائم
     #   ويستورد data/*.json مرة واحدة بدون حذف السجل الموجود.

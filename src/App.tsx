@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, Globe, Settings, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
-import { api, type SupportedAsset, type Signal, type StoredSignal, type TickerSummary, type AttributionSummary, type HealthInfo } from './api';
+import { api, type SupportedAsset, type Signal, type StoredSignal, type TickerSummary, type AttributionSummary, type HealthInfo, type DuneInfo } from './api';
 import { SUPPORTED_ASSETS, ASSET_LABELS_AR } from '../shared/types';
 import PriceChart from './components/PriceChart';
 import SignalCard from './components/SignalCard';
@@ -12,6 +12,7 @@ import AttributionPanel from './components/AttributionPanel';
 import DexPanel from './components/DexPanel';
 import LiquidationPanel from './components/LiquidationPanel';
 import PaperPanel from './components/PaperPanel';
+import DunePanel from './components/DunePanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
@@ -36,6 +37,7 @@ export default function App() {
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [regime, setRegime] = useState<LiquidityRegime | null>(null);
   const [providers, setProviders] = useState<ProviderHealthInfo[]>([]);
+  const [dune, setDune] = useState<DuneInfo | null>(null);
   const [tab, setTab] = useState<Tab>('history');
   const [showSettings, setShowSettings] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(0);
@@ -53,7 +55,7 @@ export default function App() {
   const refreshCore = useCallback(async () => {
     if (hiddenRef.current) return;
     try {
-      const [s, sig, h, att, hp, liq, provs] = await Promise.all([
+      const [s, sig, h, att, hp, liq, provs, duneSnapshot] = await Promise.all([
         api.summary(),
         api.signal(activeAsset),
         api.signals(60),
@@ -61,6 +63,7 @@ export default function App() {
         api.health(),
         api.liquidity().catch(() => null),
         api.providers().catch(() => null),
+        api.dune().catch(() => null),
       ]);
       setSummary(s.assets);
       setSignal(sig.signal);
@@ -70,6 +73,7 @@ export default function App() {
       setHealth(hp);
       if (liq) setRegime(liq.regime);
       if (provs) setProviders(provs.providers);
+      if (duneSnapshot) setDune(duneSnapshot);
       setLastUpdate(Date.now());
     } catch (e) {
       setSignalError(e instanceof Error ? e.message : String(e));
@@ -231,6 +235,8 @@ export default function App() {
             {attribution && <AttributionPanel summary={attribution} lang={lang} />}
 
             <LiquidityCard regime={regime} lang={lang} />
+
+            <DunePanel data={dune} lang={lang} />
 
             <PaperPanel lang={lang} />
 

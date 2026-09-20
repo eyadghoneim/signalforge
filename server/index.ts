@@ -61,6 +61,7 @@ import { getTopDexPairs } from './dexscreener';
 import { closeCcxtExchangePool } from './ccxtProvider';
 import { getWhaleNetflow } from './whaleAlert';
 import { getLiquidationRadar } from './liquidationRadar';
+import { getDuneSnapshot } from './dune';
 import {
   loadPaperAccount,
   savePaperAccount,
@@ -438,6 +439,11 @@ app.get('/api/liquidity-regime', async (_req, res) => {
   } catch {
     res.status(503).json({ ok: false, error: 'طبقة السيولة غير متاحة حالياً' });
   }
+});
+
+app.get('/api/dune', async (_req, res) => {
+  const snapshot = await getDuneSnapshot();
+  res.json(snapshot);
 });
 
 app.get('/api/dex/pairs', async (req, res) => {

@@ -171,6 +171,28 @@ export interface DexPairInfo {
   priceChange24hPercent: number | null;
 }
 
+export interface DuneAssetMetric {
+  asset: SupportedAsset;
+  blockchain: string;
+  volume24hUsd: number;
+  tradeCount: number;
+  whaleTradeCount: number;
+  whaleVolume24hUsd: number;
+  largestTradeUsd: number | null;
+}
+
+export interface DuneInfo {
+  ok: boolean;
+  enabled: boolean;
+  source: 'DUNE';
+  windowHours?: number;
+  fetchedAt: number | null;
+  assets?: DuneAssetMetric[];
+  noteAr?: string;
+  noteEn?: string;
+  error?: string;
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'content-type': 'application/json' },
@@ -208,6 +230,10 @@ export const api = {
   }) => j<{ ok: true }>('/api/config', { method: 'POST', body: JSON.stringify(body) }),
   telegramTest: () => j<{ ok: boolean; error?: string }>('/api/telegram/test', { method: 'POST', body: '{}' }),
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
+  dune: async (): Promise<DuneInfo> => {
+    const res = await fetch('/api/dune', { headers: { 'content-type': 'application/json' } });
+    return (await res.json()) as DuneInfo;
+  },
   dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
   paper: () => j<{
