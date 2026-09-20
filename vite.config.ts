@@ -1,23 +1,14 @@
-import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 
-export default defineConfig(() => {
-  return {
-    plugins: [react(), tailwindcss()],
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-      dedupe: ['react', 'react-dom'],
-    },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
-    },
-  };
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  build: { outDir: 'dist' },
+  server: {
+    proxy: { '/api': 'http://localhost:3000' },
+    // Allow any host in dev so the dashboard also loads behind preview proxies
+    // (e2b/localhost/0.0.0.0). Production serving goes through the Express server.
+    allowedHosts: true,
+  },
 });

@@ -45,6 +45,99 @@ export async function sendTelegramDedupedMessage(
   return result;
 }
 
+export interface TelegramPollingConfig {
+  enabled: boolean;
+  token: string;
+  chatId: string;
+}
+
+export interface TelegramCommandHandlers {
+  status: () => string | Promise<string>;
+  balance: () => string | Promise<string>;
+  pause: () => string | Promise<string>;
+  resume: () => string | Promise<string>;
+  panic: () => string | Promise<string>;
+}
+
+type TelegramUpdate = {
+  update_id: number;
+  message?: { chat?: { id?: number | string }; text?: string };
+};
+
+let pollingActive = false;
+let pollingTimer: NodeJS.Timeout | null = null;
+let pollingOffset = 0;
+let pollingInitialized = false;
+
+/** Parse only slash commands; bot usernames and arguments are ignored. */
+export function parseTelegramCommand(text: string | undefined): string | null {
+  const first = String(text || '').trim().split(/\s+/, 1)[0];
+  if (!first.startsWith('/')) return null;
+  return first.slice(1).split('@', 1)[0].toLowerCase() || null;
+}
+
+async function pollTelegramUpdates(
+  configProvider: () => TelegramPollingConfig,
+  handlers: TelegramCommandHandlers,
+): Promise<void> {
+  if (!pollingActive) return;
+  const config = configProvider();
+  if (!config.enabled || !config.token || !config.chatId) {
+    pollingTimer = setTimeout(() => void pollTelegramUpdates(configProvider, handlers), 10_000);
+    return;
+  }
+
+  try {
+    const query = new URLSearchParams({ timeout: '20', offset: String(pollingOffset) });
+    const res = await fetch(`https://api.telegram.org/bot${config.token}/getUpdates?${query.toString()}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(25_000),
+    });
+    const json = (await res.json()) as { ok?: boolean; result?: TelegramUpdate[] };
+    if (!res.ok || !json.ok || !Array.isArray(json.result)) throw new Error(`getUpdates HTTP ${res.status}`);
+    const updates = json.result;
+
+    // Do not execute stale commands that were sent before this process started.
+    if (!pollingInitialized) {
+      if (updates.length) pollingOffset = Math.max(...updates.map((u) => u.update_id)) + 1;
+      pollingInitialized = true;
+    } else {
+      if (updates.length) pollingOffset = Math.max(...updates.map((u) => u.update_id)) + 1;
+      for (const update of updates) {
+        const messageChat = String(update.message?.chat?.id ?? '');
+        if (!messageChat || messageChat !== String(config.chatId).replace(/\s+/g, '')) continue;
+        const command = parseTelegramCommand(update.message?.text);
+        if (!command) continue;
+        const handler = handlers[command as keyof TelegramCommandHandlers];
+        if (typeof handler !== 'function') continue;
+        const response = await handler();
+        if (response) await sendTelegramMessage(config.token, config.chatId, response);
+      }
+    }
+  } catch {
+    // Polling is best-effort; the next cycle retries without affecting scanning.
+  }
+
+  if (pollingActive) pollingTimer = setTimeout(() => void pollTelegramUpdates(configProvider, handlers), 1000);
+}
+
+export function startTelegramPolling(
+  configProvider: () => TelegramPollingConfig,
+  handlers: TelegramCommandHandlers,
+): void {
+  if (pollingActive) return;
+  pollingActive = true;
+  pollingOffset = 0;
+  pollingInitialized = false;
+  void pollTelegramUpdates(configProvider, handlers);
+}
+
+export function stopTelegramPolling(): void {
+  pollingActive = false;
+  if (pollingTimer) clearTimeout(pollingTimer);
+  pollingTimer = null;
+}
+
 export async function sendTelegramMessage(
   token: string,
   chatId: string,
@@ -67,7 +160,10 @@ export async function sendTelegramMessage(
     if (!res.ok || !json.ok) return { ok: false, error: json.description || `HTTP ${res.status}` };
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // Never return the request URL: it contains the bot token and could be
+    // persisted by callers in logs. Preserve timeout semantics for dedupe.
+    const timedOut = controller.signal.aborted || (e instanceof Error && e.name === 'AbortError');
+    return { ok: false, error: timedOut ? 'timeout' : 'network error' };
   } finally {
     clearTimeout(timer);
   }
@@ -169,6 +265,7 @@ interface PaperEventShape {
   entry?: number;
   exitAvg?: number;
   pnlUsd?: number;
+  feesUsd?: number;
   reason?: string;
 }
 
@@ -190,6 +287,7 @@ export function buildPaperEventHtml(ev: PaperEventShape, lang: TelegramLang): st
   if (ev.kind === 'OPENED') {
     if (ev.qty !== undefined) lines.push(ar ? `<b>الكمية:</b> ${roundQty(ev.qty)}` : `<b>Qty:</b> ${roundQty(ev.qty)}`);
     if (ev.entry !== undefined) lines.push(ar ? `<b>الدخول:</b> ${fmtUsd(ev.entry)}` : `<b>Entry:</b> ${fmtUsd(ev.entry)}`);
+    if (ev.feesUsd !== undefined) lines.push(ar ? `<b>الرسوم:</b> ${fmtUsd(ev.feesUsd)}` : `<b>Fees:</b> ${fmtUsd(ev.feesUsd)}`);
   }
 
   if (ev.kind === 'TP1' || ev.kind === 'TP2') {
@@ -198,12 +296,13 @@ export function buildPaperEventHtml(ev: PaperEventShape, lang: TelegramLang): st
       const sign = ev.pnlUsd >= 0 ? '+' : '';
       lines.push(ar ? `<b>المحصَّل حتى الآن:</b> 🟢 ${sign}${ev.pnlUsd.toFixed(2)}` : `<b>Realized so far:</b> 🟢 ${sign}${ev.pnlUsd.toFixed(2)}`);
     }
+    if (ev.feesUsd !== undefined) lines.push(ar ? `<b>الرسوم التراكمية:</b> ${fmtUsd(ev.feesUsd)}` : `<b>Accumulated fees:</b> ${fmtUsd(ev.feesUsd)}`);
   }
 
   if (ev.kind === 'CLOSED') {
     if (ev.exitAvg !== undefined) lines.push(ar ? `<b>متوسط الخروج:</b> ${fmtUsd(ev.exitAvg)}` : `<b>Avg exit:</b> ${fmtUsd(ev.exitAvg)}`);
     if (ev.reason) {
-      const reasonAr = ev.reason === 'TP3' ? 'الهدف الثالث' : ev.reason === 'SL' ? 'وقف الخسارة' : 'إشارة بيع';
+      const reasonAr = ev.reason === 'TP3' ? 'الهدف الثالث' : ev.reason === 'SL' ? 'وقف الخسارة' : ev.reason === 'TIME' ? 'حد مدة الصفقة' : 'إشارة بيع';
       lines.push(ar ? `<b>السبب:</b> ${reasonAr}` : `<b>Reason:</b> ${esc(ev.reason)}`);
     }
     if (ev.pnlUsd !== undefined) {
@@ -211,6 +310,7 @@ export function buildPaperEventHtml(ev: PaperEventShape, lang: TelegramLang): st
       const cls = ev.pnlUsd >= 0 ? '🟢' : '🔴';
       lines.push(ar ? `<b>الربح/الخسارة:</b> ${cls} ${sign}${ev.pnlUsd.toFixed(2)}` : `<b>P&L:</b> ${cls} ${sign}${ev.pnlUsd.toFixed(2)}`);
     }
+    if (ev.feesUsd !== undefined) lines.push(ar ? `<b>إجمالي الرسوم:</b> ${fmtUsd(ev.feesUsd)}` : `<b>Total fees:</b> ${fmtUsd(ev.feesUsd)}`);
   }
 
   lines.push('');

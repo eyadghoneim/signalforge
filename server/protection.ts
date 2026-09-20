@@ -2,7 +2,7 @@
 // R unit convention: TP1_FIRST = +1R, SL_FIRST = -1R, EXPIRED = 0R (paper attribution).
 // Comments are English-only on purpose (codepage safety when written via shell tooling).
 
-import type { ProtectionConfig, StoredSignal } from '../shared/types';
+import type { PaperTradeOutcome, ProtectionConfig, StoredSignal } from '../shared/types';
 import { realizedR } from './learning';
 
 
@@ -14,6 +14,9 @@ export const DEFAULT_PROTECTION: ProtectionConfig = {
   stoplossGuardMax: 3,
   stoplossGuardHours: 6,
   lossCooldownHours: 2,
+  choppyLossStreak: 3,
+  choppyCooldownHours: 24,
+  paperMaxHoldHours: 168,
 };
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -31,6 +34,9 @@ export function clampProtection(p: ProtectionConfig): ProtectionConfig {
     stoplossGuardMax: clampNumber(p.stoplossGuardMax, 1, 10, 3),
     stoplossGuardHours: clampNumber(p.stoplossGuardHours, 1, 72, 6),
     lossCooldownHours: clampNumber(p.lossCooldownHours, 0, 48, 2),
+    choppyLossStreak: clampNumber(p.choppyLossStreak, 2, 10, 3),
+    choppyCooldownHours: clampNumber(p.choppyCooldownHours, 1, 168, 24),
+    paperMaxHoldHours: clampNumber(p.paperMaxHoldHours, 24, 720, 168),
   };
 }
 
@@ -126,15 +132,18 @@ export interface ExposureState {
 }
 
 export function currentExposure(signals: StoredSignal[], config: ProtectionConfig): ExposureState {
-  let openCount = 0;
+  const openAssets = new Set<string>();
   let hasBtcLong = false;
   let hasEthLong = false;
   for (const s of signals) {
     if (!isActionableOpenBuy(s)) continue;
-    openCount++;
+    // Exposure is a position count, not a signal-history count. Repeated BUY
+    // signals for one asset must not freeze every other asset at the cap.
+    openAssets.add(s.asset);
     if (s.asset === 'BTC') hasBtcLong = true;
     if (s.asset === 'ETH') hasEthLong = true;
   }
+  const openCount = openAssets.size;
   const correlatedPairBonus = config.correlationGuard && hasBtcLong && hasEthLong ? 1 : 0;
   return { openCount, correlatedPairBonus, effectiveExposure: openCount + correlatedPairBonus, hasBtcLong, hasEthLong };
 }
@@ -142,12 +151,12 @@ export function currentExposure(signals: StoredSignal[], config: ProtectionConfi
 /** Exposure after a candidate BUY on the given asset would be opened. */
 export function projectedExposure(signals: StoredSignal[], config: ProtectionConfig, candidateAsset: string): number {
   const cur = currentExposure(signals, config);
-  const pairBonus =
-    config.correlationGuard &&
-    ((candidateAsset === 'BTC' && cur.hasEthLong) || (candidateAsset === 'ETH' && cur.hasBtcLong))
-      ? 1
-      : 0;
-  return cur.effectiveExposure + pairBonus + 1;
+  const candidateAlreadyOpen = signals.some((s) => isActionableOpenBuy(s) && s.asset === candidateAsset);
+  const nextOpenCount = cur.openCount + (candidateAlreadyOpen ? 0 : 1);
+  const nextHasBtcLong = cur.hasBtcLong || candidateAsset === 'BTC';
+  const nextHasEthLong = cur.hasEthLong || candidateAsset === 'ETH';
+  const nextPairBonus = config.correlationGuard && nextHasBtcLong && nextHasEthLong ? 1 : 0;
+  return nextOpenCount + nextPairBonus;
 }
 
 export interface ExpiryCandidate {
@@ -168,7 +177,65 @@ export function findExpiredSignals(signals: StoredSignal[], config: ProtectionCo
   return out;
 }
 
-export type ProtectionBlockReason = 'CIRCUIT_BREAKER' | 'EXPOSURE_CAP' | 'STOPLOSS_GUARD' | 'LOSS_COOLDOWN';
+export type ProtectionBlockReason = 'CIRCUIT_BREAKER' | 'EXPOSURE_CAP' | 'STOPLOSS_GUARD' | 'LOSS_COOLDOWN' | 'CHOPPY_COOLDOWN';
+
+export interface ChoppyCooldownState {
+  consecutiveLosses: number;
+  lastLossAt: number | null;
+  cooldownUntil: number | null;
+  active: boolean;
+}
+
+export interface PaperClosedTrade {
+  closedAt: number;
+  outcome?: PaperTradeOutcome;
+  /** Legacy Paper JSON may not have outcome; reason is retained for safe inference. */
+  reason?: 'TP3' | 'SL' | 'SELL_SIGNAL' | 'TIME';
+}
+
+function inferPaperOutcome(trade: PaperClosedTrade): PaperTradeOutcome {
+  if (trade.outcome) return trade.outcome;
+  if (trade.reason === 'SL') return 'SL_FIRST';
+  if (trade.reason === 'TP3') return 'TP1_FIRST';
+  if (trade.reason === 'TIME') return 'TIME';
+  return 'SELL_SIGNAL';
+}
+
+/** Count the newest consecutive SL_FIRST outcomes from actually closed Paper trades. */
+export function choppyCooldownState(
+  trades: PaperClosedTrade[],
+  maxLosses: number,
+  cooldownHours: number,
+  nowMs: number,
+): ChoppyCooldownState {
+  const resolved = trades
+    .filter((trade) => Number.isFinite(trade.closedAt) && trade.closedAt > 0 && trade.closedAt <= nowMs)
+    .sort((a, b) => a.closedAt - b.closedAt);
+  let consecutiveLosses = 0;
+  let lastLossAt: number | null = null;
+  for (let i = resolved.length - 1; i >= 0; i--) {
+    if (inferPaperOutcome(resolved[i]) !== 'SL_FIRST') break;
+    consecutiveLosses++;
+    lastLossAt = resolved[i].closedAt;
+  }
+  const cooldownUntil = lastLossAt === null ? null : lastLossAt + cooldownHours * 3600_000;
+  return {
+    consecutiveLosses,
+    lastLossAt,
+    cooldownUntil,
+    active: consecutiveLosses >= maxLosses && cooldownHours > 0 && nowMs < (cooldownUntil ?? 0),
+  };
+}
+
+/** Should the global paper BUY cooldown be active after a consecutive loss streak? */
+export function choppyCooldownActive(
+  trades: PaperClosedTrade[],
+  maxLosses: number,
+  cooldownHours: number,
+  nowMs: number,
+): boolean {
+  return choppyCooldownState(trades, maxLosses, cooldownHours, nowMs).active;
+}
 
 /** Should a candidate actionable BUY be refused right now? */
 export function protectionVerdict(
@@ -176,10 +243,14 @@ export function protectionVerdict(
   config: ProtectionConfig,
   candidateAsset: string,
   nowMs: number,
+  paperTrades: PaperClosedTrade[] = [],
 ): { allow: boolean; reason: ProtectionBlockReason | null; breaker: BreakerState; projected: number } {
   const breaker = evaluateCircuitBreaker(signals, config, nowMs);
   if (breaker.tripped) {
     return { allow: false, reason: 'CIRCUIT_BREAKER', breaker, projected: currentExposure(signals, config).effectiveExposure };
+  }
+  if (choppyCooldownActive(paperTrades, config.choppyLossStreak, config.choppyCooldownHours, nowMs)) {
+    return { allow: false, reason: 'CHOPPY_COOLDOWN', breaker, projected: currentExposure(signals, config).effectiveExposure };
   }
   const slCount = stoplossGuardCount(signals, candidateAsset, config.stoplossGuardHours, nowMs);
   if (slCount >= config.stoplossGuardMax) {

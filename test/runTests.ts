@@ -100,7 +100,7 @@ console.log('\n=== 1. المؤشرات الفنية ===');
 
 console.log('\n=== 2. الثوابت والدوال المركزية ===');
 {
-  const { deriveSignalTypeAndAction, computeRiskTargets, STRATEGY_RISK_MULTIPLIERS } = await import('../shared/strategyConstants');
+  const { deriveSignalTypeAndAction, computeRiskTargets, tickSizeForPrice, STRATEGY_RISK_MULTIPLIERS } = await import('../shared/strategyConstants');
 
   assert(deriveSignalTypeAndAction(82).signalType === 'STRONG_BUY', '82 → STRONG_BUY');
   assert(deriveSignalTypeAndAction(84).signalType === 'STRONG_BUY', '84 → STRONG_BUY (لا فجوة 82-84)');
@@ -115,6 +115,9 @@ console.log('\n=== 2. الثوابت والدوال المركزية ===');
   assert(targets.target2 === 100000 + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * 1000, 'TP2 = دخول + 4×ATR بالحرف');
   assert(targets.target3 === 100000 + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * 1000, 'TP3 = دخول + 5.5×ATR بالحرف');
   assert(targets.riskRewardRatio === 1.25, `R:R = 1.25 (فعلي: ${targets.riskRewardRatio})`);
+  assert(tickSizeForPrice(150.35) === 0.01 && tickSizeForPrice(100000) === 0.5, 'dynamic tick sizes match SOL and high-price assets');
+  const solTargets = computeRiskTargets(150.35, 1.23);
+  assert(solTargets.stopLoss === 147.89 && solTargets.target1 === 153.43 && solTargets.target3 === 157.12, `SOL targets retain decimal precision (SL ${solTargets.stopLoss}, TP1 ${solTargets.target1}, TP3 ${solTargets.target3})`);
 }
 
 console.log('\n=== 3. محرك الإشارات والبوابات ===');
@@ -530,12 +533,13 @@ console.log('\n=== 11. Capital protection v3 ===');
 {
   const { computePerformanceStats: _unused } = await import('../server/performance');
   void _unused;
-  const { DEFAULT_PROTECTION, clampProtection, dayRealizedR, evaluateCircuitBreaker, currentExposure, projectedExposure, findExpiredSignals, protectionVerdict, utcDayStart } = await import('../server/protection');
+  const { DEFAULT_PROTECTION, clampProtection, choppyCooldownActive, choppyCooldownState, dayRealizedR, evaluateCircuitBreaker, currentExposure, projectedExposure, findExpiredSignals, protectionVerdict, utcDayStart } = await import('../server/protection');
 
   const mkSignal = (opts: {
-    asset?: 'BTC' | 'ETH' | 'PAXG';
+    asset?: 'BTC' | 'ETH' | 'PAXG' | 'SOL';
     blocked?: boolean;
     sell?: boolean;
+    entryPrice?: number;
     resolution?: 'OPEN' | 'TP1_FIRST' | 'SL_FIRST' | 'EXPIRED';
     generatedAt?: number;
     resolvedAt?: number;
@@ -545,7 +549,7 @@ console.log('\n=== 11. Capital protection v3 ===');
     convictionScore: 80,
     signalType: opts.sell ? 'SELL' : 'STRONG_BUY',
     spotAction: opts.sell ? 'SPOT_SELL_ALL' : 'SPOT_BUY',
-    entryPrice: 50000,
+    entryPrice: opts.entryPrice ?? 50000,
     stopLoss: 49000,
     target1: 51000,
     target2: 52000,
@@ -599,6 +603,18 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(tripped.tripped && tripped.realizedR === -3, `breaker trips at -3R (got ${tripped.realizedR}, tripped=${tripped.tripped})`);
   const okState = evaluateCircuitBreaker(pnlSignals, { ...DEFAULT_PROTECTION, dailyLossLimitR: 3 }, now);
   assert(!okState.tripped, 'breaker stays off at +1R');
+  const paperLosses = [
+    { closedAt: now - 3 * 3600_000, outcome: 'SL_FIRST' as const },
+    { closedAt: now - 2 * 3600_000, outcome: 'SL_FIRST' as const },
+    { closedAt: now - 1 * 3600_000, outcome: 'SL_FIRST' as const },
+  ];
+  const choppy = choppyCooldownState(paperLosses, 3, 24, now);
+  assert(choppy.consecutiveLosses === 3 && choppy.active, 'three consecutive Paper losses start the 24h choppy cooldown');
+  assert(choppyCooldownActive([...paperLosses, { closedAt: now, outcome: 'TP1_FIRST' as const }], 3, 24, now) === false, 'a resolved Paper win resets the consecutive-loss cooldown');
+  assert(choppyCooldownActive([...paperLosses, { closedAt: now, outcome: 'TIME' as const }], 3, 24, now) === false, 'a Paper TIME exit breaks the SL_FIRST streak');
+  assert(!choppyCooldownActive(paperLosses, 3, 24, now + 25 * 3600_000), 'choppy cooldown expires after its configured window');
+  const choppyVerdict = protectionVerdict(lossy, { ...DEFAULT_PROTECTION, dailyLossLimitR: 20 }, 'SOL', now, paperLosses);
+  assert(!choppyVerdict.allow && choppyVerdict.reason === 'CHOPPY_COOLDOWN', `new BUY refused by CHOPPY_COOLDOWN (got ${choppyVerdict.reason})`);
 
   // Exposure: open buys counted, gate-blocked and sells excluded, BTC+ETH bonus applied.
   const openSignals = [
@@ -612,6 +628,18 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(exp.correlatedPairBonus === 1 && exp.effectiveExposure === 3, `BTC+ETH pair bonus -> effective 3 (got ${exp.effectiveExposure})`);
   const expNoGuard = currentExposure(openSignals, { ...DEFAULT_PROTECTION, correlationGuard: false });
   assert(expNoGuard.effectiveExposure === 2, 'correlation guard off -> no bonus');
+  const duplicateBtc = { ...mkSignal({ asset: 'BTC' }), id: 'duplicate-btc' };
+  const duplicateExposure = currentExposure([...openSignals, duplicateBtc], DEFAULT_PROTECTION);
+  assert(duplicateExposure.openCount === 2 && duplicateExposure.effectiveExposure === 3, 'duplicate BUY signals do not inflate exposure');
+  const steppedScanHistory = [100, 101, 102].map((price, cycle) => ({
+    ...mkSignal({ asset: 'BTC', entryPrice: price, generatedAt: 1_700_000_000_000 + cycle * 3_600_000 }),
+    id: `stepped-btc-${cycle}`,
+  }));
+  for (let cycle = 1; cycle <= steppedScanHistory.length; cycle++) {
+    const steppedExposure = currentExposure(steppedScanHistory.slice(0, cycle), DEFAULT_PROTECTION);
+    assert(steppedExposure.openCount === 1, `three stepped scan cycles keep one BTC exposure (cycle ${cycle})`);
+    assert(projectedExposure(steppedScanHistory.slice(0, cycle), DEFAULT_PROTECTION, 'ETH') === 3, `ETH projection remains bounded after stepped cycle ${cycle}`);
+  }
 
   // Projected exposure with a new PAXG candidate.
   assert(projectedExposure(openSignals, DEFAULT_PROTECTION, 'PAXG') === 4, `projected PAXG = 4 (got ${projectedExposure(openSignals, DEFAULT_PROTECTION, 'PAXG')})`);
@@ -636,8 +664,8 @@ console.log('\n=== 11. Capital protection v3 ===');
   assert(expired[0].ageHours === 4, `expiry age = 4h (got ${expired[0].ageHours})`);
 
   // Clamp guards.
-  const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true, stoplossGuardMax: 99, stoplossGuardHours: 999, lossCooldownHours: -5 });
-  assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1 && clamped.stoplossGuardMax === 10 && clamped.stoplossGuardHours === 72 && clamped.lossCooldownHours === 0, 'clampProtection bounds all values');
+  const clamped = clampProtection({ dailyLossLimitR: 999, maxConcurrentSignals: 0, signalExpiryHours: -5, correlationGuard: true, stoplossGuardMax: 99, stoplossGuardHours: 999, lossCooldownHours: -5, choppyLossStreak: 99, choppyCooldownHours: 999, paperMaxHoldHours: 9999 });
+  assert(clamped.dailyLossLimitR === 20 && clamped.maxConcurrentSignals === 1 && clamped.signalExpiryHours === 1 && clamped.stoplossGuardMax === 10 && clamped.stoplossGuardHours === 72 && clamped.lossCooldownHours === 0 && clamped.choppyLossStreak === 10 && clamped.choppyCooldownHours === 168 && clamped.paperMaxHoldHours === 720, 'clampProtection bounds all values');
 }
 console.log('\n=== 12. Learning system v2 (regime-keyed, decay, realized-R) ===');
 {
@@ -775,12 +803,20 @@ console.log('\n=== 15. Review-response fixes v3 ===');
       dataSource: 'LIVE' as const, gates: { htf: true, chop: true, rvol: true, funding: true },
     };
     const base = buildSignal(baseCtx);
+    assert(base.entryQuality === base.convictionScore && Array.isArray(base.qualityBreakdown), 'entry quality breakdown is exposed with the deterministic signal');
     const biased = buildSignal({ ...baseCtx, tagBias: { TREND: -3 } });
     assert(biased.learningBias === -3, `learningBias surfaced on the signal (got ${biased.learningBias})`);
     assert(biased.convictionScore === Math.max(0, base.convictionScore - 3), `score shifted by bias (got ${biased.convictionScore} vs ${base.convictionScore})`);
     // THE review fix: the label must match the FINAL (post-bias) score.
     const re = deriveSignalTypeAndAction(biased.convictionScore);
     assert(re.signalType === biased.signalType && re.spotAction === biased.spotAction, 'label matches final score - no stale label');
+    const hashCandles = [
+      { time: 1000, open: 100, high: 101, low: 99, close: 100, volume: 1 },
+      { time: 2000, open: 100, high: 101, low: 99, close: 100, volume: 1 },
+    ];
+    const sameCandleA = buildSignal({ ...baseCtx, candles: hashCandles });
+    const sameCandleB = buildSignal({ ...baseCtx, snapshot: { ...snap, close: snap.close + 0.01 }, candles: hashCandles });
+    assert(sameCandleA.dedupHash === sameCandleB.dedupHash, 'dedup key is stable across intrabar price movement');
   }
 
   // Slippage: same data, same trades, strictly worse equity.
@@ -993,6 +1029,7 @@ console.log('\n=== 20. R-consistency + explicit verdict ===');
 console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
 {
   const { defaultPaperAccount, openBuy, markToMarket, currentEquity, closeBySellSignal } = await import('../server/paperTrading');
+  const { PAPER_EXECUTION } = await import('../shared/strategyConstants');
 
   // 1) فتح صفقة بحجم 1% مخاطرة: القيود الرياضية
   const acct0 = defaultPaperAccount();
@@ -1009,9 +1046,13 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   assert(opened.open.length === 1, 'buy opens one position');
   const pos0 = opened.open[0];
   assert(pos0.qty > 0, 'qty positive');
-  // كمية 1% مخاطرة = $100 على مسافة $1 → qty=100، لكن سقف 95% من الرصيد
-  // ($9,500) يقص الكمية لـ 95 — السقف شغال صح، والكمية ضمن نطاقها
-  assert(pos0.qty === 95, `qty = 95 via cash cap (got ${pos0.qty.toFixed(2)})`);
+  // الرسوم والانزلاق حتميان: شراء أسوأ بـ 0.05% + رسم 0.075% على الجانب.
+  const expectedEntry = entry * (1 + PAPER_EXECUTION.SLIPPAGE_RATE);
+  assert(Math.abs(pos0.entry - expectedEntry) < 1e-9, `buy slippage is deterministic (got ${pos0.entry})`);
+  const expectedQty = (10000 * 0.95) / (expectedEntry * (1 + PAPER_EXECUTION.FEE_RATE));
+  assert(Math.abs(pos0.qty - expectedQty) < 1e-9, `qty respects cash cap after slippage and fee (got ${pos0.qty.toFixed(2)})`);
+  const expectedEntryFee = pos0.qty * pos0.entry * PAPER_EXECUTION.FEE_RATE;
+  assert(Math.abs(opened.cash - (10000 - pos0.qty * pos0.entry - expectedEntryFee)) < 0.01, 'entry fee deducted from cash');
   assert(opened.cash < 10000, 'cash reduced by position cost');
   assert(pos0.qty * entry <= 10000 * 0.95 + 0.01, 'position never exceeds 95% of equity');
 
@@ -1032,6 +1073,17 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   openBuy(onePositionCap, ethSig, 0.5, 2000, 1);
   assert(onePositionCap.open.length === 1, 'paper wallet respects configured position cap');
 
+  // 2c) حجم الصفقة الثانية يعتمد على Equity الكلي لا على الكاش وحده.
+  const wideRiskSig = { ...sig, stopLoss: 50, target1: 110, target2: 120, target3: 130, dedupHash: 'wide-risk-btc' };
+  const equitySizingAccount = defaultPaperAccount();
+  openBuy(equitySizingAccount, wideRiskSig, 0.5, 1000);
+  const cashBeforeSecond = equitySizingAccount.cash;
+  const equitySizingEth = { ...wideRiskSig, asset: 'ETH' as const, dedupHash: 'wide-risk-eth' };
+  openBuy(equitySizingAccount, equitySizingEth, 0.5, 2000);
+  const fillEntry = wideRiskSig.entryPrice * (1 + PAPER_EXECUTION.SLIPPAGE_RATE);
+  const cashOnlyQty = (cashBeforeSecond * 0.01) / (fillEntry - wideRiskSig.stopLoss);
+  assert(equitySizingAccount.open[1].qty > cashOnlyQty, 'Paper sizing uses total Equity for the next position');
+
   // 3) تسيير على شمعة تجيب الوقف → خسارة، والقيمة النهائية < البداية
   const post = markToMarket(
     dup,
@@ -1042,6 +1094,7 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   assert(post.open.length === 0, 'stop closes the position');
   assert(post.closed.length === 1, 'one closed trade');
   assert(post.closed[0].pnlUsd < 0, `stop exit loses money (got ${post.closed[0].pnlUsd})`);
+  assert(post.closed[0].outcome === 'SL_FIRST', 'stop trade records SL_FIRST Paper outcome');
 
   // 4) جني TP1 ثم وقف تعادل (لا خسارة بعد TP1)
   const acct1 = defaultPaperAccount();
@@ -1062,14 +1115,25 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   const closedBySell = closeBySellSignal(post2, 'BTC', 101, 4000);
   assert(closedBySell.open.length === 0, 'sell signal closes position');
   assert(closedBySell.closed.length === 1, 'one closed trade from sell');
-  assert(closedBySell.closed[0].exitAvg === 101.5, `exitAvg weights TP1 + remainder (got ${closedBySell.closed[0].exitAvg})`);
+  const expectedExitAvg = Number(((0.5 * 102 * (1 - PAPER_EXECUTION.SLIPPAGE_RATE)) + (0.5 * 101 * (1 - PAPER_EXECUTION.SLIPPAGE_RATE))).toFixed(2));
+  assert(closedBySell.closed[0].exitAvg === expectedExitAvg, `exitAvg weights TP1 + remainder after slippage (got ${closedBySell.closed[0].exitAvg})`);
+  assert((closedBySell.closed[0].feesUsd ?? 0) > 0, 'closed trade reports accumulated fees');
+  assert(closedBySell.closed[0].outcome === 'TP1_FIRST', 'partial target trade records TP1_FIRST Paper outcome');
 
   // 6) currentEquity = كاش + قيمة مفتوح (بعد TP1: ربح محقق + مركز مفتوح)
   const eq = currentEquity(closedBySell, { BTC: 101 });
   // حساب يدوي: رأس 10000، ربنا من TP1 + القيمة المتبقية والمقفلة عند البيع
   assert(Number.isFinite(eq) && eq > 10000 && eq < 10300, `equity ~ 10142 after TP1 (got ${eq})`);
 
-  // 7) وقف متحرك مدرّج (freqtrade-style): المرآة والثوابت متوحدتان
+  // 7) حد مدة الصفقة الورقية: إغلاق TIME بسعر السوق بعد 24h في هذا الاختبار.
+  const timedAccount = openBuy(defaultPaperAccount(), sig, 0.5, 1000);
+  const beforeTimeLimit = markToMarket(timedAccount, { BTC: 101 }, {}, 1_000 + 23 * 3600_000, 24);
+  assert(beforeTimeLimit.open.length === 1, 'paper position remains before max hold age');
+  const timeClosed = markToMarket(beforeTimeLimit, { BTC: 101 }, {}, 1_000 + 24 * 3600_000, 24);
+  assert(timeClosed.open.length === 0 && timeClosed.closed.at(-1)?.reason === 'TIME', 'paper position closes with TIME after max hold age');
+  assert(timeClosed.closed.at(-1)?.outcome === 'TIME', 'TIME exit records a non-loss Paper outcome');
+
+  // 8) وقف متحرك مدرّج (freqtrade-style): المرآة والثوابت متوحدتان
   const { TRAILING: TRAIL_C } = await import('../shared/strategyConstants');
   assert(TRAIL_C.ACTIVATE_AFTER_ATR === 1 && TRAIL_C.TIGHT_AFTER_ATR === 2 && TRAIL_C.OFFSET_ATR === 2, 'trailing constants centralized');
 }
@@ -1077,7 +1141,10 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
 console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (Telegram) ===');
 {
   const { defaultPaperAccount, openBuy, snapshotPaperAccount, diffPaperEvents } = await import('../server/paperTrading');
-  const { buildPaperEventHtml, claimTelegramAlertKey, releaseTelegramAlertKey } = await import('../server/telegram');
+  const { buildPaperEventHtml, claimTelegramAlertKey, releaseTelegramAlertKey, parseTelegramCommand } = await import('../server/telegram');
+  assert(parseTelegramCommand('/status') === 'status', 'Telegram parses /status');
+  assert(parseTelegramCommand('/balance@signalforge_bot') === 'balance', 'Telegram strips bot username');
+  assert(parseTelegramCommand('status') === null, 'Telegram rejects non-slash text');
 
   // 1) فتح مركز → حدث OPENED
   const a0 = defaultPaperAccount();
@@ -1251,6 +1318,20 @@ console.log('\n=== 25. إصلاح جلب أزواج DEX ===');
   const verifiedOnly = normalizeDexPairs(raw, { chainId: 'ethereum', address: '0xCANON', wrappedSymbol: 'WBTC' });
   assert(verifiedOnly.length === 1 && verifiedOnly[0].baseTokenSymbol === 'WBTC', 'فلترة العنوان والشبكة الرسمية تمنع التوكن المقلد');
   assert(normalizeDexPairs(null).length === 0 && normalizeDexPairs({ pairs: raw }).length === 0, 'الرد غير الصالح لا يكسر المسار');
+}
+
+console.log('\n=== 26. Dune research guardrails ===');
+{
+  const { getDuneApiKey, validateDuneSql } = await import('../server/duneService');
+  const previousKey = process.env.DUNE_API_KEY;
+  process.env.DUNE_API_KEY = 'test-only-key';
+  assert(getDuneApiKey() === 'test-only-key', 'Dune key is read from environment');
+  if (previousKey === undefined) delete process.env.DUNE_API_KEY;
+  else process.env.DUNE_API_KEY = previousKey;
+  assert(validateDuneSql('SELECT 1 LIMIT 1', true) === null, 'bounded SELECT is accepted');
+  assert(validateDuneSql('SELECT 1', true) !== null, 'custom SQL requires LIMIT');
+  assert(validateDuneSql('SELECT 1; DROP TABLE x', true) !== null, 'multiple statements are rejected');
+  assert(validateDuneSql('UPDATE x SET y = 1', true) !== null, 'write SQL is rejected');
 }
 
 console.log(`\n=============================================`);

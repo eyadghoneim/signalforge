@@ -1,8 +1,26 @@
-// Dune Analytics Plus On-Chain Integration Service
-// Provides live on-chain whale flow, large DEX trades (> $100k), and fast SQL execution.
-// Designed with resilient caching, rate-limit protection, and safe fallback.
+// Dune Analytics Plus read-only research service.
+// The Dune layer is intentionally kept out of signal scoring and trading decisions.
+// The API key is accepted from the process environment only; it is never persisted.
 
-import { loadConfig } from './persistence';
+const DUNE_API = 'https://api.dune.com/api/v1';
+const DEFAULT_CACHE_TTL_MS = 30 * 60_000;
+const QUERY_TIMEOUT_MS = 45_000;
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_SQL_LENGTH = 20_000;
+const MAX_RESULT_ROWS = 500;
+
+const STABLE_SYMBOLS = ['USDC', 'USDT', 'DAI', 'FDUSD', 'USDbC', 'USDE', 'USD'];
+
+const WATCHED_ASSETS = {
+  BTC: { blockchain: 'ethereum', address: '0x2260fac5e5542a773aa44fbcedf7c193bc2c599' },
+  ETH: { blockchain: 'ethereum', address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2' },
+  PAXG: { blockchain: 'ethereum', address: '0x45804880de22913dafe09f4980848ece6ecbaf78' },
+  SOL: { blockchain: 'solana', address: 'so11111111111111111111111111111111111111112' },
+} as const;
+
+type WatchedAsset = keyof typeof WATCHED_ASSETS;
+
+type JsonRecord = Record<string, unknown>;
 
 export interface DuneWhaleTrade {
   block_time: string;
@@ -18,218 +36,225 @@ export interface DuneTopToken {
   total_usd: number;
 }
 
-export function getDuneApiKey(): string {
-  if (process.env.DUNE_API_KEY && process.env.DUNE_API_KEY.trim()) {
-    return process.env.DUNE_API_KEY.trim();
-  }
-  try {
-    const cfg = loadConfig() as unknown as { duneApiKey?: string };
-    if (cfg.duneApiKey && cfg.duneApiKey.trim()) {
-      return cfg.duneApiKey.trim();
-    }
-  } catch {
-    // fallback
-  }
-  return '';
+interface CacheEntry {
+  data: unknown;
+  expiresAt: number;
 }
 
-// In-memory cache to preserve user query credits and provide sub-second responses
-const queryCache = new Map<string, { data: unknown; expiresAt: number }>();
+const queryCache = new Map<string, CacheEntry>();
+
+function getApiKey(): string {
+  return String(process.env.DUNE_API_KEY || '').trim();
+}
+
+export function getDuneApiKey(): string {
+  // Deliberately do not read config.json or any other persisted file.
+  return getApiKey();
+}
+
+export function isDuneAvailable(): boolean {
+  return getApiKey().length > 0;
+}
 
 function getCached<T>(key: string): T | null {
   const entry = queryCache.get(key);
   if (!entry) return null;
-  if (entry.expiresAt < Date.now()) {
+  if (entry.expiresAt <= Date.now()) {
     queryCache.delete(key);
     return null;
   }
   return entry.data as T;
 }
 
-function setCached<T>(key: string, data: T, ttlMs: number): void {
+function setCached<T>(key: string, data: T, ttlMs = DEFAULT_CACHE_TTL_MS): void {
   queryCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
-export function isDuneAvailable(): boolean {
-  const key = getDuneApiKey();
-  return Boolean(key && key.trim().length > 0);
+/** Validate SQL before it can be sent to Dune. Dune itself remains read-only. */
+export function validateDuneSql(sql: string, requireLimit = false): string | null {
+  const text = String(sql || '').trim();
+  if (!text) return 'SQL query is required';
+  if (text.length > MAX_SQL_LENGTH) return `SQL query is too long (maximum ${MAX_SQL_LENGTH} characters)`;
+
+  const normalized = text.toLowerCase();
+  if (!normalized.startsWith('select') && !normalized.startsWith('with')) {
+    return 'Only SELECT / WITH read-only queries are permitted';
+  }
+  if (text.includes(';')) return 'Multiple SQL statements are not permitted';
+  if (/\b(insert|update|delete|drop|alter|create|merge|truncate|grant|revoke|call|execute)\b/i.test(text)) {
+    return 'Only read-only SQL is permitted';
+  }
+  if (requireLimit && !/\blimit\s+\d+\b/i.test(text)) {
+    return 'A LIMIT clause is required for custom Dune queries';
+  }
+  return null;
 }
 
-/**
- * Execute raw SQL query on Dune Analytics using Trino SQL engine.
- * Automatically polls for completion and returns typed rows.
- */
+async function duneJson<T extends JsonRecord>(url: string, init: RequestInit): Promise<T> {
+  const key = getApiKey();
+  if (!key) throw new Error('Dune API key not configured');
+  const response = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-DUNE-API-KEY': key,
+      ...(init.headers || {}),
+    },
+  });
+  const body = (await response.json().catch(() => ({}))) as JsonRecord;
+  if (!response.ok) {
+    throw new Error(String(body.error || body.detail || `Dune HTTP ${response.status}`));
+  }
+  return body as T;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function watchedValuesSql(): string {
+  return Object.entries(WATCHED_ASSETS)
+    .map(([asset, item]) => `(${sqlLiteral(asset)}, ${sqlLiteral(item.blockchain)}, ${sqlLiteral(item.address)})`)
+    .join(', ');
+}
+
 export async function executeDuneSql<T = Record<string, unknown>>(
   sql: string,
-  ttlMs = 120_000,
-  maxWaitMs = 12_000,
+  ttlMs = DEFAULT_CACHE_TTL_MS,
+  maxWaitMs = QUERY_TIMEOUT_MS,
 ): Promise<{ ok: boolean; rows: T[]; executionTimeMs: number; error?: string }> {
-  if (!isDuneAvailable()) {
-    return { ok: false, rows: [], executionTimeMs: 0, error: 'Dune API key not configured' };
-  }
+  const validationError = validateDuneSql(sql);
+  if (validationError) return { ok: false, rows: [], executionTimeMs: 0, error: validationError };
+  if (!isDuneAvailable()) return { ok: false, rows: [], executionTimeMs: 0, error: 'Dune API key not configured' };
 
-  const cacheKey = `dune:sql:${sql.trim()}`;
+  const normalizedSql = sql.trim();
+  const cacheKey = `dune:sql:${normalizedSql}`;
   const cached = getCached<{ rows: T[]; executionTimeMs: number }>(cacheKey);
-  if (cached) {
-    return { ok: true, rows: cached.rows, executionTimeMs: cached.executionTimeMs };
-  }
+  if (cached) return { ok: true, rows: cached.rows, executionTimeMs: cached.executionTimeMs };
 
-  const startTime = Date.now();
-  const apiKey = getDuneApiKey();
-
+  const startedAt = Date.now();
   try {
-    // 1. Submit query
-    const submitRes = await fetch('https://api.dune.com/api/v1/sql/execute', {
+    const submitted = await duneJson<{ execution_id?: string }>(`${DUNE_API}/sql/execute`, {
       method: 'POST',
-      headers: {
-        'X-DUNE-API-KEY': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ sql }),
-      signal: AbortSignal.timeout(6000),
+      // Medium is available on the current Plus trial; small is not.
+      body: JSON.stringify({ sql: normalizedSql, performance: 'medium' }),
     });
+    const executionId = String(submitted.execution_id || '');
+    if (!executionId) throw new Error('Dune did not return an execution id');
 
-    if (!submitRes.ok) {
-      const errText = await submitRes.text().catch(() => '');
-      return { ok: false, rows: [], executionTimeMs: Date.now() - startTime, error: `Dune submit failed (${submitRes.status}): ${errText}` };
-    }
-
-    const submitJson = (await submitRes.json()) as { execution_id?: string; state?: string; error?: string };
-    const executionId = submitJson.execution_id;
-    if (!executionId) {
-      return { ok: false, rows: [], executionTimeMs: Date.now() - startTime, error: submitJson.error || 'No execution_id returned' };
-    }
-
-    // 2. Poll for results
     const deadline = Date.now() + maxWaitMs;
+    let status: JsonRecord = {};
     while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 1200));
-
-      const pollRes = await fetch(`https://api.dune.com/api/v1/execution/${executionId}/results`, {
-        headers: {
-          'X-DUNE-API-KEY': apiKey,
-        },
-        signal: AbortSignal.timeout(6000),
-      });
-
-      if (!pollRes.ok) continue;
-
-      const pollJson = (await pollRes.json()) as {
-        is_execution_finished?: boolean;
-        state?: string;
-        result?: { rows?: T[]; metadata?: { execution_time_millis?: number } };
-        error?: string;
-      };
-
-      if (pollJson.is_execution_finished) {
-        if (pollJson.state === 'QUERY_STATE_COMPLETED') {
-          const rows = pollJson.result?.rows || [];
-          const executionTimeMs = pollJson.result?.metadata?.execution_time_millis || (Date.now() - startTime);
-          setCached(cacheKey, { rows, executionTimeMs }, ttlMs);
-          return { ok: true, rows, executionTimeMs };
-        } else {
-          return { ok: false, rows: [], executionTimeMs: Date.now() - startTime, error: pollJson.error || `Execution state: ${pollJson.state}` };
-        }
-      }
+      status = await duneJson<JsonRecord>(`${DUNE_API}/execution/${executionId}/status`, { method: 'GET' });
+      if (status.is_execution_finished === true || status.state === 'QUERY_STATE_COMPLETED' || status.state === 'QUERY_STATE_FAILED') break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    if (status.state !== 'QUERY_STATE_COMPLETED') {
+      throw new Error(`Dune query did not complete: ${String(status.state || 'timeout')}`);
     }
 
-    return { ok: false, rows: [], executionTimeMs: Date.now() - startTime, error: 'Execution timeout exceeded' };
-  } catch (e) {
-    return { ok: false, rows: [], executionTimeMs: Date.now() - startTime, error: e instanceof Error ? e.message : String(e) };
+    const result = await duneJson<{ result?: { rows?: T[] } }>(`${DUNE_API}/execution/${executionId}/results`, { method: 'GET' });
+    const rows = Array.isArray(result.result?.rows) ? result.result.rows.slice(0, MAX_RESULT_ROWS) : [];
+    const executionTimeMs = Date.now() - startedAt;
+    setCached(cacheKey, { rows, executionTimeMs }, ttlMs);
+    return { ok: true, rows, executionTimeMs };
+  } catch (error) {
+    return {
+      ok: false,
+      rows: [],
+      executionTimeMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
-/**
- * Get real on-chain whale DEX netflow for an asset over the last 1-2 hours.
- * Inflow = selling crypto into stables (sell pressure).
- * Outflow = buying crypto with stables (accumulation).
- */
+/** Asset-specific Dune netflow for the verified contract address only. */
 export async function getDuneWhaleNetflow(asset: string): Promise<{ netInflowUsd: number; txCount: number } | null> {
-  const symMap: Record<string, string[]> = {
-    BTC: ['WBTC', 'cbBTC', 'BTC'],
-    ETH: ['WETH', 'ETH'],
-    SOL: ['SOL', 'WSOL'],
-    PAXG: ['PAXG'],
+  const key = String(asset || '').toUpperCase() as WatchedAsset;
+  const watched = WATCHED_ASSETS[key];
+  if (!watched) return null;
+  const address = sqlLiteral(watched.address);
+  const blockchain = sqlLiteral(watched.blockchain);
+  const stables = STABLE_SYMBOLS.map(sqlLiteral).join(', ');
+  const sql = `
+SELECT
+  SUM(CASE WHEN LOWER(CAST(token_sold_address AS VARCHAR)) = ${address} THEN amount_usd ELSE 0 END) AS sell_usd,
+  SUM(CASE WHEN LOWER(CAST(token_bought_address AS VARCHAR)) = ${address} THEN amount_usd ELSE 0 END) AS buy_usd,
+  COUNT(*) AS tx_count
+FROM dex.trades
+WHERE blockchain = ${blockchain}
+  AND block_time > NOW() - INTERVAL '24' HOUR
+  AND amount_usd >= 25000
+  AND ((LOWER(CAST(token_sold_address AS VARCHAR)) = ${address} AND token_bought_symbol IN (${stables}))
+    OR (LOWER(CAST(token_bought_address AS VARCHAR)) = ${address} AND token_sold_symbol IN (${stables})))
+`.trim();
+
+  const result = await executeDuneSql<{ sell_usd: number | null; buy_usd: number | null; tx_count: number | null }>(sql, DEFAULT_CACHE_TTL_MS);
+  if (!result.ok || result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    netInflowUsd: Math.round((Number(row.sell_usd) || 0) - (Number(row.buy_usd) || 0)),
+    txCount: Math.round(Number(row.tx_count) || 0),
   };
-
-  const symbols = symMap[asset.toUpperCase()];
-  if (!symbols || symbols.length === 0) return null;
-
-  const symbolListSql = symbols.map((s) => `'${s}'`).join(', ');
-
-  const sql = `
-    SELECT
-      SUM(CASE WHEN token_bought_symbol IN (${symbolListSql}) THEN amount_usd ELSE 0 END) as buy_usd,
-      SUM(CASE WHEN token_sold_symbol IN (${symbolListSql}) THEN amount_usd ELSE 0 END) as sell_usd,
-      COUNT(*) as tx_count
-    FROM dex.trades
-    WHERE block_time > now() - interval '2' hour
-      AND amount_usd >= 25000
-      AND (
-        (token_bought_symbol IN (${symbolListSql}) AND token_sold_symbol IN ('USDC', 'USDT', 'DAI', 'FDUSD', 'USDbC'))
-        OR (token_sold_symbol IN (${symbolListSql}) AND token_bought_symbol IN ('USDC', 'USDT', 'DAI', 'FDUSD', 'USDbC'))
-      )
-  `.trim();
-
-  // Cache for 6 minutes to protect quota
-  const res = await executeDuneSql<{ buy_usd: number | null; sell_usd: number | null; tx_count: number | null }>(sql, 6 * 60_000);
-  if (!res.ok || !res.rows || res.rows.length === 0) return null;
-
-  const row = res.rows[0];
-  const buyUsd = Number(row.buy_usd) || 0;
-  const sellUsd = Number(row.sell_usd) || 0;
-  const txCount = Number(row.tx_count) || 0;
-
-  // Inflow = net sell pressure (selling asset to stablecoins)
-  // Negative = net buy accumulation
-  const netInflowUsd = Math.round(sellUsd - buyUsd);
-
-  return { netInflowUsd, txCount };
 }
 
-/**
- * Get recent high-value DEX whale trades (> $100k) across Uniswap, Curve, etc.
- */
+/** Recent large swaps involving only the verified BTC/ETH/PAXG/SOL contracts. */
 export async function getDuneWhaleTrades(limit = 15): Promise<DuneWhaleTrade[]> {
-  const safeLimit = Math.min(50, Math.max(5, limit));
+  const safeLimit = Math.min(50, Math.max(5, Math.floor(Number(limit) || 15)));
   const sql = `
-    SELECT
-      CAST(block_time AS VARCHAR) as block_time,
-      project,
-      token_bought_symbol,
-      token_sold_symbol,
-      amount_usd
-    FROM dex.trades
-    WHERE block_time > now() - interval '3' hour
-      AND amount_usd >= 100000
-    ORDER BY block_time DESC
-    LIMIT ${safeLimit}
-  `.trim();
-
-  const res = await executeDuneSql<DuneWhaleTrade>(sql, 90_000);
-  return res.ok ? res.rows : [];
+WITH watched AS (
+  SELECT * FROM (VALUES ${watchedValuesSql()}) AS t(asset, blockchain, token_address)
+)
+SELECT
+  CAST(dt.block_time AS VARCHAR) AS block_time,
+  dt.project,
+  dt.token_bought_symbol,
+  dt.token_sold_symbol,
+  dt.amount_usd
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND (LOWER(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+   OR LOWER(CAST(dt.token_sold_address AS VARCHAR)) = w.token_address)
+WHERE dt.block_time > NOW() - INTERVAL '24' HOUR
+  AND dt.amount_usd >= 100000
+ORDER BY dt.block_time DESC
+LIMIT ${safeLimit}
+`.trim();
+  const result = await executeDuneSql<DuneWhaleTrade>(sql, DEFAULT_CACHE_TTL_MS);
+  return result.ok ? result.rows : [];
 }
 
-/**
- * Get top traded DEX tokens by 24h USD volume.
- */
+/** Top DEX volume for the verified watched assets only. */
 export async function getDuneTopTokens24h(limit = 10): Promise<DuneTopToken[]> {
-  const safeLimit = Math.min(25, Math.max(5, limit));
+  const safeLimit = Math.min(25, Math.max(5, Math.floor(Number(limit) || 10)));
   const sql = `
-    SELECT
-      token_bought_symbol,
-      count(*) as trades,
-      sum(amount_usd) as total_usd
-    FROM dex.trades
-    WHERE block_time > now() - interval '24' hour
-      AND amount_usd >= 10000
-      AND token_bought_symbol IS NOT NULL
-      AND length(token_bought_symbol) <= 10
-    GROUP BY token_bought_symbol
-    ORDER BY total_usd DESC
-    LIMIT ${safeLimit}
-  `.trim();
-
-  const res = await executeDuneSql<DuneTopToken>(sql, 10 * 60_000);
-  return res.ok ? res.rows : [];
+WITH watched AS (
+  SELECT * FROM (VALUES ${watchedValuesSql()}) AS t(asset, blockchain, token_address)
+)
+SELECT
+  dt.token_bought_symbol,
+  COUNT(*) AS trades,
+  SUM(dt.amount_usd) AS total_usd
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND LOWER(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+WHERE dt.block_time > NOW() - INTERVAL '24' HOUR
+  AND dt.amount_usd >= 10000
+  AND dt.token_bought_symbol IS NOT NULL
+GROUP BY dt.token_bought_symbol
+ORDER BY total_usd DESC
+LIMIT ${safeLimit}
+`.trim();
+  const result = await executeDuneSql<DuneTopToken>(sql, DEFAULT_CACHE_TTL_MS);
+  return result.ok ? result.rows : [];
 }
+
+export { MAX_RESULT_ROWS };

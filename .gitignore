@@ -7,3 +7,5 @@ coverage/
 *.log
 .env*
 !.env.example
+.openclaw/
+_probe.ts

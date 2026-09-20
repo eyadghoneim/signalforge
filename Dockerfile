@@ -14,6 +14,11 @@ COPY . .
 # بناء الواجهة (Vite) + حزم السيرفر (esbuild)
 RUN npm run build
 
+# Run the application as the pre-created non-root Node user. The data directory
+# is created lazily by the JSON fallback and must remain writable in that mode.
+RUN chown -R node:node /app
+USER node
+
 ENV NODE_ENV=production
 ENV PORT=3000
 

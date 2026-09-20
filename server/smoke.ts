@@ -31,6 +31,7 @@ async function main(): Promise<void> {
     health = r.json;
     check('health responds ok:true', r.status === 200 && r.json?.ok === true);
     check('health exposes protection state', !!r.json?.protection && typeof r.json.protection.breakerTripped === 'boolean');
+    check('health exposes persistence mode', r.json?.persistence === 'postgres' || r.json?.persistence === 'local_json');
   } catch {
     console.error(`  Server not reachable on ${BASE} - start it first with: npm run dev`);
     process.exit(2);

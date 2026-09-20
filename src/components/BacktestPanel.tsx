@@ -26,8 +26,9 @@ export default function BacktestPanel({ lang }: { lang: Lang }) {
   const equityRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bhRef = useRef<ISeriesApi<'Line'> | null>(null);
 
-  // إنشاء وتحديث رسم منحنى الأرباح عند ظهور نتيجة الباكتيست
   useEffect(() => {
+    // The chart container is rendered only after a result exists. Creating the
+    // chart on the initial result transition avoids a one-time null-ref exit.
     if (!result || !containerRef.current) return;
     const chart = createChart(containerRef.current, {
       autoSize: true,
@@ -38,23 +39,21 @@ export default function BacktestPanel({ lang }: { lang: Lang }) {
       rightPriceScale: { borderColor: '#27272a' },
     });
     chartRef.current = chart;
-    const eq = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, title: 'SignalForge' });
-    const bh = chart.addSeries(LineSeries, { color: '#71717a', lineWidth: 1, lineStyle: 2, title: t(lang, 'btBuyHold') });
-    equityRef.current = eq;
-    bhRef.current = bh;
-
-    if (result.equityCurve.length > 0) {
-      eq.setData(result.equityCurve.map((p) => ({ time: p.time as UTCTimestamp, value: p.equity })));
-      bh.setData(result.equityCurve.map((p) => ({ time: p.time as UTCTimestamp, value: p.buyHold })));
-      chart.timeScale().fitContent();
-    }
-
+    equityRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, title: 'SignalForge' });
+    bhRef.current = chart.addSeries(LineSeries, { color: '#71717a', lineWidth: 1, lineStyle: 2, title: t(lang, 'btBuyHold') });
     return () => {
       chart.remove();
       chartRef.current = null;
       equityRef.current = null;
       bhRef.current = null;
     };
+  }, [result, lang]);
+
+  useEffect(() => {
+    if (!result || result.equityCurve.length === 0) return;
+    equityRef.current?.setData(result.equityCurve.map((p) => ({ time: p.time as UTCTimestamp, value: p.equity })));
+    bhRef.current?.setData(result.equityCurve.map((p) => ({ time: p.time as UTCTimestamp, value: p.buyHold })));
+    chartRef.current?.timeScale().fitContent();
   }, [result, lang]);
 
   const run = async (mode: 'standard' | 'robustness' | 'walkforward' = 'standard') => {

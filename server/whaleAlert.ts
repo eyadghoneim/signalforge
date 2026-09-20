@@ -3,8 +3,6 @@
 // Without WHALE_ALERT_API_KEY the factor degrades to null (never throws).
 // Comments are English-only on purpose (codepage safety under shell tooling).
 
-import { getDuneWhaleNetflow, isDuneAvailable } from './duneService';
-
 export interface WhaleNetflow {
   netInflowUsd: number; // positive = net deposits TO exchanges (sell pressure)
   txCount: number;
@@ -37,19 +35,6 @@ export async function getWhaleNetflow(asset: string): Promise<WhaleNetflow | nul
   if (cached && Date.now() - cached.at < WHALE_TTL_MS) return cached.value;
   const apiKey = process.env.WHALE_ALERT_API_KEY || '';
   const sym = WHALE_SYMBOLS[asset];
-
-  // If WhaleAlert key is absent, use Dune Analytics Plus on-chain engine
-  if (!apiKey && isDuneAvailable()) {
-    try {
-      const duneFlow = await getDuneWhaleNetflow(asset);
-      WHALE_CACHE.set(asset, { value: duneFlow, at: Date.now() });
-      return duneFlow;
-    } catch {
-      WHALE_CACHE.set(asset, { value: null, at: Date.now() });
-      return null;
-    }
-  }
-
   if (!apiKey || !sym) {
     WHALE_CACHE.set(asset, { value: null, at: Date.now() });
     return null;

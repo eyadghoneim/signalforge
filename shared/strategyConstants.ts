@@ -43,6 +43,13 @@ export const ATTRIBUTION_WINDOWS_HOURS = [4, 24, 72] as const;
 
 export const TELEGRAM_COOLDOWN_MS = 30 * 60 * 1000;
 
+// Paper execution model: deterministic costs, never random, so tests and live
+// paper results remain reproducible while approximating real taker execution.
+export const PAPER_EXECUTION = {
+  FEE_RATE: 0.00075, // 0.075% per filled side
+  SLIPPAGE_RATE: 0.0005, // 0.05% adverse price movement per fill
+} as const;
+
 // دالة التحويل المركزية — لا يُسمح لأي كود آخر باستنتاج النوع من الدرجة
 export function deriveSignalTypeAndAction(score: number): {
   signalType: SignalType;
@@ -59,6 +66,30 @@ export function deriveSignalTypeAndAction(score: number): {
   return { signalType: 'HOLD', spotAction: 'SPOT_HOLD' };
 }
 
+// Dynamic deterministic tick approximation for the supported spot price range.
+// Stops round away from entry (down) and targets round away from entry (up),
+// so display/execution precision never silently tightens the risk plan.
+export function tickSizeForPrice(price: number): number {
+  const p = Math.abs(Number(price));
+  if (!Number.isFinite(p) || p <= 0) return 0.0001;
+  if (p < 1) return 0.0001;
+  if (p < 500) return 0.01;
+  return 0.5;
+}
+
+function cleanTickValue(value: number, tick: number): number {
+  const decimals = Math.max(0, Math.ceil(-Math.log10(tick)) + 2);
+  return Number(value.toFixed(decimals));
+}
+
+function roundDownToTick(value: number, tick: number): number {
+  return cleanTickValue(Math.floor((value + tick * 1e-9) / tick) * tick, tick);
+}
+
+function roundUpToTick(value: number, tick: number): number {
+  return cleanTickValue(Math.ceil((value - tick * 1e-9) / tick) * tick, tick);
+}
+
 // أهداف المخاطرة — المضاعفات تأتي حصراً من ملف الثوابت
 export function computeRiskTargets(entryPrice: number, atr: number): {
   stopLoss: number;
@@ -69,10 +100,11 @@ export function computeRiskTargets(entryPrice: number, atr: number): {
 } {
   const m = STRATEGY_RISK_MULTIPLIERS;
   const effAtr = atr > 0 ? atr : entryPrice * 0.0015;
-  const stopLoss = Math.round(entryPrice - m.STOP_LOSS_ATR * effAtr);
-  const target1 = Math.round(entryPrice + m.TARGET_1_ATR * effAtr);
-  const target2 = Math.round(entryPrice + m.TARGET_2_ATR * effAtr);
-  const target3 = Math.round(entryPrice + m.TARGET_3_ATR * effAtr);
+  const tick = tickSizeForPrice(entryPrice);
+  const stopLoss = roundDownToTick(entryPrice - m.STOP_LOSS_ATR * effAtr, tick);
+  const target1 = roundUpToTick(entryPrice + m.TARGET_1_ATR * effAtr, tick);
+  const target2 = roundUpToTick(entryPrice + m.TARGET_2_ATR * effAtr, tick);
+  const target3 = roundUpToTick(entryPrice + m.TARGET_3_ATR * effAtr, tick);
   const riskRewardRatio =
     entryPrice > stopLoss ? Number(((target1 - entryPrice) / (entryPrice - stopLoss)).toFixed(2)) : 0;
   return { stopLoss, target1, target2, target3, riskRewardRatio };

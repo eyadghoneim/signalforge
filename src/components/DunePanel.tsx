@@ -61,6 +61,7 @@ export default function DunePanel({ lang }: Props) {
   const [view, setView] = useState<ViewMode>('whales');
   const [whaleTrades, setWhaleTrades] = useState<DuneWhaleTrade[]>([]);
   const [topTokens, setTopTokens] = useState<DuneTopToken[]>([]);
+  const [available, setAvailable] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,13 +76,21 @@ export default function DunePanel({ lang }: Props) {
     setLoading(true);
     setError(null);
     try {
+      const status = await api.duneStatus();
+      setAvailable(status.available);
+      if (!status.available) {
+        setWhaleTrades([]);
+        setTopTokens([]);
+        return;
+      }
       const [tradesRes, tokensRes] = await Promise.all([
-        api.duneWhaleTrades().catch(() => ({ ok: true, trades: [] })),
-        api.duneTopTokens().catch(() => ({ ok: true, tokens: [] })),
+        api.duneWhaleTrades(),
+        api.duneTopTokens(),
       ]);
       setWhaleTrades(tradesRes.trades);
       setTopTokens(tokensRes.tokens);
     } catch (e) {
+      setAvailable(true);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -93,7 +102,7 @@ export default function DunePanel({ lang }: Props) {
   }, []);
 
   const handleRunSql = async () => {
-    if (!customSql.trim()) return;
+    if (!customSql.trim() || available === false) return;
     setSqlLoading(true);
     setSqlError(null);
     try {
@@ -154,13 +163,13 @@ export default function DunePanel({ lang }: Props) {
               </h3>
               <span className="flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-500/20 to-amber-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-orange-300 border border-orange-500/30">
                 <Zap size={12} className="text-orange-400" />
-                Dune Plus Tier
+                {available === false ? (isAr ? 'غير مفعّل' : 'Optional / disabled') : 'Dune Plus'}
               </span>
             </div>
             <p className="text-xs text-zinc-400">
               {isAr
-                ? 'استعلامات On-Chain مباشرة وسريعة عبر محرك Trino SQL — صفقات الحيتان وتدفقات السيولة وتصدير الداتا'
-                : 'Direct high-speed Trino SQL engine — live whale transactions, DEX liquidity, and unlimited data exports'}
+                ? 'سياق بحثي للبيانات اللامركزية عبر Trino SQL — صفقات كبيرة، حجم الأصول الموثوقة، واستعلامات محدودة التكلفة'
+                : 'Read-only research context via Trino SQL — large swaps, verified-asset volume, and cost-limited queries'}
             </p>
           </div>
         </div>
@@ -222,6 +231,14 @@ export default function DunePanel({ lang }: Props) {
       {error && (
         <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-300">
           {error}
+        </div>
+      )}
+
+      {available === false && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-950/60 p-4 text-xs leading-5 text-zinc-400">
+          {isAr
+            ? 'Dune اختياري وغير مفعّل حاليًا. أضف DUNE_API_KEY كـ Secret على السيرفر فقط. هذه الطبقة بحثية ولا تغيّر الإشارات أو تنفّذ تداولًا.'
+            : 'Dune is optional and currently disabled. Add DUNE_API_KEY as a server-side Secret only. This layer is research-only and never changes signals or executes trades.'}
         </div>
       )}
 
@@ -359,7 +376,7 @@ export default function DunePanel({ lang }: Props) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
               onClick={() => void handleRunSql()}
-              disabled={sqlLoading}
+              disabled={sqlLoading || available === false}
               className="flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-orange-600/20 transition hover:bg-orange-500 disabled:opacity-50"
             >
               <Play size={14} className={sqlLoading ? 'animate-spin' : ''} />
