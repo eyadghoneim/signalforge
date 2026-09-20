@@ -11,7 +11,6 @@ import type {
   WalkForwardResult,
   LiquidityRegime,
   ProviderHealthInfo,
-  PaperTradeOutcome,
   ProtectionConfig,
   TagLearningStat,
   LearningLesson,
@@ -29,7 +28,6 @@ export type {
   WalkForwardResult,
   LiquidityRegime,
   ProviderHealthInfo,
-  PaperTradeOutcome,
   ProtectionConfig,
   TagLearningStat,
   LearningLesson,
@@ -48,7 +46,6 @@ export interface HealthInfo {
   ok: boolean;
   version: string;
   engineSignature: string;
-  persistence?: 'postgres' | 'local_json';
   lastScanAt: number;
   uptimeSec: number;
   protection?: {
@@ -58,11 +55,6 @@ export interface HealthInfo {
     openSignals: number;
     effectiveExposure: number;
     maxConcurrentSignals: number;
-    choppyCooldown?: {
-      active: boolean;
-      consecutiveLosses: number;
-      cooldownUntil: number | null;
-    };
   };
 }
 
@@ -78,7 +70,6 @@ export interface ConfigInfo {
   regimeEnabled: boolean;
   digestEnabled: boolean;
   paperAlertsEnabled: boolean;
-  paperEnginePaused: boolean;
   telegramLang: 'ar' | 'en';
   protection: ProtectionConfig;
 }
@@ -107,7 +98,6 @@ export interface PaperPositionInfo {
   tp3: number;
   qty: number;
   qtyOpen: number;
-  feesPaid?: number;
   pnlAccum: number;
   openedAtSec: number;
   tp1Taken: boolean;
@@ -123,13 +113,10 @@ export interface PaperTradeInfo {
   exitAvg: number;
   qty: number;
   pnlUsd: number;
-  feesUsd?: number;
-  reason: 'TP3' | 'SL' | 'SELL_SIGNAL' | 'TIME';
-  outcome?: PaperTradeOutcome;
+  reason: 'TP3' | 'SL' | 'SELL_SIGNAL';
 }
 
 export interface PaperAccountInfo {
-  paused?: boolean;
   startingEquity: number;
   cash: number;
   realizedPnl: number;
@@ -171,6 +158,20 @@ export interface DexPairInfo {
   priceChange24hPercent: number | null;
 }
 
+export interface DuneWhaleTrade {
+  block_time: string;
+  project: string;
+  token_bought_symbol: string;
+  token_sold_symbol: string;
+  amount_usd: number;
+}
+
+export interface DuneTopToken {
+  token_bought_symbol: string;
+  trades: number;
+  total_usd: number;
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'content-type': 'application/json' },
@@ -210,17 +211,20 @@ export const api = {
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
   dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
-  paper: () => j<{
-    ok: true;
-    account: PaperAccountInfo;
-    initialEquity: number;
-    execution?: { feeRate: number; slippageRate: number; mode: string };
-  }>('/api/paper'),
+  paper: () => j<{ ok: true; account: PaperAccountInfo; initialEquity: number }>('/api/paper'),
   resetPaper: () => j<{ ok: true }>('/api/paper/reset', { method: 'POST', body: '{}' }),
   liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {
       method: 'POST',
       body: JSON.stringify({ asset, days, robustness, walkforward: walkForward }),
+    }),
+  duneStatus: () => j<{ ok: true; available: boolean; tier: string }>('/api/dune/status'),
+  duneWhaleTrades: () => j<{ ok: true; trades: DuneWhaleTrade[] }>('/api/dune/whale-trades'),
+  duneTopTokens: () => j<{ ok: true; tokens: DuneTopToken[] }>('/api/dune/top-tokens'),
+  duneRunSql: (sql: string) =>
+    j<{ ok: true; rows: Record<string, unknown>[]; executionTimeMs: number }>('/api/dune/sql', {
+      method: 'POST',
+      body: JSON.stringify({ sql }),
     }),
 };

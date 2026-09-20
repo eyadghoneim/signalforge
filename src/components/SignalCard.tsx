@@ -28,29 +28,11 @@ const GATE_KEYS: Record<string, TKey> = {
   SQUEEZE_BLOCKED: 'gateSqueeze',
 };
 
-const QUALITY_TAG_KEYS: Record<string, TKey> = {
-  TREND: 'tagTrend',
-  MACD: 'tagMacd',
-  RSI: 'tagRsi',
-  ADX: 'tagAdx',
-  RVOL: 'tagRvol',
-  MOMENTUM: 'tagMomentum',
-  FUNDING: 'tagFunding',
-  BOLLINGER: 'tagBollinger',
-  HTF: 'tagHtf',
-  SMC: 'tagSmc',
-  LIQUIDITY: 'tagLiquidity',
-  OI: 'tagOi',
-  FNG: 'tagFng',
-  WHALE: 'tagWhale',
-  PATTERN: 'tagPattern',
-};
-
 function fmtUsd(v: number): string {
   return Number.isFinite(v) ? `$${v.toLocaleString('en-US')}` : '—';
 }
 
-function ScoreRing({ score, color, lang }: { score: number; color: string; lang: Lang }) {
+function ScoreRing({ score, color }: { score: number; color: string }) {
   const r = 34;
   const circumference = 2 * Math.PI * r;
   const filled = (score / 100) * circumference;
@@ -71,7 +53,7 @@ function ScoreRing({ score, color, lang }: { score: number; color: string; lang:
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-2xl font-extrabold tabular-nums" style={{ color }}>{score}</span>
-        <span className="text-[9px] text-zinc-500">{t(lang, 'qualityOf')} 100</span>
+        <span className="text-[9px] text-zinc-500">{t('ar', 'factors') === 'عامل' ? 'من 100' : 'of 100'}</span>
       </div>
     </div>
   );
@@ -94,17 +76,6 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
         : { text: t(lang, 'verdictHold'), sub: t(lang, 'verdictHoldSub'), cls: 'border-zinc-600/50 bg-zinc-600/10 text-zinc-300' };
 
   const gateLabel = t(lang, GATE_KEYS[signal.regimeGateStatus] ?? 'gateUnknown');
-  const qualityScore = signal.entryQuality ?? signal.convictionScore;
-  const qualityBreakdown = signal.qualityBreakdown ?? signal.reasons
-    .filter((r) => r.adjustment !== 0)
-    .reduce<{ tag: string; adjustment: number }[]>((rows, reason) => {
-      const row = rows.find((item) => item.tag === reason.tag);
-      if (row) row.adjustment += reason.adjustment;
-      else rows.push({ tag: reason.tag, adjustment: reason.adjustment });
-      return rows;
-    }, []);
-  const positiveQuality = qualityBreakdown.filter((item) => item.adjustment > 0).reduce((sum, item) => sum + item.adjustment, 0);
-  const negativeQuality = qualityBreakdown.filter((item) => item.adjustment < 0).reduce((sum, item) => sum + Math.abs(item.adjustment), 0);
 
   return (
     <div className={`rise-in rounded-2xl border bg-zinc-900/60 p-5 ${gated ? 'border-amber-500/30' : 'border-zinc-800'}`}>
@@ -119,7 +90,7 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
 
       {/* الترويسة: الدرجة + النوع */}
       <div className="flex flex-wrap items-center gap-4">
-        <ScoreRing score={signal.convictionScore} color={style.ring} lang={lang} />
+        <ScoreRing score={signal.convictionScore} color={style.ring} />
         <div className="min-w-40 flex-1">
           <div className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-extrabold ${style.cls}`}>
             {typeLabel}
@@ -139,49 +110,6 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
             {signal.dataSource === 'STALE' ? t(lang, 'stale') : t(lang, 'live')}
           </div>
         </div>
-      </div>
-
-      {/* شريط جودة الدخول: تفصيل الدرجة الحالية بدل رقم غامض فقط. */}
-      <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-xs font-bold text-sky-200">{t(lang, 'qualityTitle')}</span>
-          <span className="font-mono text-sm font-extrabold text-sky-300" dir="ltr">{qualityScore}/100</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2 text-[10px]">
-          <div className="rounded-lg bg-zinc-950/50 px-2 py-1.5 text-center text-zinc-400">
-            <div>{t(lang, 'qualityBase')}</div><b className="font-mono text-zinc-200" dir="ltr">50</b>
-          </div>
-          <div className="rounded-lg bg-emerald-500/10 px-2 py-1.5 text-center text-emerald-300">
-            <div>{t(lang, 'qualityPositive')}</div><b className="font-mono" dir="ltr">+{positiveQuality}</b>
-          </div>
-          <div className="rounded-lg bg-rose-500/10 px-2 py-1.5 text-center text-rose-300">
-            <div>{t(lang, 'qualityNegative')}</div><b className="font-mono" dir="ltr">−{negativeQuality}</b>
-          </div>
-        </div>
-        {qualityBreakdown.length > 0 ? (
-          <div className="mt-3 space-y-1.5">
-            {[...qualityBreakdown].sort((a, b) => Math.abs(b.adjustment) - Math.abs(a.adjustment)).map((item) => {
-              const positive = item.adjustment > 0;
-              const width = Math.min(100, Math.max(8, (Math.abs(item.adjustment) / 18) * 100));
-              return (
-                <div key={item.tag} className="flex items-center gap-2 text-[10px]">
-                  <span className="w-24 shrink-0 truncate text-zinc-400">{t(lang, QUALITY_TAG_KEYS[item.tag] ?? 'factors')}</span>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
-                    <div className={`h-full rounded-full ${positive ? 'bg-emerald-400/80' : 'bg-rose-400/80'}`} style={{ width: `${width}%` }} />
-                  </div>
-                  <span className={`w-8 text-right font-mono ${positive ? 'text-emerald-300' : 'text-rose-300'}`} dir="ltr">
-                    {positive ? '+' : ''}{item.adjustment}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="mt-2 text-[10px] text-zinc-500">{t(lang, 'qualityNoFactors')}</div>
-        )}
-        {signal.learningBias ? (
-          <div className="mt-2 text-[10px] text-violet-300">{t(lang, 'qualityLearning')}: <span dir="ltr">{signal.learningBias > 0 ? '+' : ''}{signal.learningBias}</span></div>
-        ) : null}
       </div>
 
       {/* لافتة البوابة */}

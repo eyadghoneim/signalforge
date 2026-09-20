@@ -20,10 +20,9 @@ measured results - with a full audit trail.
 | | |
 |---|---|
 | **Deterministic signal engine** | Multi-timeframe scoring (1h/4h/daily) with regime gates: HTF trend, chop (ADX), volume (RVOL) and funding squeeze - signals are reproducible, not hand-waved |
-| **Entry quality transparency** | Every signal exposes its 0–100 entry-quality score and the grouped positive/negative factor contributions in Arabic and English |
 | **Advanced measurement** | Win rate, profit factor, expectancy (R), payoff, per-trade Sharpe, max drawdown + duration, streaks, time-in-market, score-bucket and exit-reason diagnostics, equity curve with buy & hold benchmark, CSV export |
 | **Honest walk-forward optimizer** | Grid-search on the first half of the data, verdict on the unseen second half - ranking uses in-sample performance only, so the validation result cannot flatter itself |
-| **Capital protection** | Daily loss circuit breaker (R-based), unique-asset exposure cap with a BTC/ETH correlation guard, automatic expiry of stale signals, 3-loss choppy-market cooldown, and configurable Paper max-hold exit |
+| **Capital protection** | Daily loss circuit breaker (R-based), max concurrent exposure with a BTC/ETH correlation guard, automatic expiry of stale unexecuted signals |
 | **Self-learning** | Every resolved signal feeds a bounded per-factor bias (clamped, evidence-gated at 10+ samples, >= 8pt deviation from baseline). Every bias change is logged with its evidence in a lessons ledger |
 | **Open interest factor** | 24h open-interest change from Binance futures confirms or warns on the prevailing move (graceful degradation when unavailable) |
 | **Multi-source market data** | OKX (reachable from restricted regions incl. SA) + Binance, Bybit, Coinbase, CoinGecko with automatic failover and per-provider health tracking |
@@ -41,8 +40,6 @@ The backtest is transparent about its own edge cases instead of hiding them:
 | **Same-candle ambiguity** | If a stop and a target are both inside one candle, the stop is assumed FIRST (conservative). The engine never pretends the target won; it assumes the worse outcome. |
 | **Stop-loss execution slippage** | Stop-market orders fill worse than the stop price in gaps/flash moves. The backtest now applies a realistic slippage of `STOP_SLIPPAGE_ATR` (15% of ATR) on stop exits instead of a perfect fill. |
 | **Funding gate disabled in backtests** | Historical funding is not freely available, so this gate is off in the simulation (disclosed, not silent). |
-| **24h momentum disabled in backtests** | Historical daily change is not available in the simulation, so `change24h` is zero; live and backtest signals should not be compared literally. |
-| **Live candle timing** | Live scans may read the latest still-forming 1h candle, while the backtest replays historical candles; signal timing can therefore differ. |
 | **Liquidity layer disabled in backtests** | DefiLlama history is not freely available; the layer is off in the simulation (disclosed). |
 
 ## Quick start
@@ -56,24 +53,12 @@ npm run dev        # dashboard on http://localhost:3000
 |---|---|
 | `npm run dev` | Run the server + serve the dashboard |
 | `npm run lint` | TypeScript check (strict) |
-| `npm test` | deterministic test suite |
+| `npm test` | 195 deterministic tests |
 | `npm run build` | Production build (vite + esbuild server bundle) |
 | `npm start` | Run the built server |
 
 Telegram notifications are optional - configure a bot token and chat id in the dashboard settings
-(step-by-step guide included in the UI). When enabled, the authorized chat can also send these
-**paper-only** commands: `/status`, `/balance`, `/pause`, `/resume`, and `/panic`. The bot never
-creates an exchange order; `/panic` closes only paper positions using the latest market ticker.
-
-### Free durable storage (Supabase)
-
-For a deployment whose filesystem can reset (such as Render Free), create a Supabase Free project
-and add its PostgreSQL connection string as `DATABASE_URL` (or `SUPABASE_DB_URL`). On the first
-startup SignalForge creates its tables and imports the existing `data/config.json`, `signals.json`,
-`logs.json`, `learning.json`, `lessons.json`, and `paper.json` without overwriting rows already in
-the database. Subsequent reads use the database-backed cache and writes are queued durably. If the
-variable is absent, local JSON remains available as a development fallback; it is not a guarantee
-of persistence on an ephemeral host. Supabase Free has usage limits and may pause inactive projects.
+(step-by-step guide included in the UI).
 
 ## How the learning works
 

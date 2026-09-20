@@ -51,19 +51,10 @@ export interface SignalReason {
   textAr: string;
 }
 
-/** Aggregated deterministic contribution shown in the entry-quality panel. */
-export interface SignalQualityComponent {
-  tag: ReasonTag;
-  adjustment: number;
-}
-
 export interface Signal {
   asset: SupportedAsset;
   engineSignature: string;
   convictionScore: number;
-  /** Same 0..100 deterministic score, named explicitly for the UI quality panel. */
-  entryQuality?: number;
-  qualityBreakdown?: SignalQualityComponent[];
   signalType: SignalType;
   spotAction: SpotAction;
   entryPrice: number;
@@ -122,7 +113,6 @@ export interface BotConfig {
   digestEnabled: boolean;
   paperAlertsEnabled: boolean;
   telegramLang: 'ar' | 'en';
-  paperEnginePaused: boolean;
 }
 
 // ─── تقارير الأداء والباك تست (مشتركة بين السيرفر والواجهة) ───
@@ -288,9 +278,6 @@ export interface WalkForwardResult {
   results: WalkForwardCell[];
   best: WalkForwardCell | null;
 }
-// --- Paper trade outcomes ---
-export type PaperTradeOutcome = 'SL_FIRST' | 'TP1_FIRST' | 'TIME' | 'SELL_SIGNAL';
-
 // --- Capital protection (v3) ---
 export interface ProtectionConfig {
   dailyLossLimitR: number;
@@ -300,12 +287,6 @@ export interface ProtectionConfig {
   stoplossGuardMax: number;
   stoplossGuardHours: number;
   lossCooldownHours: number;
-  /** Number of consecutive paper losses that starts the choppy-market cooldown. */
-  choppyLossStreak: number;
-  /** Global paper BUY cooldown after the consecutive-loss threshold is reached. */
-  choppyCooldownHours: number;
-  /** Maximum age of a paper position before a market-price TIME exit. */
-  paperMaxHoldHours: number;
 }
 // --- Learning system (v3) ---
 export interface TagLearningStat {

@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 import type { SupportedAsset, StoredSignal } from '../shared/types';
 import { SUPPORTED_ASSETS, ASSET_LABELS_AR } from '../shared/types';
-import { ENGINE_SIGNATURE, PAPER_EXECUTION, TELEGRAM_COOLDOWN_MS } from '../shared/strategyConstants';
+import { ENGINE_SIGNATURE, TELEGRAM_COOLDOWN_MS } from '../shared/strategyConstants';
 import {
   DataUnavailableError,
   getCandles1h,
@@ -37,29 +37,17 @@ import {
   saveTagBias,
   appendLesson,
   listLessons,
-  initializeDurablePersistence,
-  getDurablePersistence,
-  closeDurablePersistence,
 } from './persistence';
-import {
-  buildSignalMessageHtml,
-  buildTestMessageHtml,
-  buildPaperEventHtml,
-  sendTelegramMessage,
-  sendTelegramDedupedMessage,
-  startTelegramPolling,
-  stopTelegramPolling,
-  verdictOf,
-  verdictLabel,
-} from './telegram';
+import { buildSignalMessageHtml, buildTestMessageHtml, buildPaperEventHtml, sendTelegramMessage, sendTelegramDedupedMessage, verdictOf, verdictLabel } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
-import { choppyCooldownState, clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
+import { clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
 import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
 import { closeCcxtExchangePool } from './ccxtProvider';
 import { getWhaleNetflow } from './whaleAlert';
+import { isDuneAvailable, getDuneWhaleTrades, getDuneTopTokens24h, executeDuneSql } from './duneService';
 import { getLiquidationRadar } from './liquidationRadar';
 import {
   loadPaperAccount,
@@ -93,30 +81,22 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
-// ─── أمان: رؤوس CSP عامة في الإنتاج + rate limit بسيط ───
+// ─── أمان: CSP في الإنتاج + rate limit بسيط ───
 if (!IS_DEV) {
   app.use((req, res, next) => {
-    const isApi = req.path.startsWith('/api');
-    const csp = isApi
-      ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none';"
-      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none';";
-    res.setHeader('Content-Security-Policy', csp);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    if (req.path.startsWith('/api')) {
+      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'");
+    }
     next();
   });
 }
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
-const backtestBuckets = new Map<string, { count: number; resetAt: number }>();
 const RATE_BUCKETS_MAX = 10_000; // سقف أمان ضد النمو غير المحدود
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 240; // 240 طلب/دقيقة لكل عنوان
-const BACKTEST_WINDOW_MS = 10 * 60_000;
-const BACKTEST_MAX_STANDARD = 12;
-const BACKTEST_MAX_HEAVY = 3;
 app.use('/api', (req, res, next) => {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const ip = req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const bucket = rateBuckets.get(ip);
   if (!bucket || bucket.resetAt <= now) {
@@ -143,38 +123,12 @@ function sweepRateBuckets(): void {
   for (const [ip, b] of rateBuckets) {
     if (b.resetAt <= now) rateBuckets.delete(ip);
   }
-  for (const [ip, b] of backtestBuckets) {
-    if (b.resetAt <= now) backtestBuckets.delete(ip);
-  }
   if (rateBuckets.size > RATE_BUCKETS_MAX) {
     const oldest = [...rateBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
     for (const [ip] of oldest.slice(0, rateBuckets.size - RATE_BUCKETS_MAX)) rateBuckets.delete(ip);
   }
-  if (backtestBuckets.size > RATE_BUCKETS_MAX) {
-    const oldest = [...backtestBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
-    for (const [ip] of oldest.slice(0, backtestBuckets.size - RATE_BUCKETS_MAX)) backtestBuckets.delete(ip);
-  }
 }
 setInterval(sweepRateBuckets, 60_000).unref();
-
-function allowBacktestRequest(req: express.Request, res: express.Response, heavy: boolean): boolean {
-  const key = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const max = heavy ? BACKTEST_MAX_HEAVY : BACKTEST_MAX_STANDARD;
-  const bucket = backtestBuckets.get(key);
-  if (!bucket || bucket.resetAt <= now) {
-    backtestBuckets.set(key, { count: 1, resetAt: now + BACKTEST_WINDOW_MS });
-    return true;
-  }
-  bucket.count++;
-  if (bucket.count <= max) return true;
-  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-  res.setHeader('Retry-After', String(retryAfter));
-  res.setHeader('X-Backtest-RateLimit-Limit', String(max));
-  res.setHeader('X-Backtest-RateLimit-Remaining', '0');
-  res.status(429).json({ ok: false, error: 'Backtest rate limit exceeded', retryAfterSeconds: retryAfter });
-  return false;
-}
 
 // ─── أدمن: توكن صريح أو ثقة محلية (localhost فقط) ───
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -201,16 +155,12 @@ let lastScanAt = 0;
 
 app.get('/api/health', (_req, res) => {
   const protection = loadConfig().protection;
-  const signals = listSignals(500);
-  const now = Date.now();
-  const breaker = evaluateCircuitBreaker(signals, protection, now);
-  const exposure = currentExposure(signals, protection);
-  const choppy = choppyCooldownState(paperAccount.closed, protection.choppyLossStreak, protection.choppyCooldownHours, now);
+  const breaker = evaluateCircuitBreaker(listSignals(500), protection, Date.now());
+  const exposure = currentExposure(listSignals(500), protection);
   res.json({
     ok: true,
     version: VERSION,
     engineSignature: ENGINE_SIGNATURE,
-    persistence: getDurablePersistence() ? 'postgres' : 'local_json',
     lastScanAt,
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     protection: {
@@ -220,11 +170,6 @@ app.get('/api/health', (_req, res) => {
       openSignals: exposure.openCount,
       effectiveExposure: exposure.effectiveExposure,
       maxConcurrentSignals: protection.maxConcurrentSignals,
-      choppyCooldown: {
-        active: choppy.active,
-        consecutiveLosses: choppy.consecutiveLosses,
-        cooldownUntil: choppy.cooldownUntil,
-      },
     },
   });
 });
@@ -262,7 +207,6 @@ app.get('/api/paper', (_req, res) => {
   res.json({
     ok: true,
     account: {
-      paused: paperEnginePaused,
       startingEquity: paperAccount.startingEquity,
       cash: paperAccount.cash,
       realizedPnl: paperAccount.realizedPnl,
@@ -272,11 +216,6 @@ app.get('/api/paper', (_req, res) => {
       updatedAt: paperAccount.updatedAt,
     },
     initialEquity: PAPER_INITIAL_EQUITY,
-    execution: {
-      feeRate: PAPER_EXECUTION.FEE_RATE,
-      slippageRate: PAPER_EXECUTION.SLIPPAGE_RATE,
-      mode: 'PAPER_ONLY',
-    },
   });
 });
 
@@ -285,6 +224,47 @@ app.post('/api/paper/reset', requireAdmin, (_req, res) => {
   paperAccount = resetPaperAccount();
   appendLog('INFO', 'Paper trading account reset to $10,000');
   res.json({ ok: true });
+});
+
+// ─── Dune Analytics Plus: On-Chain Intelligence & SQL Execution ───
+app.get('/api/dune/status', (_req, res) => {
+  res.json({ ok: true, available: isDuneAvailable(), tier: 'Plus' });
+});
+
+app.get('/api/dune/whale-trades', async (_req, res) => {
+  try {
+    const trades = await getDuneWhaleTrades(25);
+    res.json({ ok: true, trades });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.get('/api/dune/top-tokens', async (_req, res) => {
+  try {
+    const tokens = await getDuneTopTokens24h(10);
+    res.json({ ok: true, tokens });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.post('/api/dune/sql', async (req, res) => {
+  try {
+    const sql = String(req.body?.sql || '').trim();
+    if (!sql) return res.status(400).json({ ok: false, error: 'SQL query is required' });
+    const normalized = sql.toLowerCase();
+    if (!normalized.startsWith('select') && !normalized.startsWith('with')) {
+      return res.status(400).json({ ok: false, error: 'Only SELECT / WITH read-only queries are permitted' });
+    }
+    const result = await executeDuneSql(sql);
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+    return res.json({ ok: true, rows: result.rows, executionTimeMs: result.executionTimeMs });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 // خارطة السوق: كل الأصول في نظرة واحدة (سعر + تغير + توصية + تصفية سريعة)
@@ -409,7 +389,6 @@ app.post('/api/backtest', async (req, res) => {
   const body = (req.body || {}) as { asset?: string; days?: number; robustness?: boolean; walkforward?: boolean };
   const asset = String(body.asset || 'BTC').toUpperCase() as SupportedAsset;
   if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
-  if (!allowBacktestRequest(req, res, Boolean(body.robustness || body.walkforward))) return;
   const days = Math.min(1095, Math.max(90, Number(body.days) || 365));
   try {
     const candles = await getHistoricalCandlesDeep(asset, Math.min(30000, days * 24));
@@ -477,7 +456,6 @@ app.get('/api/config', (_req, res) => {
       regimeEnabled: config.regimeEnabled,
       digestEnabled: config.digestEnabled,
       paperAlertsEnabled: config.paperAlertsEnabled,
-      paperEnginePaused: config.paperEnginePaused,
       telegramLang: config.telegramLang,
       protection: config.protection,
     },
@@ -517,9 +495,6 @@ app.post('/api/config', requireAdmin, (req, res) => {
       stoplossGuardMax: typeof pr.stoplossGuardMax === 'number' ? pr.stoplossGuardMax : cur.stoplossGuardMax,
       stoplossGuardHours: typeof pr.stoplossGuardHours === 'number' ? pr.stoplossGuardHours : cur.stoplossGuardHours,
       lossCooldownHours: typeof pr.lossCooldownHours === 'number' ? pr.lossCooldownHours : cur.lossCooldownHours,
-      choppyLossStreak: typeof pr.choppyLossStreak === 'number' ? pr.choppyLossStreak : cur.choppyLossStreak,
-      choppyCooldownHours: typeof pr.choppyCooldownHours === 'number' ? pr.choppyCooldownHours : cur.choppyCooldownHours,
-      paperMaxHoldHours: typeof pr.paperMaxHoldHours === 'number' ? pr.paperMaxHoldHours : cur.paperMaxHoldHours,
     });
   }
   const next = saveConfig(patch);
@@ -555,97 +530,6 @@ let scanCycle = 0;
 let paperAccount: PaperAccount = loadPaperAccount();
 // آخر شموع 1h مكتملة لكل أصل (لتسيير الصفقات بدون تسرب داخل نفس الشمعة)
 const lastPaperCandles = new Map<SupportedAsset, PaperCandle>();
-let paperEnginePaused = false;
-
-function telegramRuntimeConfig(): { enabled: boolean; token: string; chatId: string } {
-  const config = loadConfig();
-  return {
-    enabled: config.telegramEnabled,
-    token: config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '',
-    chatId: config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '',
-  };
-}
-
-async function getOpenPaperPrices(): Promise<Partial<Record<SupportedAsset, number>>> {
-  const prices: Partial<Record<SupportedAsset, number>> = {};
-  await Promise.all(
-    paperAccount.open.map(async (position) => {
-      try {
-        const ticker = await getTicker(position.asset);
-        if (Number.isFinite(ticker.price) && ticker.price > 0) prices[position.asset] = ticker.price;
-      } catch {
-        // A missing ticker is reported as unavailable; it must not be invented.
-      }
-    }),
-  );
-  return prices;
-}
-
-function formatPaperUsd(value: number): string {
-  return Number.isFinite(value) ? `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—';
-}
-
-async function buildPaperStatusMessage(includePositions = true): Promise<string> {
-  const prices = await getOpenPaperPrices();
-  const equity = currentEquity(paperAccount, prices);
-  const lines = [
-    '📊 <b>SignalForge Paper Trading</b>',
-    `الحالة / Status: <b>${paperEnginePaused ? 'متوقف مؤقتًا / PAUSED' : 'يعمل / RUNNING'}</b>`,
-    `القيمة / Equity: <b>${formatPaperUsd(equity)}</b>`,
-    `الكاش / Cash: ${formatPaperUsd(paperAccount.cash)}`,
-    `المحقق / Realized PnL: ${formatPaperUsd(paperAccount.realizedPnl)}`,
-    `المراكز / Open positions: ${paperAccount.open.length}`,
-  ];
-  if (includePositions && paperAccount.open.length > 0) {
-    lines.push('', '<b>المراكز الحالية / Current positions:</b>');
-    for (const position of paperAccount.open) {
-      const mark = prices[position.asset];
-      const gross = Number.isFinite(mark) ? (mark! - position.entry) * position.qty : Number.NaN;
-      lines.push(
-        `• ${ASSET_LABELS_AR[position.asset]}: qty ${position.qty.toFixed(6)} | entry ${formatPaperUsd(position.entry)} | mark ${formatPaperUsd(mark ?? Number.NaN)} | PnL ${formatPaperUsd(gross)}`,
-      );
-    }
-  } else if (includePositions) {
-    lines.push('', 'لا توجد مراكز مفتوحة / No open positions.');
-  }
-  lines.push('', '<i>Paper-only — لا يتم إرسال أوامر لبورصة.</i>');
-  return lines.join('\n');
-}
-
-async function handlePaperPanic(): Promise<string> {
-  paperEnginePaused = true;
-  saveConfig({ paperEnginePaused: true });
-  const positions = [...paperAccount.open];
-  if (positions.length === 0) {
-    return '🛑 <b>/panic</b>\nلا توجد مراكز ورقية مفتوحة. تم إبقاء المحرك متوقفًا مؤقتًا.\nNo open paper positions; engine remains paused.';
-  }
-
-  const closed: string[] = [];
-  const failed: string[] = [];
-  const handled = new Set<SupportedAsset>();
-  for (const position of positions) {
-    if (handled.has(position.asset)) continue;
-    handled.add(position.asset);
-    try {
-      const ticker = await getTicker(position.asset);
-      if (!Number.isFinite(ticker.price) || ticker.price <= 0) throw new Error('invalid market price');
-      paperAccount = closeBySellSignal(paperAccount, position.asset, ticker.price, Date.now());
-      closed.push(`${ASSET_LABELS_AR[position.asset]} @ ${formatPaperUsd(ticker.price)}`);
-    } catch {
-      failed.push(ASSET_LABELS_AR[position.asset]);
-    }
-  }
-  savePaperAccount(paperAccount);
-  const lines = [
-    '🛑 <b>/panic — Paper only</b>',
-    `تم إغلاق ${closed.length} مركز/مراكز بالسعر السوقي الأخير. / Closed ${closed.length} position(s) at the latest market price.`,
-    ...closed.map((item) => `✅ ${item}`),
-    ...failed.map((asset) => `⚠️ تعذر الإغلاق / Could not close: ${asset}`),
-    'المحرك متوقف مؤقتًا؛ استخدم /resume لإعادة التشغيل. / Engine paused; use /resume to restart.',
-  ];
-  appendLog('WARN', `Paper panic: closed ${closed.length}, failed ${failed.length}`);
-  return lines.join('\n');
-}
 
 async function runScanCycle(): Promise<void> {
   if (scanning) return;
@@ -681,7 +565,6 @@ async function runScanCycle(): Promise<void> {
     }
     // لقطة المحفظة قبل تغييرات هذه الدورة — لنشتق أحداث فتح/جني/قفل بدقة.
     const paperBefore = snapshotPaperAccount(paperAccount);
-    const paperSizingPrices = !paperEnginePaused && paperAccount.open.length > 0 ? await getOpenPaperPrices() : {};
     for (const asset of SUPPORTED_ASSETS) {
       try {
         const [candles1h, candles4h, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
@@ -694,18 +577,6 @@ async function runScanCycle(): Promise<void> {
           getTicker(asset),
           config.regimeEnabled ? getLiquidityRegime().catch(() => null) : Promise.resolve(null),
         ]);
-        // Keep the latest completed candle fresh even when no new signal is
-        // emitted; open paper positions must still receive stop/TP evaluation.
-        const lastClosed = candles1h[candles1h.length - 2] ?? candles1h[candles1h.length - 1];
-        if (lastClosed) {
-          lastPaperCandles.set(asset, {
-            open: lastClosed.open,
-            high: lastClosed.high,
-            low: lastClosed.low,
-            close: lastClosed.close,
-            time: lastClosed.time,
-          });
-        }
         const snapshot = computeSnapshot(candles1h);
         if (!snapshot) continue;
         const [candles1d] = await Promise.all([getCandles1d(asset, 400).catch(() => null)]);
@@ -751,7 +622,7 @@ async function runScanCycle(): Promise<void> {
 
         // Capital protection: refuse BUY candidates when breaker tripped or exposure cap is full.
         if (eligible && signal.spotAction === 'SPOT_BUY' && !gateBlocked) {
-          const verdict = protectionVerdict(signalsNow, protection, asset, Date.now(), paperAccount.closed);
+          const verdict = protectionVerdict(signalsNow, protection, asset, Date.now());
           if (!verdict.allow) {
             appendLog('WARN', `${asset}: ${signal.signalType} REFUSED by ${verdict.reason} @ ${signal.entryPrice}`);
             continue;
@@ -774,21 +645,22 @@ async function runScanCycle(): Promise<void> {
 
         // ─── المحفظة الورقية: فتح شراء / قفل على بيع ───
         // نقيّم على آخر شمعة مكتملة فقط (نستبعد الشمعة الجارية لتجنب تسرب زمني).
-        if (!paperEnginePaused) {
-          if (!gateBlocked && signal.spotAction === 'SPOT_BUY') {
-            paperAccount = openBuy(
-              paperAccount,
-              signal,
-              snapshot.atr14,
-              Date.now(),
-              protection.maxConcurrentSignals,
-              { ...paperSizingPrices, [asset]: ticker.price },
-            );
-          } else if (!gateBlocked && signal.spotAction === 'SPOT_SELL_ALL') {
-            paperAccount = closeBySellSignal(paperAccount, asset, ticker.price, Date.now());
-          }
-          savePaperAccount(paperAccount);
+        const lastClosed = candles1h[candles1h.length - 2] ?? candles1h[candles1h.length - 1];
+        if (lastClosed) {
+          lastPaperCandles.set(asset, {
+            open: lastClosed.open,
+            high: lastClosed.high,
+            low: lastClosed.low,
+            close: lastClosed.close,
+            time: lastClosed.time,
+          });
         }
+        if (!gateBlocked && signal.spotAction === 'SPOT_BUY') {
+          paperAccount = openBuy(paperAccount, signal, snapshot.atr14, Date.now(), protection.maxConcurrentSignals);
+        } else if (!gateBlocked && signal.spotAction === 'SPOT_SELL_ALL') {
+          paperAccount = closeBySellSignal(paperAccount, asset, ticker.price, Date.now());
+        }
+        savePaperAccount(paperAccount);
 
         // إشعار تليجرام الذكي: نُعلن فقط عندما تتغيّر الصورة القابلة للتنفيذ
         // (توصية جديدة أو مختلفة عن آخر ما أُعلن)، لا مع كل مسح يتكرر نفس الحال.
@@ -824,7 +696,7 @@ async function runScanCycle(): Promise<void> {
 
     // ─── المحفظة الورقية: تسيير المراكز المفتوحة بآخر الأسعار والشموع المكتملة ───
     try {
-      if (!paperEnginePaused && paperAccount.open.length > 0) {
+      if (paperAccount.open.length > 0) {
         const prices: Partial<Record<SupportedAsset, number>> = {};
         for (const p of paperAccount.open) {
           try {
@@ -838,7 +710,7 @@ async function runScanCycle(): Promise<void> {
         for (const a of lastPaperCandles.keys()) {
           candleMap[a] = lastPaperCandles.get(a) as PaperCandle;
         }
-        paperAccount = markToMarket(paperAccount, prices, candleMap, Date.now(), protection.paperMaxHoldHours);
+        paperAccount = markToMarket(paperAccount, prices, candleMap, Date.now());
         savePaperAccount(paperAccount);
       }
     } catch {
@@ -857,15 +729,9 @@ async function runScanCycle(): Promise<void> {
           for (const ev of events) {
             let html = '';
             if (ev.kind === 'OPENED') {
-              html = buildPaperEventHtml(
-                { kind: 'OPENED', asset: ev.asset, qty: ev.pos.qty, entry: ev.pos.entry, feesUsd: ev.pos.feesPaid },
-                tgLang,
-              );
+              html = buildPaperEventHtml({ kind: 'OPENED', asset: ev.asset, qty: ev.pos.qty, entry: ev.pos.entry }, tgLang);
             } else if (ev.kind === 'TP1' || ev.kind === 'TP2') {
-              html = buildPaperEventHtml(
-                { kind: ev.kind, asset: ev.asset, entry: ev.pos.entry, pnlUsd: ev.pos.pnlAccum, feesUsd: ev.pos.feesPaid },
-                tgLang,
-              );
+              html = buildPaperEventHtml({ kind: ev.kind, asset: ev.asset, entry: ev.pos.entry, pnlUsd: ev.pos.pnlAccum }, tgLang);
             } else {
               html = buildPaperEventHtml(
                 {
@@ -873,7 +739,6 @@ async function runScanCycle(): Promise<void> {
                   asset: ev.asset,
                   exitAvg: ev.trade?.exitAvg,
                   pnlUsd: ev.trade?.pnlUsd,
-                  feesUsd: ev.trade?.feesUsd,
                   reason: ev.trade?.reason,
                 },
                 tgLang,
@@ -1016,10 +881,8 @@ async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   if (backgroundTimer) clearTimeout(backgroundTimer);
-  stopTelegramPolling();
   await closeCcxtExchangePool();
   appendLog('INFO', `Server stopped (${signal})`);
-  await closeDurablePersistence();
   process.exit(0);
 }
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
@@ -1028,17 +891,6 @@ process.once('SIGINT', () => void shutdown('SIGINT'));
 // ═══════════════════ الواجهة ═══════════════════
 
 async function main(): Promise<void> {
-  const durable = await initializeDurablePersistence();
-  if (durable) {
-    // Reload after migration so the running process uses the remote paper state,
-    // not the JSON snapshot that existed before the database was initialized.
-    paperAccount = loadPaperAccount();
-    appendLog('INFO', 'Durable PostgreSQL storage enabled');
-  } else if (process.env.DATABASE_URL || process.env.SUPABASE_DB_URL) {
-    appendLog('WARN', 'DATABASE_URL was provided but durable storage could not start; local JSON fallback is active');
-  }
-  paperEnginePaused = loadConfig().paperEnginePaused;
-
   if (IS_DEV) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
@@ -1065,23 +917,6 @@ async function main(): Promise<void> {
     appendLog('INFO', `Server started (port ${PORT}, ${IS_DEV ? 'dev' : 'production'})`);
     bootstrapLiquidityCache();
     scheduleNextScan(30_000);
-    startTelegramPolling(telegramRuntimeConfig, {
-      status: () => buildPaperStatusMessage(true),
-      balance: () => buildPaperStatusMessage(false),
-      pause: () => {
-        paperEnginePaused = true;
-        saveConfig({ paperEnginePaused: true });
-        appendLog('WARN', 'Paper engine paused from Telegram');
-        return '⏸️ <b>Paper engine paused</b>\nتم إيقاف محرك التداول الورقي مؤقتًا. / Paper execution is paused.';
-      },
-      resume: () => {
-        paperEnginePaused = false;
-        saveConfig({ paperEnginePaused: false });
-        appendLog('INFO', 'Paper engine resumed from Telegram');
-        return '▶️ <b>Paper engine resumed</b>\nتم استئناف محرك التداول الورقي. / Paper execution is active again.';
-      },
-      panic: handlePaperPanic,
-    });
     // التقرير اليومي: فحص كل ساعة، يُرسل مرة واحدة يومياً عند أول فحص بعد منتصف الليل
     setInterval(() => {
       void sendDailyDigestIfDue().catch(() => {});

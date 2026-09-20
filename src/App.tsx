@@ -12,11 +12,12 @@ import AttributionPanel from './components/AttributionPanel';
 import DexPanel from './components/DexPanel';
 import LiquidationPanel from './components/LiquidationPanel';
 import PaperPanel from './components/PaperPanel';
+import DunePanel from './components/DunePanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
 
-type Tab = 'history' | 'backtest' | 'learning' | 'dex' | 'settings';
+type Tab = 'history' | 'backtest' | 'learning' | 'dex' | 'dune' | 'settings';
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => {
@@ -171,15 +172,6 @@ export default function App() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <section className="space-y-4 lg:col-span-2">
             <PriceChart asset={activeAsset} lang={lang} />
-            {health?.protection?.choppyCooldown?.active && (
-              <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 p-4 text-sm text-rose-200">
-                <div className="font-bold">🛡️ {te('choppyActive')}</div>
-                <div className="mt-1 text-xs text-rose-200/70">
-                  {health.protection.choppyCooldown.consecutiveLosses} {lang === 'ar' ? 'خسائر متتالية — تم إيقاف إشارات الشراء مؤقتًا' : 'consecutive losses — new BUY signals are paused'}
-                  {health.protection.choppyCooldown.cooldownUntil ? ` · ${new Date(health.protection.choppyCooldown.cooldownUntil).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US')}` : ''}
-                </div>
-              </div>
-            )}
             {signalError ? (
               <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-5 text-sm text-rose-300">
                 {te('signalError')}: {signalError}
@@ -253,9 +245,10 @@ export default function App() {
             {([
               ['history', te('tabHistory')],
               ['backtest', te('tabBacktest')],
-              ['settings', te('tabSettings')],
               ['dex', te('tabDex')],
+              ['dune', te('tabDune')],
               ['learning', te('tabLearning')],
+              ['settings', te('tabSettings')],
             ] as [Tab, string][]).map(([key, label]) => (
               <button
                 key={key}
@@ -272,6 +265,7 @@ export default function App() {
             {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} lang={lang} />}
             {tab === 'backtest' && <BacktestPanel lang={lang} />}
             {tab === 'dex' && <DexPanel lang={lang} />}
+            {tab === 'dune' && <DunePanel lang={lang} />}
             {tab === 'learning' && <LearningPanel lang={lang} />}
             {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} lang={lang} />}
           </div>

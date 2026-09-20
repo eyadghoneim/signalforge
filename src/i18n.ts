@@ -13,7 +13,6 @@ const DICT = {
     signalError: 'تعذر جلب الإشارة',
     // بطاقة حالة المحرك
     engineStatus: 'حالة المحرك',
-    choppyActive: 'توقف حماية نشط بعد خسائر متتالية',
     version: 'النسخة',
     lastScan: 'آخر مسح آلي',
     activeAsset: 'الأصل النشط',
@@ -27,6 +26,7 @@ const DICT = {
     tabBacktest: 'الباك تست',
     tabSettings: 'الإعدادات',
     tabDex: 'سيولة DEX',
+    tabDune: 'رادار Dune Plus ⚡',
     tabLearning: 'التعلّم الذاتي',
     // إخلاء مسؤولية
     disclaimer: 'هذه منظومة بحثية ومحاكاة فقط — ليست نصيحة استثمارية. نتائج الباك تست التاريخية لا تضمن أي أداء مستقبلي. التنفيذ الحي معطل بالتصميم.',
@@ -55,13 +55,6 @@ const DICT = {
     gateNote: 'الإشارة محفوظة للتدقيق — هنعرف بعدين لو البوابة منعت خسارة أو منعت ربح.',
     // أرقام المخاطرة
     riskReward: 'مخاطرة/عائد',
-    qualityTitle: 'جودة الدخول',
-    qualityOf: 'من',
-    qualityBase: 'الدرجة الأساسية',
-    qualityPositive: 'دعم إيجابي',
-    qualityNegative: 'خصم وتحذير',
-    qualityNoFactors: 'لا توجد عوامل إضافية مؤثرة',
-    qualityLearning: 'تعديل التعلم',
     stopLoss: 'وقف الخسارة',
     target: 'الأهداف',
     why: 'ليه الإشارة دي؟',
@@ -228,7 +221,6 @@ const DICT = {
     signalError: 'Could not load signal',
     // بطاقة حالة المحرك
     engineStatus: 'Engine status',
-    choppyActive: 'Protection cooldown active after consecutive losses',
     version: 'Version',
     lastScan: 'Last scan',
     activeAsset: 'Active asset',
@@ -242,6 +234,7 @@ const DICT = {
     tabBacktest: 'Backtest',
     tabSettings: 'Settings',
     tabDex: 'DEX liquidity',
+    tabDune: 'Dune On-Chain ⚡',
     tabLearning: 'Self-learning',
     // إخلاء مسؤولية
     disclaimer: 'This is a research & simulation system only — not investment advice. Past backtest results do not guarantee any future performance. Live execution is disabled by design.',
@@ -270,13 +263,6 @@ const DICT = {
     gateNote: 'Signal kept for audit — we will learn later whether the gate blocked a loss or a profit.',
     // أرقام المخاطرة
     riskReward: 'Risk/Reward',
-    qualityTitle: 'Entry quality',
-    qualityOf: 'of',
-    qualityBase: 'Base score',
-    qualityPositive: 'Positive support',
-    qualityNegative: 'Deductions & warnings',
-    qualityNoFactors: 'No additional factors',
-    qualityLearning: 'Learning adjustment',
     stopLoss: 'Stop-loss',
     target: 'Targets',
     why: 'Why this signal?',

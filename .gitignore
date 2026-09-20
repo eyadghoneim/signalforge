@@ -1,8 +1,9 @@
 node_modules/
+build/
 dist/
 data/
+coverage/
+.DS_Store
 *.log
-.env
-_probe.ts
-.openclaw/
-_probe.ts
+.env*
+!.env.example

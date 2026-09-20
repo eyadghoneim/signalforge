@@ -1,0 +1,6 @@
+{
+  "name": "SignalForge Terminal",
+  "description": "Self-learning crypto signal terminal with deterministic multi-timeframe engine, capital protection, honest walk-forward optimization, and live market analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
