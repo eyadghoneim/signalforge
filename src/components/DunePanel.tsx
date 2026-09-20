@@ -146,7 +146,7 @@ export default function DunePanel({ lang }: Props) {
     return `$${num.toLocaleString()}`;
   };
 
-  const isStable = (sym: string) => ['USDT', 'USDC', 'DAI', 'FDUSD', 'USDbC', 'USD'].includes(sym?.toUpperCase());
+  const isStable = (sym: string) => ['USDT', 'USDC', 'DAI', 'FDUSD', 'USDBC', 'USDE', 'USD'].includes(sym?.toUpperCase());
 
   return (
     <div className="space-y-6 pt-4 text-zinc-200">

@@ -228,7 +228,14 @@ ORDER BY dt.block_time DESC
 LIMIT ${safeLimit}
 `.trim();
   const result = await executeDuneSql<DuneWhaleTrade>(sql, DEFAULT_CACHE_TTL_MS);
-  return result.ok ? result.rows : [];
+  if (!result.ok) return [];
+  return result.rows.map((row) => ({
+    block_time: String(row.block_time || ''),
+    project: String(row.project || ''),
+    token_bought_symbol: String(row.token_bought_symbol || ''),
+    token_sold_symbol: String(row.token_sold_symbol || ''),
+    amount_usd: asNumber(row.amount_usd),
+  }));
 }
 
 /** Top DEX volume for the verified watched assets only. */
@@ -254,7 +261,12 @@ ORDER BY total_usd DESC
 LIMIT ${safeLimit}
 `.trim();
   const result = await executeDuneSql<DuneTopToken>(sql, DEFAULT_CACHE_TTL_MS);
-  return result.ok ? result.rows : [];
+  if (!result.ok) return [];
+  return result.rows.map((row) => ({
+    token_bought_symbol: String(row.token_bought_symbol || ''),
+    trades: Math.round(asNumber(row.trades)),
+    total_usd: asNumber(row.total_usd),
+  }));
 }
 
 export { MAX_RESULT_ROWS };
