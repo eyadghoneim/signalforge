@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { createChart, CandlestickSeries, LineSeries, ColorType, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
+import {
+  createChart,
+  CandlestickSeries,
+  LineSeries,
+  ColorType,
+  LineStyle,
+  type IChartApi,
+  type ISeriesApi,
+  type IPriceLine,
+  type UTCTimestamp,
+} from 'lightweight-charts';
 import { ema, normalizeCandlesForChart } from '../../shared/indicators';
-import { api, type SupportedAsset, type Candle } from '../api';
+import { api, type SupportedAsset, type Candle, type Signal } from '../api';
 import { t, type Lang, type TKey } from '../i18n';
 
 interface Props {
   asset: SupportedAsset;
+  signal?: Signal | null;
   lang: Lang;
 }
 
@@ -16,15 +27,17 @@ const ASSET_TITLE_KEY: Record<SupportedAsset, TKey> = {
   PAXG: 'assetPAXG',
 };
 
-export default function PriceChart({ asset, lang }: Props) {
+export default function PriceChart({ asset, signal, lang }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const ema21Ref = useRef<ISeriesApi<'Line'> | null>(null);
   const ema50Ref = useRef<ISeriesApi<'Line'> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
   const lastAssetRef = useRef<string>('');
   const [candles, setCandles] = useState<Candle[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showLevels, setShowLevels] = useState<boolean>(true);
 
   // إنشاء الرسم مرة واحدة
   useEffect(() => {
@@ -70,6 +83,7 @@ export default function PriceChart({ asset, lang }: Props) {
       candleSeriesRef.current = null;
       ema21Ref.current = null;
       ema50Ref.current = null;
+      priceLinesRef.current = [];
     };
   }, []);
 
@@ -129,15 +143,151 @@ export default function PriceChart({ asset, lang }: Props) {
     }
   }, [candles, asset]);
 
+  // رسم وتحديث خطوط التوصية (Entry, Stop Loss, TP1, TP2, TP3)
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    // إزالة الخطوط السابقة أولاً
+    for (const line of priceLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // تجاهل أي خط تمت إزالته بالفعل مع إعادة بناء الشارت
+      }
+    }
+    priceLinesRef.current = [];
+
+    // إذا تم تفعيل العرض وكانت التوصية تخص نفس الأصل
+    if (showLevels && signal && signal.asset === asset && signal.entryPrice > 0) {
+      const created: IPriceLine[] = [];
+
+      // 1. سعر الدخول Entry (أزرق سماوي)
+      created.push(
+        series.createPriceLine({
+          price: signal.entryPrice,
+          color: '#38bdf8',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: `ENTRY $${signal.entryPrice.toLocaleString('en-US')}`,
+        }),
+      );
+
+      // 2. وقف الخسارة Stop Loss (أحمر وردي)
+      if (signal.stopLoss > 0) {
+        created.push(
+          series.createPriceLine({
+            price: signal.stopLoss,
+            color: '#f43f5e',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `SL $${signal.stopLoss.toLocaleString('en-US')}`,
+          }),
+        );
+      }
+
+      // 3. الهدف الأول TP1 (أخضر زمردي)
+      if (signal.target1 > 0) {
+        created.push(
+          series.createPriceLine({
+            price: signal.target1,
+            color: '#10b981',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `TP1 $${signal.target1.toLocaleString('en-US')}`,
+          }),
+        );
+      }
+
+      // 4. الهدف الثاني TP2 (أخضر داكن)
+      if (signal.target2 > 0) {
+        created.push(
+          series.createPriceLine({
+            price: signal.target2,
+            color: '#059669',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `TP2 $${signal.target2.toLocaleString('en-US')}`,
+          }),
+        );
+      }
+
+      // 5. الهدف الثالث TP3 (أخضر عميق)
+      if (signal.target3 > 0) {
+        created.push(
+          series.createPriceLine({
+            price: signal.target3,
+            color: '#047857',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `TP3 $${signal.target3.toLocaleString('en-US')}`,
+          }),
+        );
+      }
+
+      priceLinesRef.current = created;
+    }
+
+    return () => {
+      for (const line of priceLinesRef.current) {
+        try {
+          series.removePriceLine(line);
+        } catch {
+          // cleanup
+        }
+      }
+      priceLinesRef.current = [];
+    };
+  }, [signal, asset, showLevels]);
+
+  const hasSignalLevels = Boolean(signal && signal.asset === asset && signal.entryPrice > 0);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
-        <div className="text-sm font-bold text-zinc-300">
-          {t(lang, ASSET_TITLE_KEY[asset])} — {t(lang, 'chartTitleSuffix')}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="text-sm font-bold text-zinc-300">
+            {t(lang, ASSET_TITLE_KEY[asset])} — {t(lang, 'chartTitleSuffix')}
+          </div>
+          {hasSignalLevels && (
+            <button
+              onClick={() => setShowLevels(!showLevels)}
+              className={`rounded-lg px-2 py-0.5 text-[11px] font-bold transition ${
+                showLevels
+                  ? 'border border-amber-400/40 bg-amber-400/10 text-amber-300'
+                  : 'border border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              🎯 {lang === 'ar' ? (showLevels ? 'إخفاء مستويات التوصية' : 'إظهار مستويات التوصية') : (showLevels ? 'Hide Levels' : 'Show Levels')}
+            </button>
+          )}
         </div>
-        <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-          <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-amber-400" /> EMA21</span>
-          <span className="flex items-center gap-1"><span className="h-0.5 w-4 rounded bg-sky-400" /> EMA50</span>
+
+        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+          <span className="flex items-center gap-1 text-zinc-400">
+            <span className="h-0.5 w-3 rounded bg-amber-400" /> EMA21
+          </span>
+          <span className="flex items-center gap-1 text-zinc-400">
+            <span className="h-0.5 w-3 rounded bg-sky-400" /> EMA50
+          </span>
+          {showLevels && hasSignalLevels && signal && (
+            <div className="flex flex-wrap items-center gap-1.5 border-r border-zinc-800 pr-2 font-mono" dir="ltr">
+              <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-400">
+                Entry: ${signal.entryPrice.toLocaleString('en-US')}
+              </span>
+              <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold text-rose-400">
+                SL: ${signal.stopLoss.toLocaleString('en-US')}
+              </span>
+              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                TP1: ${signal.target1.toLocaleString('en-US')}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       {error ? (

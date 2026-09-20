@@ -33,6 +33,9 @@ const DICT = {
     engineNote: 'كل إشارة (الممنوعة كذلك) تُحفظ وتُتابع تلقائياً: هل TP1 يضرب قبل وقف الخسارة؟ — عشان نعرف مين من المؤشرات بيكسب فعلاً.',
     // تبويبات
     tabHistory: 'سجل الإشارات',
+    tabElliott: 'موجات إليوت وفيبوناتشي',
+    tabMacro: 'المفكرة وفلتر الحظر',
+    tabDepth: 'عمق السيولة وجدران الحيتان',
     tabBacktest: 'الباك تست',
     tabSettings: 'الإعدادات',
     tabDex: 'سيولة DEX',
@@ -258,6 +261,9 @@ const DICT = {
     engineNote: 'Every signal (blocked ones too) is stored and tracked automatically: does TP1 hit before stop-loss? — so we learn which indicators actually win.',
     // تبويبات
     tabHistory: 'Signal history',
+    tabElliott: 'Elliott Wave',
+    tabMacro: 'Macro Calendar',
+    tabDepth: 'Order Book Depth',
     tabBacktest: 'Backtest',
     tabSettings: 'Settings',
     tabDex: 'DEX liquidity',

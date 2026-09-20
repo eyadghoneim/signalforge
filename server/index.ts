@@ -58,6 +58,9 @@ import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
+import { getMacroCalendar } from './macroEvents';
+import { getOrderBookDepth } from './orderBookDepth';
+import { analyzeElliottWave } from '../shared/elliottWave';
 import { closeCcxtExchangePool } from './ccxtProvider';
 import { getWhaleNetflow } from './whaleAlert';
 import { getLiquidationRadar } from './liquidationRadar';
@@ -273,6 +276,45 @@ app.get('/api/market/summary', async (_req, res) => {
     }),
   );
   res.json({ ok: true, assets: results });
+});
+
+// ─── 1. المفكرة الاقتصادية وفترات الحظر (Macro Calendar & Blackout Filter) ───
+app.get('/api/market/macro-events', (_req, res) => {
+  try {
+    const calendar = getMacroCalendar();
+    res.json({ ok: true, ...calendar });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// ─── 2. دفتر الأوامر وعمق السيولة وجدران الحيتان (L2 Depth & Whale Walls) ───
+app.get('/api/market/depth', async (req, res) => {
+  const asset = String(req.query.asset || 'BTC').toUpperCase() as SupportedAsset;
+  if (!SUPPORTED_ASSETS.includes(asset)) {
+    return res.status(400).json({ ok: false, error: 'unsupported asset' });
+  }
+  try {
+    const depth = await getOrderBookDepth(asset);
+    res.json({ ok: true, depth });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// ─── 3. محرك موجات إليوت وفيبوناتشي الحسابي ───
+app.get('/api/market/elliott', async (req, res) => {
+  const asset = String(req.query.asset || 'BTC').toUpperCase() as SupportedAsset;
+  if (!SUPPORTED_ASSETS.includes(asset)) {
+    return res.status(400).json({ ok: false, error: 'unsupported asset' });
+  }
+  try {
+    const candles = await getCandles1h(asset);
+    const analysis = analyzeElliottWave(candles, asset);
+    res.json({ ok: true, analysis });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 // رادار التصفية — بيانات حقيقية من OKX (بدون أرقام وهمية)

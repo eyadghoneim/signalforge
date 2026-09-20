@@ -15,11 +15,14 @@ import PaperPanel from './components/PaperPanel';
 import DuneContextPanel from './components/DuneContextPanel';
 import DuneResearchPanel from './components/DunePanel';
 import DailyReportModal from './components/DailyReportModal';
+import ElliottWavePanel from './components/ElliottWavePanel';
+import MacroCalendarPanel from './components/MacroCalendarPanel';
+import WhaleDepthPanel from './components/WhaleDepthPanel';
 import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
 
-type Tab = 'history' | 'backtest' | 'learning' | 'dex' | 'dune' | 'settings';
+type Tab = 'history' | 'elliott' | 'macro' | 'depth' | 'backtest' | 'learning' | 'dex' | 'dune' | 'settings';
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => {
@@ -224,7 +227,7 @@ export default function App() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {/* العمود الرئيسي: الرسم البياني + كارت التوصية + مساحة العمل والتبويبات التحليلية */}
           <section className="space-y-4 lg:col-span-2">
-            <PriceChart asset={activeAsset} lang={lang} />
+            <PriceChart asset={activeAsset} signal={signal} lang={lang} />
             {health?.protection?.choppyCooldown?.active && (
               <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 p-4 text-sm text-rose-200">
                 <div className="font-bold">🛡️ {te('choppyActive')}</div>
@@ -252,6 +255,9 @@ export default function App() {
               <div className="flex flex-wrap gap-2 border-b border-zinc-800 pb-2">
                 {([
                   ['history', te('tabHistory')],
+                  ['elliott', te('tabElliott')],
+                  ['macro', te('tabMacro')],
+                  ['depth', te('tabDepth')],
                   ['backtest', te('tabBacktest')],
                   ['dex', te('tabDex')],
                   ['dune', te('tabDune')],
@@ -273,6 +279,9 @@ export default function App() {
               </div>
               <div className="pt-4 rise-in">
                 {tab === 'history' && <HistoryPanel signals={history} onRefresh={() => void refreshCore()} lang={lang} />}
+                {tab === 'elliott' && <ElliottWavePanel asset={activeAsset} lang={lang} />}
+                {tab === 'macro' && <MacroCalendarPanel lang={lang} />}
+                {tab === 'depth' && <WhaleDepthPanel asset={activeAsset} lang={lang} />}
                 {tab === 'backtest' && <BacktestPanel lang={lang} />}
                 {tab === 'dex' && <DexPanel lang={lang} />}
                 {tab === 'dune' && <DuneResearchPanel lang={lang} />}

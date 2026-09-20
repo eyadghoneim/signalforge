@@ -2,7 +2,7 @@
 // Comments are intentionally English-only: keeps the file byte-safe under any
 // console codepage when written/read through shell tooling.
 
-import type { BacktestTrade, PerformanceStats, ScoreBucketStat, ExitReasonStat } from '../shared/types';
+import type { BacktestTrade, PerformanceStats, ScoreBucketStat, ExitReasonStat, MonteCarloResult } from '../shared/types';
 
 function round(value: number, digits: number): number {
   const f = 10 ** digits;
@@ -22,6 +22,102 @@ function scoreBucket(score: number): string {
   if (score >= 75) return '75-79';
   if (score >= 70) return '70-74';
   return '<70';
+}
+
+function seededRng(seed: number) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * Deterministic seeded Monte Carlo permutation test (1,000 iterations).
+ * Re-orders trade PnL sequence to test whether backtest results depend on a lucky sequence.
+ */
+export function computeMonteCarloSimulation(
+  trades: BacktestTrade[],
+  initialEquity: number,
+  iterations = 1000,
+  seed = 4242,
+): MonteCarloResult | undefined {
+  if (trades.length < 5 || initialEquity <= 0) return undefined;
+
+  const rand = seededRng(seed);
+  const pnlList = trades.map((t) => t.pnlUsd);
+  const simDrawdowns: number[] = [];
+  const simFinalEquities: number[] = [];
+  let ruinHits = 0;
+  const ruinThreshold = initialEquity * 0.5; // Capital drop >= 50%
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const shuffled = [...pnlList];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const temp = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = temp;
+    }
+
+    let eq = initialEquity;
+    let peak = initialEquity;
+    let iterMaxDD = 0;
+    let touchedRuin = false;
+
+    for (let i = 0; i < shuffled.length; i++) {
+      eq += shuffled[i];
+      if (eq > peak) {
+        peak = eq;
+      }
+      const dd = peak > 0 ? ((peak - eq) / peak) * 100 : 0;
+      if (dd > iterMaxDD) {
+        iterMaxDD = dd;
+      }
+      if (eq <= ruinThreshold) {
+        touchedRuin = true;
+      }
+    }
+
+    if (touchedRuin) ruinHits++;
+    simDrawdowns.push(iterMaxDD);
+    simFinalEquities.push(eq);
+  }
+
+  simDrawdowns.sort((a, b) => a - b);
+  simFinalEquities.sort((a, b) => a - b);
+
+  const idx5 = Math.floor(iterations * 0.05);
+  const idx50 = Math.floor(iterations * 0.50);
+  const idx95 = Math.min(iterations - 1, Math.floor(iterations * 0.95));
+
+  const lossCount = simFinalEquities.filter((e) => e < initialEquity).length;
+
+  return {
+    iterations,
+    maxDrawdown: {
+      p5: round(simDrawdowns[idx5], 1),
+      p50: round(simDrawdowns[idx50], 1),
+      p95: round(simDrawdowns[idx95], 1),
+      worst: round(simDrawdowns[simDrawdowns.length - 1], 1),
+      best: round(simDrawdowns[0], 1),
+    },
+    finalEquity: {
+      p5: round(simFinalEquities[idx5], 2),
+      p50: round(simFinalEquities[idx50], 2),
+      p95: round(simFinalEquities[idx95], 2),
+      worst: round(simFinalEquities[0], 2),
+      best: round(simFinalEquities[simFinalEquities.length - 1], 2),
+    },
+    riskOfRuinPercent: round((ruinHits / iterations) * 100, 1),
+    lossProbabilityPercent: round((lossCount / iterations) * 100, 1),
+    confidenceInterval95: {
+      minEquity: round(simFinalEquities[idx5], 2),
+      maxEquity: round(simFinalEquities[idx95], 2),
+      minDrawdown: round(simDrawdowns[idx5], 1),
+      maxDrawdown: round(simDrawdowns[idx95], 1),
+    },
+  };
 }
 
 /**
@@ -64,6 +160,18 @@ export function computePerformanceStats(
       ? round(returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length / sd, 3)
       : null;
 
+  // Sortino ratio: downside deviation penalizes negative returns only
+  const meanReturnPct = returnPcts.length > 0 ? returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length : 0;
+  const downsideReturns = returnPcts.filter((r) => r < 0);
+  const downsideDeviation =
+    downsideReturns.length > 0
+      ? Math.sqrt(downsideReturns.reduce((a, r) => a + r ** 2, 0) / returnPcts.length)
+      : 0;
+  const sortinoRatio =
+    returnPcts.length >= 2 && downsideDeviation > 0
+      ? round(meanReturnPct / downsideDeviation, 3)
+      : null;
+
   // Max drawdown + peak-to-trough duration from the equity curve.
   let peak = initialEquity;
   let peakTime = equityCurve.length > 0 ? equityCurve[0].time : 0;
@@ -80,6 +188,14 @@ export function computePerformanceStats(
       maxDrawdownDurationHours = round((p.time - peakTime) / 3600, 1);
     }
   }
+
+  // Calmar ratio: Total Return % / Max Drawdown %
+  const finalEq = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : initialEquity;
+  const totalReturnPercent = initialEquity > 0 ? ((finalEq - initialEquity) / initialEquity) * 100 : 0;
+  const calmarRatio = maxDD > 0 ? round(totalReturnPercent / maxDD, 2) : null;
+
+  // Monte Carlo permutation simulation
+  const monteCarlo = computeMonteCarloSimulation(trades, initialEquity);
 
   // Win/loss streaks over chronological order.
   let curWin = 0;
@@ -150,6 +266,8 @@ export function computePerformanceStats(
     avgLossUsd,
     payoffRatio,
     sharpePerTrade,
+    sortinoRatio,
+    calmarRatio,
     maxDrawdownPercent: round(maxDD, 1),
     maxDrawdownDurationHours,
     longestWinStreak: longestWin,
@@ -157,5 +275,6 @@ export function computePerformanceStats(
     timeInMarketPercent,
     scoreBuckets,
     exitBreakdown,
+    monteCarlo,
   };
 }

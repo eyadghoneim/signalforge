@@ -246,6 +246,28 @@ export interface ExitReasonStat {
   totalPnlUsd: number;
 }
 
+export interface MonteCarloPercentiles {
+  p5: number;
+  p50: number;
+  p95: number;
+  worst: number;
+  best: number;
+}
+
+export interface MonteCarloResult {
+  iterations: number;
+  maxDrawdown: MonteCarloPercentiles;
+  finalEquity: MonteCarloPercentiles;
+  riskOfRuinPercent: number;
+  lossProbabilityPercent: number;
+  confidenceInterval95: {
+    minEquity: number;
+    maxEquity: number;
+    minDrawdown: number;
+    maxDrawdown: number;
+  };
+}
+
 export interface PerformanceStats {
   totalTrades: number;
   wins: number;
@@ -257,6 +279,8 @@ export interface PerformanceStats {
   avgLossUsd: number | null;
   payoffRatio: number | null;
   sharpePerTrade: number | null;
+  sortinoRatio?: number | null;
+  calmarRatio?: number | null;
   maxDrawdownPercent: number;
   maxDrawdownDurationHours: number | null;
   longestWinStreak: number;
@@ -264,6 +288,7 @@ export interface PerformanceStats {
   timeInMarketPercent: number | null;
   scoreBuckets: ScoreBucketStat[];
   exitBreakdown: ExitReasonStat[];
+  monteCarlo?: MonteCarloResult;
 }
 // --- Walk-forward optimizer (v3) ---
 export interface WalkForwardCell {
@@ -331,4 +356,103 @@ export interface FngPoint {
   value: number;
   classification: string;
   timestamp: number;
+}
+
+// ═══════════════ v3.1: أنظمة متقدمة مستوحاة من بوت إياد (NexusQuant) ═══════════════
+
+// 1. موجات إليوت وفيبوناتشي (Elliott Wave & Fibonacci)
+export type ElliottWaveId =
+  | 'WAVE_1'
+  | 'WAVE_2'
+  | 'WAVE_3'
+  | 'WAVE_4'
+  | 'WAVE_5'
+  | 'WAVE_A'
+  | 'WAVE_B'
+  | 'WAVE_C'
+  | 'UNDEFINED';
+
+export type ElliottWaveType = 'IMPULSE' | 'CORRECTIVE' | 'TRANSITION';
+
+export interface ElliottFibLevels {
+  level0_236: number;
+  level0_382: number;
+  level0_500: number;
+  level0_618: number;
+  level0_786: number;
+  level1_618: number;
+}
+
+export interface ElliottWaveAnalysis {
+  asset: SupportedAsset;
+  currentWave: ElliottWaveId;
+  waveType: ElliottWaveType;
+  estimatedTarget: number;
+  invalidationPrice: number;
+  fibLevels: ElliottFibLevels;
+  confidence: number;
+  rulesPassed: string[];
+  rulesViolated: string[];
+  impulseVolumeRatio: number;
+  validatedSwingsCount: number;
+  explanationAr: string;
+  explanationEn: string;
+}
+
+// 2. المفكرة الاقتصادية وفترات الحظر (Macro Calendar & Blackout Filter)
+export interface MacroEvent {
+  id: string;
+  name: string;
+  nameAr: string;
+  category: 'FOMC' | 'CPI' | 'NFP' | 'PPI' | 'GDP' | 'CRYPTO_EVENT';
+  impact: 'HIGH' | 'MEDIUM' | 'LOW';
+  timestamp: number;
+  timeFormatted: string;
+  previousValue: string;
+  forecastValue: string;
+  actualValue?: string;
+  blackoutHoursBefore: number;
+  blackoutHoursAfter: number;
+  descriptionAr: string;
+  status: 'ACTIVE_BLACKOUT' | 'UPCOMING' | 'PASSED';
+}
+
+export interface MacroCalendarResponse {
+  isBlackoutActive: boolean;
+  activeEvent: MacroEvent | null;
+  lockReasonAr: string | null;
+  lockReasonEn: string | null;
+  upcomingEvents: MacroEvent[];
+  lastUpdated: number;
+}
+
+// 3. دفتر الأوامر وعمق السيولة وجدران الحيتان (Order Book Depth & Whale Walls)
+export interface OrderBookTier {
+  price: number;
+  amount: number;
+  total: number;
+}
+
+export interface OrderBookWall {
+  price: number;
+  amount: number;
+  distancePercent: number;
+}
+
+export interface OrderBookDepth {
+  asset: SupportedAsset;
+  source: string;
+  isSimulated: boolean;
+  bids: OrderBookTier[];
+  asks: OrderBookTier[];
+  spread: number;
+  spreadPercent: number;
+  midPrice: number;
+  imbalancePercent: number;
+  buyerPercentage: number;
+  sellerPercentage: number;
+  bidWall: OrderBookWall | null;
+  askWall: OrderBookWall | null;
+  rule3Passed: boolean;
+  lastUpdated: number;
 }

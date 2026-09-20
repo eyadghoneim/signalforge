@@ -1334,6 +1334,92 @@ console.log('\n=== 26. Dune research guardrails ===');
   assert(validateDuneSql('UPDATE x SET y = 1', true) !== null, 'write SQL is rejected');
 }
 
+console.log('\n=== 27. Monte Carlo simulation & Sortino/Calmar metrics ===');
+{
+  const { computePerformanceStats, computeMonteCarloSimulation } = await import('../server/performance');
+  const mockTrades: import('../shared/types').BacktestTrade[] = [
+    { entryTime: 1000, exitTime: 2000, entry: 100, exitAvgPrice: 105, qty: 1, pnlUsd: 50, exitReason: 'TP1_SL', signalScore: 80 },
+    { entryTime: 2100, exitTime: 3100, entry: 105, exitAvgPrice: 100, qty: 1, pnlUsd: -25, exitReason: 'SL', signalScore: 75 },
+    { entryTime: 3200, exitTime: 4200, entry: 100, exitAvgPrice: 110, qty: 1, pnlUsd: 75, exitReason: 'TP2_SL', signalScore: 85 },
+    { entryTime: 4300, exitTime: 5300, entry: 110, exitAvgPrice: 105, qty: 1, pnlUsd: -20, exitReason: 'SL', signalScore: 70 },
+    { entryTime: 5400, exitTime: 6400, entry: 105, exitAvgPrice: 115, qty: 1, pnlUsd: 100, exitReason: 'TP3', signalScore: 90 },
+  ];
+  const mockEquity = [
+    { time: 1000, equity: 1000, buyHold: 1000 },
+    { time: 2000, equity: 1050, buyHold: 1010 },
+    { time: 3100, equity: 980, buyHold: 1020 },
+    { time: 6400, equity: 1180, buyHold: 1050 },
+  ];
+
+  const stats = computePerformanceStats(mockTrades, mockEquity, 1000, 1);
+  assert(typeof stats.sortinoRatio === 'number' && stats.sortinoRatio > 0, 'Sortino ratio computed and positive');
+  assert(typeof stats.calmarRatio === 'number' && stats.calmarRatio > 0, 'Calmar ratio computed and positive');
+  assert(stats.monteCarlo !== undefined, 'Monte Carlo simulation produced output');
+  assert(stats.monteCarlo?.iterations === 1000, 'Monte Carlo runs 1000 iterations');
+  assert(stats.monteCarlo!.maxDrawdown.p50 >= 0, 'Monte Carlo median DD is non-negative');
+  assert(stats.monteCarlo!.maxDrawdown.worst >= stats.monteCarlo!.maxDrawdown.p50, 'Monte Carlo worst DD >= median DD');
+  assert(stats.monteCarlo!.lossProbabilityPercent >= 0 && stats.monteCarlo!.lossProbabilityPercent <= 100, 'Monte Carlo loss probability within 0-100%');
+
+  // Test deterministic repeatability
+  const mc1 = computeMonteCarloSimulation(mockTrades, 1000, 500, 12345);
+  const mc2 = computeMonteCarloSimulation(mockTrades, 1000, 500, 12345);
+  assert(mc1?.maxDrawdown.p50 === mc2?.maxDrawdown.p50, 'Monte Carlo simulation is strictly deterministic given same seed');
+}
+
+console.log('\n=== 28. Elliott Wave, Macro Calendar & Whale Order Book Depth ===');
+{
+  const { analyzeElliottWave, extractValidatedSwings } = await import('../shared/elliottWave');
+  const { getMacroCalendar } = await import('../server/macroEvents');
+  const { getOrderBookDepth } = await import('../server/orderBookDepth');
+
+  // 1. Elliott Wave Engine
+  const sampleCandles = syntheticCandles(120, 30);
+  const swings = extractValidatedSwings(sampleCandles, 3, 3, 0.75);
+  assert(Array.isArray(swings), 'extractValidatedSwings returns array of swings');
+  
+  const elliott = analyzeElliottWave(sampleCandles, 'BTC');
+  assert(elliott.asset === 'BTC', 'Elliott wave analysis includes asset');
+  assert(typeof elliott.confidence === 'number' && elliott.confidence >= 20 && elliott.confidence <= 70, 'Confidence is bounded between 20% and 70%');
+  assert(typeof elliott.fibLevels.level0_618 === 'number', 'Fibonacci 0.618 level is calculated');
+  assert(typeof elliott.fibLevels.level1_618 === 'number', 'Fibonacci 1.618 level is calculated');
+  assert(elliott.estimatedTarget > 0, 'Estimated target is positive');
+  assert(elliott.invalidationPrice > 0, 'Invalidation price is positive');
+
+  // Small candles fallback
+  const fallbackElliott = analyzeElliottWave([], 'ETH');
+  assert(fallbackElliott.currentWave === 'UNDEFINED', 'Empty candles fallback returns UNDEFINED wave');
+  assert(fallbackElliott.confidence === 20, 'Empty candles fallback returns base 20% confidence');
+
+  // 2. Macro Calendar & Blackout Filter
+  const now = Date.now();
+  const dayStart = Math.floor(now / (24 * 3600 * 1000)) * (24 * 3600 * 1000);
+  const cal = getMacroCalendar(now, dayStart);
+  assert(Array.isArray(cal.upcomingEvents) && cal.upcomingEvents.length >= 5, 'Macro calendar has at least 5 major events');
+  assert(cal.upcomingEvents.some((e) => e.category === 'CPI'), 'Macro calendar includes CPI');
+  assert(cal.upcomingEvents.some((e) => e.category === 'FOMC'), 'Macro calendar includes FOMC');
+  assert(cal.upcomingEvents.some((e) => e.category === 'NFP'), 'Macro calendar includes NFP');
+  assert(typeof cal.isBlackoutActive === 'boolean', 'isBlackoutActive is boolean');
+
+  // Test active blackout detection logic with simulated time at event
+  const cpiEvent = cal.upcomingEvents.find((e) => e.category === 'CPI')!;
+  const eventTime = cpiEvent.timestamp;
+  const blackoutCal = getMacroCalendar(eventTime, dayStart); // Evaluated right at event time
+  assert(blackoutCal.isBlackoutActive === true, 'Macro calendar identifies active blackout at event time');
+  assert(blackoutCal.activeEvent !== null, 'Active event is populated during blackout');
+  assert(typeof blackoutCal.lockReasonAr === 'string' && blackoutCal.lockReasonAr!.length > 0, 'Lock reason in Arabic is generated');
+
+  // 3. Order Book Depth & Whale Walls
+  const depth = await getOrderBookDepth('BTC');
+  assert(depth.asset === 'BTC', 'Order book depth has correct asset');
+  assert(depth.bids.length > 0 && depth.asks.length > 0, 'Order book has bids and asks');
+  assert(depth.midPrice > 0, 'Order book has valid midPrice');
+  assert(depth.spread >= 0, 'Order book has valid spread');
+  assert(depth.buyerPercentage + depth.sellerPercentage === 100, 'Buyer + seller percentage equals 100%');
+  assert(depth.bidWall !== null, 'Whale bid wall is detected');
+  assert(depth.askWall !== null, 'Whale ask wall is detected');
+  assert(typeof depth.rule3Passed === 'boolean', 'Rule 3 tight spread liquidity check is evaluated');
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

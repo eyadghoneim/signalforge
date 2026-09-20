@@ -179,12 +179,91 @@ export default function BacktestPanel({ lang }: { lang: Lang }) {
               {stat('Expectancy (R)', String(result.performance.expectancyR ?? '-'), (result.performance.expectancyR ?? 0) > 0 ? 'text-emerald-300' : 'text-rose-300')}
               {stat('Payoff W/L', String(result.performance.payoffRatio ?? '-'))}
               {stat('Trade return Z', String(result.performance.sharpePerTrade ?? '-'))}
+              {stat('Sortino Ratio', String(result.performance.sortinoRatio ?? '-'), (result.performance.sortinoRatio ?? 0) > 0.5 ? 'text-emerald-300' : 'text-zinc-300')}
+              {stat('Calmar Ratio', String(result.performance.calmarRatio ?? '-'), (result.performance.calmarRatio ?? 0) > 0.5 ? 'text-emerald-300' : 'text-zinc-300')}
               {stat('Avg win', result.performance.avgWinUsd !== null ? `$${result.performance.avgWinUsd}` : '-')}
               {stat('Avg loss', result.performance.avgLossUsd !== null ? `$${result.performance.avgLossUsd}` : '-')}
               {stat('DD duration', result.performance.maxDrawdownDurationHours !== null ? `${result.performance.maxDrawdownDurationHours}h` : '-')}
               {stat('Win streak', String(result.performance.longestWinStreak))}
               {stat('Loss streak', String(result.performance.longestLossStreak))}
               {stat('Time in market', result.performance.timeInMarketPercent !== null ? `${result.performance.timeInMarketPercent}%` : '-')}
+            </div>
+          )}
+
+          {result.performance?.monteCarlo && (
+            <div className="overflow-hidden rounded-2xl border border-purple-500/30 bg-zinc-900/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/15 text-purple-400">
+                    <Beaker size={14} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-zinc-200">
+                      {lang === 'ar' ? 'محاكاة مونت كارلو الاحتمالية (1,000 جولة عشوائية)' : 'Monte Carlo Permutation Simulation (1,000 runs)'}
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      {lang === 'ar'
+                        ? 'اختبار هل النتائج تحققت بسبب تسلسل صفقات محظوظ أم أنها استراتيجية متينة وقابلة للصمود عبر تدوير الترتيب'
+                        : 'Tests whether backtest results depend on a lucky sequence of trades or remain resilient across permutations'}
+                    </div>
+                  </div>
+                </div>
+                <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[10px] font-mono text-purple-300">
+                  Deterministic Seeded
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                {stat(
+                  lang === 'ar' ? 'هبوط الوسيط (50%)' : 'Median DD (50%)',
+                  `${result.performance.monteCarlo.maxDrawdown.p50}%`,
+                  'text-amber-300',
+                )}
+                {stat(
+                  lang === 'ar' ? 'أسوأ سيناريو هبوط' : 'Worst Max DD',
+                  `${result.performance.monteCarlo.maxDrawdown.worst}%`,
+                  result.performance.monteCarlo.maxDrawdown.worst > 30 ? 'text-rose-400' : 'text-amber-400',
+                )}
+                {stat(
+                  lang === 'ar' ? 'هبوط 95% ثقة' : '95% Worst DD',
+                  `${result.performance.monteCarlo.maxDrawdown.p95}%`,
+                  'text-amber-300',
+                )}
+                {stat(
+                  lang === 'ar' ? 'وسيط الرصيد النهائي' : 'Median Final Eq',
+                  `$${result.performance.monteCarlo.finalEquity.p50.toLocaleString('en-US')}`,
+                  result.performance.monteCarlo.finalEquity.p50 >= result.startEquity ? 'text-emerald-300' : 'text-rose-300',
+                )}
+                {stat(
+                  lang === 'ar' ? 'احتمالية خسارة الرأس مال' : 'Loss Probability',
+                  `${result.performance.monteCarlo.lossProbabilityPercent}%`,
+                  result.performance.monteCarlo.lossProbabilityPercent === 0
+                    ? 'text-emerald-400'
+                    : result.performance.monteCarlo.lossProbabilityPercent < 20
+                    ? 'text-amber-300'
+                    : 'text-rose-400',
+                )}
+                {stat(
+                  lang === 'ar' ? 'خطر الإفلاس (<50% رأس مال)' : 'Ruin Risk (<50%)',
+                  `${result.performance.monteCarlo.riskOfRuinPercent}%`,
+                  result.performance.monteCarlo.riskOfRuinPercent === 0 ? 'text-emerald-400' : 'text-rose-400',
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-950/60 px-3 py-2 text-[11px] text-zinc-400">
+                <div>
+                  <span className="text-zinc-500">{lang === 'ar' ? 'مجال الثقة 95% للرصيد النهائي: ' : '95% Confidence Final Equity: '}</span>
+                  <span className="font-mono font-bold text-zinc-200" dir="ltr">
+                    ${result.performance.monteCarlo.confidenceInterval95.minEquity.toLocaleString('en-US')} → ${result.performance.monteCarlo.confidenceInterval95.maxEquity.toLocaleString('en-US')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-500">{lang === 'ar' ? 'مجال الثقة 95% لأقصى هبوط: ' : '95% Confidence Max DD: '}</span>
+                  <span className="font-mono font-bold text-amber-300" dir="ltr">
+                    {result.performance.monteCarlo.confidenceInterval95.minDrawdown}% → {result.performance.monteCarlo.confidenceInterval95.maxDrawdown}%
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 

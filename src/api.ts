@@ -15,6 +15,15 @@ import type {
   ProtectionConfig,
   TagLearningStat,
   LearningLesson,
+  MonteCarloResult,
+  MonteCarloPercentiles,
+  PerformanceStats,
+  ElliottWaveAnalysis,
+  MacroCalendarResponse,
+  MacroEvent,
+  OrderBookDepth,
+  OrderBookTier,
+  OrderBookWall,
 } from '../shared/types';
 
 export type {
@@ -33,6 +42,15 @@ export type {
   ProtectionConfig,
   TagLearningStat,
   LearningLesson,
+  MonteCarloResult,
+  MonteCarloPercentiles,
+  PerformanceStats,
+  ElliottWaveAnalysis,
+  MacroCalendarResponse,
+  MacroEvent,
+  OrderBookDepth,
+  OrderBookTier,
+  OrderBookWall,
 };
 
 export interface TickerSummary {
@@ -310,6 +328,9 @@ export const api = {
   resetPaper: () => j<{ ok: true }>('/api/paper/reset', { method: 'POST', body: '{}' }),
   liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
   dailyReport: () => j<DailyReportData>('/api/report/daily'),
+  macroCalendar: () => j<{ ok: true } & MacroCalendarResponse>('/api/market/macro-events'),
+  depth: (asset: SupportedAsset) => j<{ ok: true; depth: OrderBookDepth }>(`/api/market/depth?asset=${asset}`),
+  elliott: (asset: SupportedAsset) => j<{ ok: true; analysis: ElliottWaveAnalysis }>(`/api/market/elliott?asset=${asset}`),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {
       method: 'POST',

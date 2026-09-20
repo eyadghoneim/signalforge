@@ -1,0 +1,223 @@
+import { useEffect, useState } from 'react';
+import { Calendar, ShieldAlert, ShieldCheck, Clock, Flame, RefreshCw, Radio } from 'lucide-react';
+import { api, type MacroCalendarResponse } from '../api';
+import type { Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+}
+
+export default function MacroCalendarPanel({ lang }: Props) {
+  const [data, setData] = useState<MacroCalendarResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [timeLeftStr, setTimeLeftStr] = useState<string>('');
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const res = await api.macroCalendar();
+      if (res.ok) {
+        setData(res);
+      }
+    } catch (e) {
+      console.warn('Failed to load macro calendar:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+    const interval = setInterval(loadData, 45_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Update countdown to closest event
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (!data || !data.upcomingEvents.length) return;
+      const now = Date.now();
+      const nextEvt = data.upcomingEvents.find((e) => e.timestamp > now);
+      if (!nextEvt) {
+        setTimeLeftStr(lang === 'ar' ? 'لا توجد أحداث قريبة' : 'No upcoming events');
+        return;
+      }
+      const diff = Math.max(0, nextEvt.timestamp - now);
+      const hrs = Math.floor(diff / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const secs = Math.floor((diff % (1000 * 60)) / 1000);
+      setTimeLeftStr(`${hrs}h ${mins}m ${secs}s`);
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [data, lang]);
+
+  const isBlackout = data?.isBlackoutActive ?? false;
+  const events = data?.upcomingEvents || [];
+
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
+      {/* الترويسة العلوية */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={`rounded-xl border p-2 ${
+              isBlackout
+                ? 'border-rose-500/40 bg-rose-500/10 text-rose-400'
+                : 'border-amber-400/30 bg-amber-400/10 text-amber-400'
+            }`}
+          >
+            <Calendar className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-zinc-100">
+                {lang === 'ar' ? 'المفكرة الاقتصادية وفلتر فترات الحظر (CPI & FOMC Guard)' : 'Macroeconomic Events & Blackout Filter'}
+              </h3>
+              <span
+                className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                  isBlackout
+                    ? 'border-rose-500/50 bg-rose-500/20 text-rose-300 animate-pulse'
+                    : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400'
+                }`}
+              >
+                {isBlackout ? '⚠️ ACTIVE BLACKOUT' : '🛡️ NORMAL SAFE WINDOW'}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {lang === 'ar'
+                ? 'حظر آلي للصفقات قبل الأخبار الأمريكية العنيفة بـ ساعتين لتجنب مصائد السيولة وضرب الوقف'
+                : 'Automated 2-hour blackout buffer around high-impact releases to protect capital from whipsaws'}
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={loadData}
+          className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-700 hover:text-white transition"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-amber-400' : 'text-zinc-400'}`} />
+          <span>{lang === 'ar' ? 'تحديث المفكرة' : 'Refresh Calendar'}</span>
+        </button>
+      </div>
+
+      {/* شريط حالة الحظر الفوري */}
+      <div
+        className={`rounded-xl border p-3 text-xs flex flex-wrap items-center justify-between gap-3 ${
+          isBlackout
+            ? 'border-rose-500/40 bg-rose-950/30 text-rose-200'
+            : 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300'
+        }`}
+      >
+        <div className="flex items-center gap-2.5">
+          {isBlackout ? (
+            <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 animate-bounce" />
+          ) : (
+            <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0" />
+          )}
+          <div>
+            <span className="font-bold block text-sm">
+              {isBlackout
+                ? (lang === 'ar' ? '⚠️ نافذة الحظر نشطة: تم قفل توليد صفقات الشراء مؤقتاً' : '⚠️ Blackout Mode Active: New BUY entries paused')
+                : (lang === 'ar' ? '✅ التداول آمن: لا توجد أحداث تضخم أو فائدة خلال الساعتين القادمتين' : '✅ Safe Trading Window: No high-impact events within the buffer')}
+            </span>
+            {isBlackout && data?.lockReasonAr && (
+              <span className="text-[11px] text-rose-300 block mt-0.5">
+                {lang === 'ar' ? data.lockReasonAr : data.lockReasonEn}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {timeLeftStr && (
+          <div className="flex items-center gap-1.5 rounded-lg border border-current bg-zinc-950/60 px-3 py-1 text-xs font-mono font-bold shrink-0" dir="ltr">
+            <Clock className="h-3.5 w-3.5" />
+            <span>Next Event: {timeLeftStr}</span>
+          </div>
+        )}
+      </div>
+
+      {/* جدول الأحداث الاقتصادية الكبرى */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-bold text-zinc-200 flex items-center gap-1.5">
+            <Radio className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+            {lang === 'ar' ? 'جدول الأحداث الاقتصادية الأمريكية المرتقبة:' : 'Upcoming High-Impact US Releases:'}
+          </span>
+          <span className="text-[11px] text-zinc-500">
+            {lang === 'ar' ? 'نافذة الحظر: ساعتان قبل وساعة بعد الحدث' : 'Buffer: 2h Before / 1h After'}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950/50">
+          <table className="w-full text-xs text-left">
+            <thead className="border-b border-zinc-800 bg-zinc-900/60 text-zinc-400">
+              <tr>
+                <th className="p-3 text-right">{lang === 'ar' ? 'الحدث الاقتصادي' : 'Event'}</th>
+                <th className="p-3 text-center">{lang === 'ar' ? 'التصنيف والتأثير' : 'Impact'}</th>
+                <th className="p-3 text-center">{lang === 'ar' ? 'التوقيت (UTC)' : 'Time (UTC)'}</th>
+                <th className="p-3 text-center">{lang === 'ar' ? 'السابق / التقديري' : 'Prev / Forecast'}</th>
+                <th className="p-3 text-center">{lang === 'ar' ? 'حالة المنظومة' : 'Status'}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800/60 font-mono">
+              {events.map((evt) => {
+                const isActive = evt.status === 'ACTIVE_BLACKOUT';
+                return (
+                  <tr
+                    key={evt.id}
+                    className={`hover:bg-zinc-900/40 transition-colors ${
+                      isActive ? 'bg-rose-950/20' : ''
+                    }`}
+                  >
+                    <td className="p-3 text-right">
+                      <div className="font-bold text-zinc-100 flex items-center justify-end gap-1.5 font-sans">
+                        <span>{lang === 'ar' ? evt.nameAr : evt.name}</span>
+                        {evt.impact === 'HIGH' && <Flame className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
+                      </div>
+                      <span className="text-[10px] text-zinc-500 block font-sans mt-0.5">{evt.descriptionAr}</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span
+                        className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                          evt.impact === 'HIGH'
+                            ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                            : 'border-sky-500/40 bg-sky-500/15 text-sky-300'
+                        }`}
+                      >
+                        {evt.category} ({evt.impact})
+                      </span>
+                    </td>
+                    <td className="p-3 text-center text-zinc-300 whitespace-nowrap">
+                      {evt.timeFormatted}
+                    </td>
+                    <td className="p-3 text-center text-zinc-400 whitespace-nowrap">
+                      <span className="text-zinc-500">{lang === 'ar' ? 'سابق: ' : 'Prev: '}</span>
+                      <span className="text-zinc-300">{evt.previousValue}</span>
+                      <span className="mx-1 text-zinc-600">/</span>
+                      <span className="text-emerald-400">{lang === 'ar' ? 'توقع: ' : 'Fcst: '}</span>
+                      <span className="text-emerald-300">{evt.forecastValue}</span>
+                    </td>
+                    <td className="p-3 text-center whitespace-nowrap">
+                      {isActive ? (
+                        <span className="rounded-md bg-rose-600 px-2 py-1 text-[10px] font-bold text-white animate-pulse">
+                          🛑 {lang === 'ar' ? 'حظر صفقات' : 'LOCKED'}
+                        </span>
+                      ) : (
+                        <span className="rounded-md border border-zinc-700/60 bg-zinc-800/50 px-2 py-0.5 text-[10px] text-zinc-400">
+                          ⏳ {lang === 'ar' ? 'مرتقب' : 'Upcoming'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
