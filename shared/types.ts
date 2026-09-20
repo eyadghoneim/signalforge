@@ -159,6 +159,22 @@ export interface BacktestTrade {
   signalScore: number;
 }
 
+export interface MonteCarloPercentiles {
+  p5: number;
+  p50: number;
+  p95: number;
+}
+
+export interface MonteCarloStats {
+  simulations: number;
+  seed: number;
+  bestMaxDrawdownPercent: number;
+  worstMaxDrawdownPercent: number;
+  maxDrawdownPercentiles: MonteCarloPercentiles;
+  minimumEquityPercentiles: MonteCarloPercentiles;
+  capitalDipProbabilityPercent: number;
+}
+
 export interface BacktestResult {
   asset: SupportedAsset;
   period: { from: number; to: number; candles: number };
@@ -176,6 +192,7 @@ export interface BacktestResult {
   limitsAr: string[];
   monthlyStats: MonthlyStat[];
   performance?: PerformanceStats;
+  monteCarlo: MonteCarloStats | null;
 }
 
 export interface MonthlyStat {
@@ -257,6 +274,8 @@ export interface PerformanceStats {
   avgLossUsd: number | null;
   payoffRatio: number | null;
   sharpePerTrade: number | null;
+  sortinoPerTrade: number | null;
+  calmarRatio: number | null;
   maxDrawdownPercent: number;
   maxDrawdownDurationHours: number | null;
   longestWinStreak: number;

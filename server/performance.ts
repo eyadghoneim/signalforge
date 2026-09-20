@@ -16,6 +16,12 @@ function stdev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+function downsideDeviation(values: number[]): number {
+  if (values.length === 0) return 0;
+  const downsideSquares = values.reduce((sum, value) => sum + Math.min(0, value) ** 2, 0);
+  return Math.sqrt(downsideSquares / values.length);
+}
+
 function scoreBucket(score: number): string {
   if (score >= 85) return '85+';
   if (score >= 80) return '80-84';
@@ -36,6 +42,8 @@ export function computePerformanceStats(
   equityCurve: { time: number; equity: number; buyHold: number }[],
   initialEquity: number,
   riskPercent = 1,
+  periodStartTime?: number,
+  periodEndTime?: number,
 ): PerformanceStats {
   const wins = trades.filter((t) => t.pnlUsd > 0);
   const losses = trades.filter((t) => t.pnlUsd <= 0);
@@ -59,9 +67,15 @@ export function computePerformanceStats(
     .filter((t) => t.entry > 0 && t.qty > 0)
     .map((t) => (t.pnlUsd / (t.entry * t.qty)) * 100);
   const sd = stdev(returnPcts);
+  const meanReturnPct = returnPcts.length > 0 ? returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length : 0;
   const sharpePerTrade =
     returnPcts.length >= 2 && sd > 0
-      ? round(returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length / sd, 3)
+      ? round(meanReturnPct / sd, 3)
+      : null;
+  const downside = downsideDeviation(returnPcts);
+  const sortinoPerTrade =
+    returnPcts.length >= 2 && downside > 0
+      ? round(meanReturnPct / downside, 3)
       : null;
 
   // Max drawdown + peak-to-trough duration from the equity curve.
@@ -80,6 +94,19 @@ export function computePerformanceStats(
       maxDrawdownDurationHours = round((p.time - peakTime) / 3600, 1);
     }
   }
+
+  const curveStart = periodStartTime ?? equityCurve[0]?.time;
+  const curveEnd = periodEndTime ?? equityCurve[equityCurve.length - 1]?.time;
+  const durationYears = curveStart !== undefined && curveEnd !== undefined
+    ? (curveEnd - curveStart) / (365 * 24 * 3600)
+    : 0;
+  const endingEquity = equityCurve[equityCurve.length - 1]?.equity ?? initialEquity;
+  const annualizedReturn = durationYears >= 1 / 365 && initialEquity > 0 && endingEquity > 0
+    ? (endingEquity / initialEquity) ** (1 / durationYears) - 1
+    : null;
+  const calmarRatio = annualizedReturn !== null && maxDD > 0
+    ? round(annualizedReturn / (maxDD / 100), 3)
+    : null;
 
   // Win/loss streaks over chronological order.
   let curWin = 0;
@@ -150,6 +177,8 @@ export function computePerformanceStats(
     avgLossUsd,
     payoffRatio,
     sharpePerTrade,
+    sortinoPerTrade,
+    calmarRatio,
     maxDrawdownPercent: round(maxDD, 1),
     maxDrawdownDurationHours,
     longestWinStreak: longestWin,
