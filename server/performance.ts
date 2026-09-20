@@ -16,6 +16,12 @@ function stdev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+function downsideDeviation(values: number[]): number {
+  if (values.length === 0) return 0;
+  const downsideSquares = values.reduce((sum, value) => sum + Math.min(0, value) ** 2, 0);
+  return Math.sqrt(downsideSquares / values.length);
+}
+
 function scoreBucket(score: number): string {
   if (score >= 85) return '85+';
   if (score >= 80) return '80-84';
@@ -132,6 +138,8 @@ export function computePerformanceStats(
   equityCurve: { time: number; equity: number; buyHold: number }[],
   initialEquity: number,
   riskPercent = 1,
+  periodStartTime?: number,
+  periodEndTime?: number,
 ): PerformanceStats {
   const wins = trades.filter((t) => t.pnlUsd > 0);
   const losses = trades.filter((t) => t.pnlUsd <= 0);
@@ -155,22 +163,17 @@ export function computePerformanceStats(
     .filter((t) => t.entry > 0 && t.qty > 0)
     .map((t) => (t.pnlUsd / (t.entry * t.qty)) * 100);
   const sd = stdev(returnPcts);
+  const meanReturnPct = returnPcts.length > 0 ? returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length : 0;
   const sharpePerTrade =
     returnPcts.length >= 2 && sd > 0
-      ? round(returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length / sd, 3)
+      ? round(meanReturnPct / sd, 3)
       : null;
-
-  // Sortino ratio: downside deviation penalizes negative returns only
-  const meanReturnPct = returnPcts.length > 0 ? returnPcts.reduce((a, v) => a + v, 0) / returnPcts.length : 0;
-  const downsideReturns = returnPcts.filter((r) => r < 0);
-  const downsideDeviation =
-    downsideReturns.length > 0
-      ? Math.sqrt(downsideReturns.reduce((a, r) => a + r ** 2, 0) / returnPcts.length)
-      : 0;
-  const sortinoRatio =
-    returnPcts.length >= 2 && downsideDeviation > 0
-      ? round(meanReturnPct / downsideDeviation, 3)
+  const downside = downsideDeviation(returnPcts);
+  const sortinoPerTrade =
+    returnPcts.length >= 2 && downside > 0
+      ? round(meanReturnPct / downside, 3)
       : null;
+  const sortinoRatio = sortinoPerTrade;
 
   // Max drawdown + peak-to-trough duration from the equity curve.
   let peak = initialEquity;
@@ -189,10 +192,22 @@ export function computePerformanceStats(
     }
   }
 
-  // Calmar ratio: Total Return % / Max Drawdown %
-  const finalEq = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : initialEquity;
-  const totalReturnPercent = initialEquity > 0 ? ((finalEq - initialEquity) / initialEquity) * 100 : 0;
-  const calmarRatio = maxDD > 0 ? round(totalReturnPercent / maxDD, 2) : null;
+  const curveStart = periodStartTime ?? equityCurve[0]?.time;
+  const curveEnd = periodEndTime ?? equityCurve[equityCurve.length - 1]?.time;
+  const durationYears = curveStart !== undefined && curveEnd !== undefined
+    ? (curveEnd - curveStart) / (365 * 24 * 3600)
+    : 0;
+  const endingEquity = equityCurve[equityCurve.length - 1]?.equity ?? initialEquity;
+  const totalReturnPercent = initialEquity > 0 ? ((endingEquity - initialEquity) / initialEquity) * 100 : 0;
+  const annualizedReturn = durationYears >= 1 / 365 && initialEquity > 0 && endingEquity > 0
+    ? (endingEquity / initialEquity) ** (1 / durationYears) - 1
+    : null;
+  const calmarRatio =
+    maxDD > 0
+      ? annualizedReturn !== null
+        ? round(annualizedReturn / (maxDD / 100), 3)
+        : round(totalReturnPercent / maxDD, 2)
+      : null;
 
   // Monte Carlo permutation simulation
   const monteCarlo = computeMonteCarloSimulation(trades, initialEquity);
@@ -266,7 +281,8 @@ export function computePerformanceStats(
     avgLossUsd,
     payoffRatio,
     sharpePerTrade,
-    sortinoRatio,
+    sortinoPerTrade,
+    sortinoRatio: sortinoPerTrade,
     calmarRatio,
     maxDrawdownPercent: round(maxDD, 1),
     maxDrawdownDurationHours,

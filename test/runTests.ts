@@ -468,6 +468,19 @@ console.log('\n=== 9. Performance analytics v3 ===');
   assert(s.longestWinStreak === 2, `longest win streak = 2 (got ${s.longestWinStreak})`);
   assert(s.longestLossStreak === 3, `longest loss streak = 3 (got ${s.longestLossStreak})`);
   assert(s.payoffRatio !== null && Math.abs(s.payoffRatio - 650 / 210) < 0.01, `payoffRatio = 650/210 (got ${s.payoffRatio})`);
+  assert(s.sortinoPerTrade !== null && Number.isFinite(s.sortinoPerTrade), `Sortino is finite (got ${s.sortinoPerTrade})`);
+  assert(s.calmarRatio === null || Number.isFinite(s.calmarRatio), `Calmar is null-or-finite (got ${s.calmarRatio})`);
+  const { runMonteCarlo } = await import('../server/monteCarlo');
+  const mc = runMonteCarlo(trades, 1000, 1000, 12345);
+  const mcAgain = runMonteCarlo(trades, 1000, 1000, 12345);
+  assert(mc !== null && mc.simulations === 1000, 'Monte Carlo runs 1,000 simulations');
+  assert(JSON.stringify(mc) === JSON.stringify(mcAgain), 'Monte Carlo is deterministic for the same seed');
+  if (mc) {
+    assert(mc.worstMaxDrawdownPercent >= mc.bestMaxDrawdownPercent, 'Monte Carlo worst DD >= best DD');
+    assert(mc.maxDrawdownPercentiles.p5 <= mc.maxDrawdownPercentiles.p50 && mc.maxDrawdownPercentiles.p50 <= mc.maxDrawdownPercentiles.p95, 'Monte Carlo DD percentiles are ordered');
+    assert(mc.capitalDipProbabilityPercent >= 0 && mc.capitalDipProbabilityPercent <= 100, 'Monte Carlo path-dip probability is bounded');
+  }
+  assert(runMonteCarlo([], 1000) === null, 'Monte Carlo with no trades is explicitly unavailable');
   const b76 = s.scoreBuckets.find((b) => b.bucket === '75-79');
   assert(!!b76 && b76.trades === 1 && b76.wins === 1 && b76.winRatePercent === 100, 'bucket 75-79: 1 trade, 100% win');
   const b66 = s.scoreBuckets.find((b) => b.bucket === '<70');

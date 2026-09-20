@@ -16,6 +16,7 @@ import {
 } from '../shared/indicators';
 import { computeRiskTargets, STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
 import { computePerformanceStats } from './performance';
+import { runMonteCarlo } from './monteCarlo';
 import { buildSignal } from './signalEngine';
 
 export interface BacktestOptions {
@@ -375,7 +376,15 @@ export function runBacktest(
     winRatePercent: trades.length ? Number(((wins / trades.length) * 100).toFixed(1)) : 0,
     profitFactor,
     maxDrawdownPercent: Number(maxDD.toFixed(1)),
-    performance: computePerformanceStats(trades, equityCurve, opts.initialEquity, opts.riskPercent),
+    performance: computePerformanceStats(
+      trades,
+      equityCurve,
+      opts.initialEquity,
+      opts.riskPercent,
+      candles1h[WARMUP].time,
+      lastCandle.time,
+    ),
+    monteCarlo: runMonteCarlo(trades, opts.initialEquity),
     trades: trades.slice(-50).reverse(),
     equityCurve,
     verdictAr: outperform
