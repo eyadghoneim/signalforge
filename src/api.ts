@@ -310,7 +310,6 @@ export const api = {
   resetPaper: () => j<{ ok: true }>('/api/paper/reset', { method: 'POST', body: '{}' }),
   liquidations: (asset: SupportedAsset) => j<{ ok: true; radar: LiquidationRadar | null }>(`/api/liquidations/${asset}`),
   dailyReport: () => j<DailyReportData>('/api/report/daily'),
-  telegramTestWhaleAlert: () => j<{ ok: boolean; error?: string }>('/api/telegram/test-whale-alert', { method: 'POST', body: '{}' }),
   backtest: (asset: SupportedAsset, days = 365, robustness = false, walkForward = false) =>
     j<{ ok: true; result?: BacktestResult; robustness?: RobustnessCell[]; walkforward?: WalkForwardResult }>('/api/backtest', {
       method: 'POST',

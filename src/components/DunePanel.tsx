@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Database, Download, Play, RefreshCw, Zap, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight, Bookmark, Trash2, Send, CheckCircle2 } from 'lucide-react';
+import { Database, Download, Play, RefreshCw, Zap, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight, Bookmark, Trash2, CheckCircle2 } from 'lucide-react';
 import { api, type DuneWhaleTrade, type DuneTopToken } from '../api';
 import type { Lang } from '../i18n';
 
@@ -9,7 +9,12 @@ interface Props {
 
 type ViewMode = 'whales' | 'tokens' | 'sql';
 
-const STABLE_SYMBOLS = "('USDT','USDC','DAI','USDS','FDUSD','USDe','PYUSD','crvUSD','FRAX','BUSD','GUSD','LUSD','sUSD')";
+const STABLE_SYMBOLS = "('USDT','USDC','DAI','USDS','FDUSD','USDE','PYUSD','CRVUSD','FRAX','BUSD','GUSD','LUSD','SUSD')";
+const WATCHED_VALUES_SQL = `
+  ('BTC', 'ethereum', '0x2260fac5e5542a773aa44fbcedf7c193bc2c599'),
+  ('ETH', 'ethereum', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'),
+  ('PAXG', 'ethereum', '0x45804880de22913dafe09f4980848ece6ecbaf78'),
+  ('SOL', 'solana', 'so11111111111111111111111111111111111111112')`;
 
 interface SavedQuery {
   id: string;
@@ -22,90 +27,122 @@ const STORAGE_KEY_SAVED_QUERIES = 'signalforge_user_dune_queries';
 
 const PRESET_QUERIES = [
   {
-    nameAr: 'صفقات الحيتان (استبعاد العملات المستقرة)',
-    nameEn: 'Whale Swaps (Excluding Stables)',
-    sql: `SELECT
-  CAST(block_time AS VARCHAR) as block_time,
-  project,
-  token_bought_symbol,
-  token_sold_symbol,
-  round(amount_usd, 2) as amount_usd
-FROM dex.trades
-WHERE block_time > now() - interval '3' hour
-  AND amount_usd >= 100000
+    nameAr: 'صفقات الحيتان على الأصول الموثوقة (> $100k)',
+    nameEn: 'Verified Asset Whale Swaps (> $100k)',
+    sql: `WITH watched(asset, blockchain, token_address) AS (
+  VALUES ${WATCHED_VALUES_SQL}
+)
+SELECT
+  CAST(dt.block_time AS VARCHAR) AS block_time,
+  w.asset,
+  dt.project,
+  dt.token_bought_symbol,
+  dt.token_sold_symbol,
+  round(dt.amount_usd, 2) AS amount_usd
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND (lower(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+   OR lower(CAST(dt.token_sold_address AS VARCHAR)) = w.token_address)
+WHERE dt.block_time > now() - interval '24' hour
+  AND dt.amount_usd >= 100000
   AND NOT (
-    token_bought_symbol IN ${STABLE_SYMBOLS}
-    AND token_sold_symbol IN ${STABLE_SYMBOLS}
+    upper(coalesce(dt.token_bought_symbol, '')) IN ${STABLE_SYMBOLS}
+    AND upper(coalesce(dt.token_sold_symbol, '')) IN ${STABLE_SYMBOLS}
   )
-ORDER BY block_time DESC
+ORDER BY dt.block_time DESC
 LIMIT 20`,
   },
   {
-    nameAr: 'صفقات كبار الكريبتو (BTC / ETH / SOL)',
-    nameEn: 'Major Crypto Swaps (BTC/ETH/SOL)',
-    sql: `SELECT
-  CAST(block_time AS VARCHAR) as block_time,
-  project,
-  token_bought_symbol,
-  token_sold_symbol,
-  round(amount_usd, 2) as amount_usd
-FROM dex.trades
-WHERE block_time > now() - interval '6' hour
-  AND amount_usd >= 50000
-  AND (
-    token_bought_symbol IN ('WETH', 'ETH', 'WBTC', 'BTC', 'SOL', 'WSOL', 'PAXG')
-    OR token_sold_symbol IN ('WETH', 'ETH', 'WBTC', 'BTC', 'SOL', 'WSOL', 'PAXG')
-  )
-ORDER BY block_time DESC
+    nameAr: 'صفقات كبار الكريبتو (BTC / ETH / SOL / PAXG)',
+    nameEn: 'Major Verified Crypto Swaps',
+    sql: `WITH watched(asset, blockchain, token_address) AS (
+  VALUES ${WATCHED_VALUES_SQL}
+)
+SELECT
+  CAST(dt.block_time AS VARCHAR) AS block_time,
+  w.asset,
+  dt.project,
+  dt.token_bought_symbol,
+  dt.token_sold_symbol,
+  round(dt.amount_usd, 2) AS amount_usd
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND (lower(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+   OR lower(CAST(dt.token_sold_address AS VARCHAR)) = w.token_address)
+WHERE dt.block_time > now() - interval '24' hour
+  AND dt.amount_usd >= 50000
+ORDER BY dt.block_time DESC
 LIMIT 20`,
   },
   {
-    nameAr: 'تجميع الحيتان (شراء الكريبتو بالدولار المستقر)',
-    nameEn: 'Whale Accumulation (Buy with Stables)',
-    sql: `SELECT
-  CAST(block_time AS VARCHAR) as block_time,
-  project,
-  token_bought_symbol as bought_crypto,
-  token_sold_symbol as sold_stable,
-  round(amount_usd, 2) as amount_usd
-FROM dex.trades
-WHERE block_time > now() - interval '6' hour
-  AND amount_usd >= 75000
-  AND token_sold_symbol IN ${STABLE_SYMBOLS}
-  AND token_bought_symbol NOT IN ${STABLE_SYMBOLS}
-ORDER BY amount_usd DESC
+    nameAr: 'تجميع الحيتان (شراء الأصول بالدولار المستقر)',
+    nameEn: 'Whale Accumulation (Verified Assets Bought with Stables)',
+    sql: `WITH watched(asset, blockchain, token_address) AS (
+  VALUES ${WATCHED_VALUES_SQL}
+)
+SELECT
+  CAST(dt.block_time AS VARCHAR) AS block_time,
+  w.asset,
+  dt.project,
+  dt.token_bought_symbol AS bought_crypto,
+  dt.token_sold_symbol AS sold_stable,
+  round(dt.amount_usd, 2) AS amount_usd
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND lower(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+WHERE dt.block_time > now() - interval '24' hour
+  AND dt.amount_usd >= 75000
+  AND upper(coalesce(dt.token_sold_symbol, '')) IN ${STABLE_SYMBOLS}
+ORDER BY dt.amount_usd DESC
 LIMIT 20`,
   },
   {
-    nameAr: 'أعلى العملات حجماً (غير مستقرة)',
-    nameEn: 'Top Non-Stable Tokens (24h)',
-    sql: `SELECT
-  token_bought_symbol,
-  count(*) as trades_count,
-  round(sum(amount_usd), 2) as total_usd_volume
-FROM dex.trades
-WHERE block_time > now() - interval '24' hour
-  AND amount_usd >= 10000
-  AND token_bought_symbol IS NOT NULL
-  AND token_bought_symbol NOT IN ${STABLE_SYMBOLS}
-GROUP BY token_bought_symbol
+    nameAr: 'أعلى الأصول الموثوقة حجماً (24 ساعة)',
+    nameEn: 'Top Verified Assets by DEX Volume (24h)',
+    sql: `WITH watched(asset, blockchain, token_address) AS (
+  VALUES ${WATCHED_VALUES_SQL}
+)
+SELECT
+  w.asset,
+  dt.token_bought_symbol,
+  count(*) AS trades_count,
+  round(sum(dt.amount_usd), 2) AS total_usd_volume
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND lower(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+WHERE dt.block_time > now() - interval '24' hour
+  AND dt.amount_usd >= 10000
+  AND dt.token_bought_symbol IS NOT NULL
+GROUP BY w.asset, dt.token_bought_symbol
 ORDER BY total_usd_volume DESC
-LIMIT 10`,
+LIMIT 20`,
   },
   {
-    nameAr: 'أكبر مجمعات سيولة على Uniswap v3',
-    nameEn: 'Top Uniswap v3 Pool Swaps',
-    sql: `SELECT
-  CAST(block_time AS VARCHAR) as block_time,
-  project,
-  token_bought_symbol,
-  token_sold_symbol,
-  round(amount_usd, 2) as amount_usd
-FROM dex.trades
-WHERE block_time > now() - interval '12' hour
-  AND project = 'uniswap'
-  AND amount_usd >= 200000
-ORDER BY amount_usd DESC
+    nameAr: 'صفقات الأصول الموثوقة على Uniswap',
+    nameEn: 'Verified Asset Swaps on Uniswap',
+    sql: `WITH watched(asset, blockchain, token_address) AS (
+  VALUES ${WATCHED_VALUES_SQL}
+)
+SELECT
+  CAST(dt.block_time AS VARCHAR) AS block_time,
+  w.asset,
+  dt.project,
+  dt.token_bought_symbol,
+  dt.token_sold_symbol,
+  round(dt.amount_usd, 2) AS amount_usd
+FROM dex.trades dt
+JOIN watched w
+  ON dt.blockchain = w.blockchain
+ AND (lower(CAST(dt.token_bought_address AS VARCHAR)) = w.token_address
+   OR lower(CAST(dt.token_sold_address AS VARCHAR)) = w.token_address)
+WHERE dt.block_time > now() - interval '24' hour
+  AND lower(dt.project) = 'uniswap'
+  AND dt.amount_usd >= 200000
+ORDER BY dt.amount_usd DESC
 LIMIT 15`,
   },
 ];
@@ -138,10 +175,6 @@ export default function DunePanel({ lang }: Props) {
   const [newQueryName, setNewQueryName] = useState('');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
-  // Telegram test alert
-  const [tgTesting, setTgTesting] = useState(false);
-  const [tgFeedback, setTgFeedback] = useState<string | null>(null);
-
   const saveQueryToLibrary = () => {
     const trimmed = newQueryName.trim();
     if (!trimmed || !customSql.trim()) return;
@@ -170,23 +203,6 @@ export default function DunePanel({ lang }: Props) {
       localStorage.setItem(STORAGE_KEY_SAVED_QUERIES, JSON.stringify(updated));
     } catch {
       // ignore
-    }
-  };
-
-  const handleTestTelegramWhale = async () => {
-    setTgTesting(true);
-    setTgFeedback(null);
-    try {
-      const res = await api.telegramTestWhaleAlert();
-      if (res.ok) {
-        setTgFeedback(isAr ? 'تم إرسال إشعار الحوت التجريبي لتليجرام بنجاح!' : 'Test whale alert sent to Telegram successfully!');
-      } else {
-        setTgFeedback(res.error || (isAr ? 'تعذر الإرسال. تحقق من إعدادات البوت' : 'Failed to send. Check bot settings'));
-      }
-    } catch (e) {
-      setTgFeedback(e instanceof Error ? e.message : String(e));
-    } finally {
-      setTgTesting(false);
     }
   };
 
@@ -301,24 +317,8 @@ export default function DunePanel({ lang }: Props) {
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             {isAr ? 'تحديث البيانات' : 'Refresh Data'}
           </button>
-          <button
-            onClick={() => void handleTestTelegramWhale()}
-            disabled={tgTesting}
-            className="flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3.5 py-2 text-xs font-semibold text-sky-300 transition hover:bg-sky-500/20 disabled:opacity-50"
-            title={isAr ? 'إرسال نموذج تنبيه صفقة حوت فورية لتليجرام' : 'Send a test whale trade alert to Telegram'}
-          >
-            <Send size={14} className={tgTesting ? 'animate-pulse' : ''} />
-            {tgTesting ? (isAr ? 'جاري الإرسال…' : 'Sending…') : (isAr ? 'تجربة تنبيه الحوت 🐋' : 'Test Whale Alert 🐋')}
-          </button>
         </div>
       </div>
-
-      {tgFeedback && (
-        <div className="flex items-center justify-between rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-200">
-          <span>{tgFeedback}</span>
-          <button onClick={() => setTgFeedback(null)} className="text-sky-400 hover:text-white">✕</button>
-        </div>
-      )}
 
       {/* التبويبات الداخلية */}
       <div className="flex gap-2 border-b border-zinc-800 pb-2">

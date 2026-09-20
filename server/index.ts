@@ -45,14 +45,12 @@ import {
   buildSignalMessageHtml,
   buildTestMessageHtml,
   buildPaperEventHtml,
-  buildWhaleAlertHtml,
   sendTelegramMessage,
   sendTelegramDedupedMessage,
   startTelegramPolling,
   stopTelegramPolling,
   verdictOf,
   verdictLabel,
-  type TelegramLang,
 } from './telegram';
 import { computeAttributionSummary, updateOutcomes } from './attribution';
 import { choppyCooldownState, clampProtection, currentExposure, evaluateCircuitBreaker, findExpiredSignals, protectionVerdict, utcDayStart } from './protection';
@@ -583,25 +581,6 @@ app.get('/api/report/daily', async (_req, res) => {
   }
 });
 
-app.post('/api/telegram/test-whale-alert', async (req, res) => {
-  const config = loadConfig();
-  const token = (req.body?.token || config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
-  const chatId = (req.body?.chatId || config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '').trim();
-  if (!token || !chatId) {
-    return res.status(400).json({ ok: false, error: 'Token and chatId are required' });
-  }
-  const sample = {
-    project: 'Uniswap v3',
-    boughtSymbol: 'WETH',
-    soldSymbol: 'USDT',
-    amountUsd: 785000,
-    blockTime: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
-  };
-  const html = buildWhaleAlertHtml(sample, (config.telegramLang as TelegramLang) || 'ar');
-  const result = await sendTelegramMessage(token, chatId, html);
-  res.json(result);
-});
-
 app.get('/api/dex/pairs', async (req, res) => {
   const raw = String(req.query.asset || 'BTC');
   // حد أمان: مصطلح البحث أقصاه 30 حرف — يمنع نص عشوائي طويل يتكدس في الكاش
@@ -844,7 +823,6 @@ async function runScanCycle(): Promise<void> {
     // لقطة المحفظة قبل تغييرات هذه الدورة — لنشتق أحداث فتح/جني/قفل بدقة.
     const paperBefore = snapshotPaperAccount(paperAccount);
     const paperSizingPrices = !paperEnginePaused && paperAccount.open.length > 0 ? await getOpenPaperPrices() : {};
-    const duneSnapshot = await getDuneSnapshot().catch(() => null);
     for (const asset of SUPPORTED_ASSETS) {
       try {
         const [candles1h, candles4h, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
@@ -876,7 +854,6 @@ async function runScanCycle(): Promise<void> {
         const daily = candles1d ? computeDailyTrend(candles1d) : null;
         const smc = computeSmcStructure(candles1h, undefined, snapshot.atr14);
         const entryZone = computePullbackZone(candles1h);
-        const duneMetric = duneSnapshot && duneSnapshot.ok ? duneSnapshot.assets.find((m) => m.asset === asset) : null;
         const signal = buildSignal({
           asset,
           snapshot,
@@ -894,12 +871,6 @@ async function runScanCycle(): Promise<void> {
           entryZone,
           tagBias,
           candles: candles1h,
-          dune: duneMetric ? {
-            whaleVolume24hUsd: duneMetric.whaleVolume24hUsd,
-            tradeCount: duneMetric.tradeCount,
-            whaleTradeCount: duneMetric.whaleTradeCount,
-            largestTradeUsd: duneMetric.largestTradeUsd,
-          } : null,
         });
 
         const gateBlocked = signal.regimeGateStatus !== 'CLEAR';
@@ -1086,33 +1057,6 @@ async function runScanCycle(): Promise<void> {
       // non-fatal
     }
 
-    // ─── إرسال تنبيهات صفقات الحيتان الخارقة إلى تليجرام ───
-    try {
-      if (config.telegramEnabled && isDuneAvailable()) {
-        const btToken = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-        const btChat = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
-        if (btToken && btChat) {
-          const recentWhaleTrades = await getDuneWhaleTrades(8).catch(() => []);
-          for (const trade of recentWhaleTrades) {
-            // تنبيه فوري عند رصد صفقة حوت ضخمة (>= $300,000)
-            if (trade.amount_usd >= 300_000) {
-              const eventKey = `whale:${trade.project}:${trade.token_bought_symbol}:${trade.token_sold_symbol}:${Math.round(trade.amount_usd)}:${trade.block_time}`;
-              const html = buildWhaleAlertHtml({
-                project: trade.project,
-                boughtSymbol: trade.token_bought_symbol,
-                soldSymbol: trade.token_sold_symbol,
-                amountUsd: trade.amount_usd,
-                blockTime: trade.block_time,
-              }, (config.telegramLang as TelegramLang) || 'ar');
-              void sendTelegramDedupedMessage(btToken, btChat, html, eventKey);
-            }
-          }
-        }
-      }
-    } catch {
-      // non-fatal
-    }
-
     consecutiveScanFailures = 0;
     lastScanAt = Date.now();
   } catch (err) {
@@ -1223,6 +1167,11 @@ async function shutdown(signal: string): Promise<void> {
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 process.once('SIGINT', () => void shutdown('SIGINT'));
 
+// Keep unknown API requests from falling through to Vite's SPA middleware in development.
+app.use('/api', (_req, res) => {
+  res.status(404).json({ ok: false, error: 'Not found' });
+});
+
 // ═══════════════════ الواجهة ═══════════════════
 
 async function main(): Promise<void> {
@@ -1249,10 +1198,6 @@ async function main(): Promise<void> {
       res.sendFile(path.join(distDir, 'index.html'));
     });
   }
-
-  app.use('/api', (_req, res) => {
-    res.status(404).json({ ok: false, error: 'Not found' });
-  });
 
   app.listen(PORT, () => {
     console.log(`╔════════════════════════════════════════════╗`);

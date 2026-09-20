@@ -50,12 +50,6 @@ export interface BuildSignalContext {
   fng?: FngPoint | null;
   whale?: { netInflowUsd: number; txCount: number } | null;
   candles?: import('../shared/types').Candle[] | null;
-  dune?: {
-    whaleVolume24hUsd: number;
-    tradeCount: number;
-    whaleTradeCount: number;
-    largestTradeUsd?: number | null;
-  } | null;
 }
 
 // Log-scaled funding squeeze penalty (review backlog item 5). Flat -12 replaced
@@ -178,18 +172,6 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
       add('PATTERN', p.adjustment, `نمط شموع ${p.hit.nameAr} (${p.hit.nameEn})`);
     } else if (p.hits.length > 0) {
       reasons.push({ tag: 'PATTERN', adjustment: 0, textAr: `نمط شموع غير حاسم: ${p.hits.map((h) => h.nameAr).join('، ')}` });
-    }
-  }
-
-  // ─── تدفقات أونشين Dune (حيتان التداول اللامركزي DEX) ───
-  if (ctx.dune && ctx.dune.whaleTradeCount > 0) {
-    const wVol = ctx.dune.whaleVolume24hUsd;
-    if (wVol >= 10_000_000) {
-      add('WHALE', 3, `Dune On-Chain: تداولات حيتان DEX ضخمة ($${(wVol / 1_000_000).toFixed(1)}M في 24 ساعة)`);
-    } else if (wVol >= 2_000_000) {
-      add('WHALE', 2, `Dune On-Chain: نشاط حيتان لامركزي ملحوظ ($${(wVol / 1_000_000).toFixed(1)}M عبر ${ctx.dune.whaleTradeCount} صفقة)`);
-    } else if (wVol >= 500_000) {
-      add('WHALE', 1, `Dune On-Chain: صفقات حيتان مرصودة ($${(wVol / 1_000_000).toFixed(1)}M)`);
     }
   }
 
