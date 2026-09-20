@@ -100,7 +100,7 @@ console.log('\n=== 1. المؤشرات الفنية ===');
 
 console.log('\n=== 2. الثوابت والدوال المركزية ===');
 {
-  const { deriveSignalTypeAndAction, computeRiskTargets, STRATEGY_RISK_MULTIPLIERS } = await import('../shared/strategyConstants');
+  const { deriveSignalTypeAndAction, computeRiskTargets, tickSizeForPrice, STRATEGY_RISK_MULTIPLIERS } = await import('../shared/strategyConstants');
 
   assert(deriveSignalTypeAndAction(82).signalType === 'STRONG_BUY', '82 → STRONG_BUY');
   assert(deriveSignalTypeAndAction(84).signalType === 'STRONG_BUY', '84 → STRONG_BUY (لا فجوة 82-84)');
@@ -115,6 +115,9 @@ console.log('\n=== 2. الثوابت والدوال المركزية ===');
   assert(targets.target2 === 100000 + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * 1000, 'TP2 = دخول + 4×ATR بالحرف');
   assert(targets.target3 === 100000 + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * 1000, 'TP3 = دخول + 5.5×ATR بالحرف');
   assert(targets.riskRewardRatio === 1.25, `R:R = 1.25 (فعلي: ${targets.riskRewardRatio})`);
+  assert(tickSizeForPrice(150.35) === 0.01 && tickSizeForPrice(100000) === 0.5, 'dynamic tick sizes match SOL and high-price assets');
+  const solTargets = computeRiskTargets(150.35, 1.23);
+  assert(solTargets.stopLoss === 147.89 && solTargets.target1 === 153.43 && solTargets.target3 === 157.12, `SOL targets retain decimal precision (SL ${solTargets.stopLoss}, TP1 ${solTargets.target1}, TP3 ${solTargets.target3})`);
 }
 
 console.log('\n=== 3. محرك الإشارات والبوابات ===');
