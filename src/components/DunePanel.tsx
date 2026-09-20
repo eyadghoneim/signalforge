@@ -9,10 +9,12 @@ interface Props {
 
 type ViewMode = 'whales' | 'tokens' | 'sql';
 
+const STABLE_SYMBOLS = "('USDT','USDC','DAI','USDS','FDUSD','USDe','PYUSD','crvUSD','FRAX','BUSD','GUSD','LUSD','sUSD')";
+
 const PRESET_QUERIES = [
   {
-    nameAr: 'صفقات الحيتان الضخمة (> $100k)',
-    nameEn: 'Whale Swaps (> $100k)',
+    nameAr: 'صفقات الحيتان (استبعاد العملات المستقرة)',
+    nameEn: 'Whale Swaps (Excluding Stables)',
     sql: `SELECT
   CAST(block_time AS VARCHAR) as block_time,
   project,
@@ -22,12 +24,52 @@ const PRESET_QUERIES = [
 FROM dex.trades
 WHERE block_time > now() - interval '3' hour
   AND amount_usd >= 100000
+  AND NOT (
+    token_bought_symbol IN ${STABLE_SYMBOLS}
+    AND token_sold_symbol IN ${STABLE_SYMBOLS}
+  )
 ORDER BY block_time DESC
 LIMIT 20`,
   },
   {
-    nameAr: 'أعلى 10 توكنز حجماً على DEX (آخر 24 ساعة)',
-    nameEn: 'Top 10 DEX Tokens (24h Volume)',
+    nameAr: 'صفقات كبار الكريبتو (BTC / ETH / SOL)',
+    nameEn: 'Major Crypto Swaps (BTC/ETH/SOL)',
+    sql: `SELECT
+  CAST(block_time AS VARCHAR) as block_time,
+  project,
+  token_bought_symbol,
+  token_sold_symbol,
+  round(amount_usd, 2) as amount_usd
+FROM dex.trades
+WHERE block_time > now() - interval '6' hour
+  AND amount_usd >= 50000
+  AND (
+    token_bought_symbol IN ('WETH', 'ETH', 'WBTC', 'BTC', 'SOL', 'WSOL', 'PAXG')
+    OR token_sold_symbol IN ('WETH', 'ETH', 'WBTC', 'BTC', 'SOL', 'WSOL', 'PAXG')
+  )
+ORDER BY block_time DESC
+LIMIT 20`,
+  },
+  {
+    nameAr: 'تجميع الحيتان (شراء الكريبتو بالدولار المستقر)',
+    nameEn: 'Whale Accumulation (Buy with Stables)',
+    sql: `SELECT
+  CAST(block_time AS VARCHAR) as block_time,
+  project,
+  token_bought_symbol as bought_crypto,
+  token_sold_symbol as sold_stable,
+  round(amount_usd, 2) as amount_usd
+FROM dex.trades
+WHERE block_time > now() - interval '6' hour
+  AND amount_usd >= 75000
+  AND token_sold_symbol IN ${STABLE_SYMBOLS}
+  AND token_bought_symbol NOT IN ${STABLE_SYMBOLS}
+ORDER BY amount_usd DESC
+LIMIT 20`,
+  },
+  {
+    nameAr: 'أعلى العملات حجماً (غير مستقرة)',
+    nameEn: 'Top Non-Stable Tokens (24h)',
     sql: `SELECT
   token_bought_symbol,
   count(*) as trades_count,
@@ -36,22 +78,9 @@ FROM dex.trades
 WHERE block_time > now() - interval '24' hour
   AND amount_usd >= 10000
   AND token_bought_symbol IS NOT NULL
+  AND token_bought_symbol NOT IN ${STABLE_SYMBOLS}
 GROUP BY token_bought_symbol
 ORDER BY total_usd_volume DESC
-LIMIT 10`,
-  },
-  {
-    nameAr: 'توزيع فوليوم البورصات اللامركزية (Uniswap vs Curve)',
-    nameEn: 'DEX Volume Share (Last 24h)',
-    sql: `SELECT
-  project,
-  count(*) as total_swaps,
-  round(sum(amount_usd), 2) as total_volume_usd
-FROM dex.trades
-WHERE block_time > now() - interval '24' hour
-  AND amount_usd > 1000
-GROUP BY project
-ORDER BY total_volume_usd DESC
 LIMIT 10`,
   },
 ];
