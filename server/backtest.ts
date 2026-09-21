@@ -246,7 +246,7 @@ export function runBacktest(
           smc: smcSnap,
           daily: dailySnap,
           // طبقة السيولة معطلة داخل الباك تست — بياناتها التاريخية غير متاحة مجاناً (قيد معلن)
-          candles: candles1h.slice(0, i + 1), // لا تسرّب: الأنماط تقرأ حتى اللحظة i فقط
+          candles: candles1h.slice(Math.max(0, i - 5), i + 1), // لا تسرّب: الأنماط تقرأ حتى اللحظة i فقط (آخر 3-5 شموع كافية تماماً للأنماط وتمنع تجميد المعالج)
         });
 
         const entryAllowed =

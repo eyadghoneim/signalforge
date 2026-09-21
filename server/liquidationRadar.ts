@@ -31,6 +31,17 @@ export interface LiquidationRadar {
 const CACHE = new Map<string, { value: LiquidationRadar | null; at: number }>();
 const TTL_MS = 2 * 60_000; // تصفيات بتتحدث بسرعة — كاش دقيقتين
 
+// قيمة العقد الواحد (Contract Value) في عقود OKX SWAP:
+// في OKX حجم sz يأتي بعدد العقود وليس بالعملة مباشرة:
+// BTC-USDT-SWAP: 1 عقد = 0.01 BTC
+// ETH-USDT-SWAP: 1 عقد = 0.1 ETH
+// SOL-USDT-SWAP: 1 عقد = 1 SOL
+const OKX_SWAP_CT_VAL: Partial<Record<SupportedAsset, number>> = {
+  BTC: 0.01,
+  ETH: 0.1,
+  SOL: 1,
+};
+
 export async function getLiquidationRadar(asset: SupportedAsset): Promise<LiquidationRadar | null> {
   if (!hasOkxSwap(asset)) return null; // PAXG مالوش عقود دائمة — غياب صادق
   const cached = CACHE.get(asset);
@@ -51,15 +62,17 @@ export async function getLiquidationRadar(asset: SupportedAsset): Promise<Liquid
     let shortCount = 0;
     let longSizeUsd = 0;
     let shortSizeUsd = 0;
+    const ctVal = OKX_SWAP_CT_VAL[asset] ?? 1;
 
     for (const block of json.data) {
       const details = Array.isArray(block?.details) ? block.details : [];
       for (const d of details) {
         const posSide = d?.posSide === 'long' ? 'long' : 'short';
         const price = Number(d?.bkPx) || 0;
-        const size = Number(d?.sz) || 0; // بالعملة — نقربها للدولار بالسعر
-        const sizeUsd = price > 0 && size > 0 ? Math.round(size * price) : 0;
-        if (size <= 0) continue;
+        const contracts = Number(d?.sz) || 0; // بعدد العقود — نضربه بقيمة العقد والسعر للوصول للدولار الحقيقي
+        const sizeCoins = contracts * ctVal;
+        const sizeUsd = price > 0 && sizeCoins > 0 ? Math.round(sizeCoins * price) : 0;
+        if (sizeUsd <= 0) continue;
         events.push({
           time: Number(d?.time) || 0,
           posSide,

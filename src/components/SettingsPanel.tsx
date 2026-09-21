@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Bot, CheckCircle2, Loader2, Save, Send, XCircle } from 'lucide-react';
-import { api, type ConfigInfo } from '../api';
+import { Bot, CheckCircle2, Key, Loader2, Save, Send, Shield, XCircle } from 'lucide-react';
+import { api, getAdminToken, setAdminToken, type ConfigInfo } from '../api';
 import { t, type Lang } from '../i18n';
 
 export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; lang: Lang }) {
   const [config, setConfig] = useState<ConfigInfo | null>(null);
+  const [adminTokenInput, setAdminTokenInput] = useState(() => getAdminToken());
   const [tokenInput, setTokenInput] = useState('');
   const [chatIdInput, setChatIdInput] = useState('');
   const [intervalInput, setIntervalInput] = useState(120);
@@ -84,6 +85,7 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
           correlationGuard: corrGuard,
         },
       };
+      setAdminToken(adminTokenInput.trim());
       if (tokenInput.trim() && !tokenInput.startsWith('••')) body.telegramToken = tokenInput.trim();
       if (chatIdInput.trim() && !chatIdInput.startsWith('••')) body.telegramChatId = chatIdInput.trim();
       await api.saveConfig(body);
@@ -127,6 +129,39 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
 
   return (
     <div className="space-y-5">
+      {/* حماية الإدارة (Admin Authentication) */}
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-bold text-zinc-300">
+            <Shield size={16} className="text-amber-400" />
+            {lang === 'ar' ? 'توثيق الإدارة (Admin Token)' : 'Admin Authentication'}
+          </div>
+          {config?.adminRequired && (
+            <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+              {lang === 'ar' ? 'مطلوب للتعديل' : 'Admin Required'}
+            </span>
+          )}
+        </div>
+        <p className="mb-3 text-[10px] leading-4 text-zinc-500">
+          {lang === 'ar'
+            ? 'إذا كان السيرفر محمياً بـ BOT_ADMIN_TOKEN، أدخل التوكن هنا لتتمكن من حفظ الإعدادات وتصفير الحسابات وتشغيل استعلامات Dune بأمان.'
+            : 'If the server is configured with BOT_ADMIN_TOKEN, enter your token here to authorize saving settings and privileged actions.'}
+        </p>
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-500">
+            <Key size={14} />
+          </div>
+          <input
+            type="password"
+            value={adminTokenInput}
+            onChange={(e) => setAdminTokenInput(e.target.value)}
+            placeholder={lang === 'ar' ? 'أدخل رمز إدارة البوت x-bot-admin-token...' : 'Enter x-bot-admin-token...'}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:border-amber-400/50 focus:outline-none"
+            dir="ltr"
+          />
+        </div>
+      </div>
+
       {/* تليجرام */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-300">

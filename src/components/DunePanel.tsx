@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Database, Download, Play, RefreshCw, Zap, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight, Bookmark, Trash2, CheckCircle2 } from 'lucide-react';
 import { api, type DuneWhaleTrade, type DuneTopToken } from '../api';
 import type { Lang } from '../i18n';
+import { STABLECOIN_SQL_IN_LIST, isStablecoin } from '../../shared/stablecoins';
 
 interface Props {
   lang: Lang;
@@ -9,7 +10,7 @@ interface Props {
 
 type ViewMode = 'whales' | 'tokens' | 'sql';
 
-const STABLE_SYMBOLS = "('USDT','USDC','DAI','USDS','FDUSD','USDE','PYUSD','CRVUSD','FRAX','BUSD','GUSD','LUSD','SUSD')";
+const STABLE_SYMBOLS = STABLECOIN_SQL_IN_LIST;
 const WATCHED_VALUES_SQL = `
   ('BTC', 'ethereum', '0x2260fac5e5542a773aa44fbcedf7c193bc2c599'),
   ('ETH', 'ethereum', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'),
@@ -224,7 +225,7 @@ export default function DunePanel({ lang }: Props) {
       setWhaleTrades(tradesRes.trades);
       setTopTokens(tokensRes.tokens);
     } catch (e) {
-      setAvailable(true);
+      setAvailable(false);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -254,15 +255,19 @@ export default function DunePanel({ lang }: Props) {
   const handleExportCsv = () => {
     if (!sqlResults || sqlResults.length === 0) return;
     const headers = Object.keys(sqlResults[0]);
-    const rows = sqlResults.map((r) =>
-      headers.map((h) => {
-        const val = r[h];
-        if (val === null || val === undefined) return '';
-        const str = String(val).replace(/"/g, '""');
-        return `"${str}"`;
-      }).join(','),
-    );
-    const csvContent = [headers.join(','), ...rows].join('\n');
+    const escapeCsvValue = (raw: unknown) => {
+      if (raw === null || raw === undefined) return '""';
+      let str = String(raw);
+      // Protect against CSV formula injection (=, +, -, @, tab, CR)
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = `'${str}`;
+      }
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    const headerRow = headers.map((h) => escapeCsvValue(h)).join(',');
+    const rows = sqlResults.map((r) => headers.map((h) => escapeCsvValue(r[h])).join(','));
+    const csvContent = [headerRow, ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -271,6 +276,7 @@ export default function DunePanel({ lang }: Props) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const formatUsd = (num: number) => {
@@ -280,7 +286,7 @@ export default function DunePanel({ lang }: Props) {
     return `$${num.toLocaleString()}`;
   };
 
-  const isStable = (sym: string) => ['USDT', 'USDC', 'DAI', 'FDUSD', 'USDBC', 'USDE', 'USD'].includes(sym?.toUpperCase());
+  const isStable = (sym: string) => isStablecoin(sym);
 
   return (
     <div className="space-y-6 pt-4 text-zinc-200">

@@ -85,6 +85,9 @@ export default function MacroCalendarPanel({ lang }: Props) {
               >
                 {isBlackout ? '⚠️ ACTIVE BLACKOUT' : '🛡️ NORMAL SAFE WINDOW'}
               </span>
+              <span className="rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+                {lang === 'ar' ? 'جدول مرجعي' : 'Reference Calendar'}
+              </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
               {lang === 'ar'

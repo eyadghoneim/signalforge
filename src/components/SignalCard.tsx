@@ -117,12 +117,32 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
         <div className="hidden text-4xl sm:block">{isBuy ? '🟢' : isSell ? '🔴' : gated ? '🟠' : '⚪'}</div>
       </div>
 
-      {/* الترويسة: الدرجة + النوع */}
+      {/* الترويسة: الدرجة + الأصل + النوع */}
       <div className="flex flex-wrap items-center gap-4">
         <ScoreRing score={signal.convictionScore} color={style.ring} lang={lang} />
         <div className="min-w-40 flex-1">
-          <div className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-extrabold ${style.cls}`}>
-            {typeLabel}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-sm font-black text-amber-300" dir="ltr">
+              {signal.asset}
+            </span>
+            <div className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1 text-sm font-extrabold ${style.cls}`}>
+              {typeLabel}
+            </div>
+            {signal.dailyTrend && (
+              <span
+                className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${
+                  signal.dailyTrend === 'BULLISH'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                    : signal.dailyTrend === 'BEARISH'
+                      ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                      : 'border-zinc-700 bg-zinc-800 text-zinc-400'
+                }`}
+              >
+                {lang === 'ar'
+                  ? `يومي: ${signal.dailyTrend === 'BULLISH' ? 'صاعد ↗' : signal.dailyTrend === 'BEARISH' ? 'هابط ↘' : 'محايد ↔'}`
+                  : `Daily: ${signal.dailyTrend}`}
+              </span>
+            )}
           </div>
           <div className="mt-2 text-lg font-extrabold tabular-nums text-zinc-100" dir="ltr">
             {fmtUsd(signal.entryPrice)}
@@ -140,6 +160,44 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
           </div>
         </div>
       </div>
+
+      {/* تحذير مطاردة السعر */}
+      {signal.chaseWarning && (
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+          <AlertTriangle size={16} className="shrink-0 text-amber-400" />
+          <span>
+            {lang === 'ar'
+              ? 'تحذير مطاردة: السعر مبتعد عن متوسط EMA21 بأكثر من 2×ATR، تجنّب الشراء العشوائي وانتظر تصحيحاً لمنطقة الدخول.'
+              : 'Chase Warning: Price is extended > 2×ATR from EMA21. Avoid chasing; wait for a pullback to entry zone.'}
+          </span>
+        </div>
+      )}
+
+      {/* منطقة الدخول الموصى بها */}
+      {signal.entryZone && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs">
+          <div className="flex items-center gap-1.5 text-zinc-400">
+            <Crosshair size={13} className="text-sky-400" />
+            <span>{lang === 'ar' ? 'منطقة الدخول المثالية (Pullback Zone):' : 'Entry Pullback Zone:'}</span>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-zinc-200" dir="ltr">
+            <span>
+              ${signal.entryZone.low.toLocaleString()} – ${signal.entryZone.high.toLocaleString()}
+            </span>
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                signal.entryZone.priceInside
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {signal.entryZone.priceInside
+                ? (lang === 'ar' ? 'داخل النطاق ✅' : 'Inside Zone ✅')
+                : (lang === 'ar' ? 'انتظر التصحيح ⏳' : 'Awaiting Retrace ⏳')}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* شريط جودة الدخول: تفصيل الدرجة الحالية بدل رقم غامض فقط. */}
       <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">

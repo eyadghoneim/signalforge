@@ -26,6 +26,9 @@ const TXT = {
     noOpen: 'مفيش صفقات مفتوحة دلوقتي — بيستنى إشارة شراء تمر من البوابات',
     noClosed: 'لسه مفيش صفقات مقفولة',
     reset: 'تصفير',
+    resetConfirm: 'هل أنت متأكد من تصفير الحساب الورقي؟ سيتم مسح سجل الصفقات والبدء من 10,000$ مجدداً.',
+    confirmAction: 'تأكيد التصفير',
+    cancelAction: 'إلغاء',
     refresh: 'تحديث',
     qty: 'كمية',
     fees: 'رسوم',
@@ -52,6 +55,9 @@ const TXT = {
     noOpen: 'No open positions — waiting for a buy signal that passes the gates',
     noClosed: 'No closed trades yet',
     reset: 'Reset',
+    resetConfirm: 'Are you sure you want to reset the paper wallet? All trading history will be cleared and reset to $10,000.',
+    confirmAction: 'Confirm Reset',
+    cancelAction: 'Cancel',
     refresh: 'Refresh',
     qty: 'Qty',
     fees: 'Fees',
@@ -126,6 +132,8 @@ export default function PaperPanel({ lang }: { lang: Lang }) {
   const [acct, setAcct] = useState<PaperAccountInfo | null>(null);
   const [initialEquity, setInitialEquity] = useState(10_000);
   const [loading, setLoading] = useState(true);
+  const [showConfirmReset, setShowConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const x = TXT[lang];
 
   const load = useCallback(async () => {
@@ -146,12 +154,16 @@ export default function PaperPanel({ lang }: { lang: Lang }) {
     return () => clearInterval(timer);
   }, [load]);
 
-  const reset = async () => {
+  const handleConfirmReset = async () => {
+    setResetting(true);
     try {
       await api.resetPaper();
+      setShowConfirmReset(false);
       await load();
     } catch {
       // ignore
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -181,12 +193,37 @@ export default function PaperPanel({ lang }: { lang: Lang }) {
           <button onClick={() => void load()} className="rounded-lg border border-zinc-800 p-1.5 text-zinc-400 hover:text-zinc-200" title={x.refresh}>
             <RefreshCw size={13} />
           </button>
-          <button onClick={() => void reset()} className="rounded-lg border border-zinc-800 p-1.5 text-zinc-400 hover:text-rose-300" title={x.reset}>
+          <button onClick={() => setShowConfirmReset(true)} className="rounded-lg border border-zinc-800 p-1.5 text-zinc-400 hover:text-rose-300" title={x.reset}>
             <RotateCcw size={13} />
           </button>
         </div>
       </div>
       <p className="mb-3 text-[10px] leading-4 text-zinc-500">{x.subtitle}</p>
+
+      {/* نافذة تأكيد تصفير الحساب */}
+      {showConfirmReset && (
+        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs">
+          <div className="mb-2 text-rose-200 font-medium">
+            {x.resetConfirm}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void handleConfirmReset()}
+              disabled={resetting}
+              className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
+            >
+              {resetting ? '…' : x.confirmAction}
+            </button>
+            <button
+              onClick={() => setShowConfirmReset(false)}
+              disabled={resetting}
+              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-bold text-zinc-300 transition hover:bg-zinc-700"
+            >
+              {x.cancelAction}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* بطاقات الرصيد */}
       <div className="mb-3 grid grid-cols-3 gap-2 text-center">

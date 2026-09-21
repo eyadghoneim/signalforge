@@ -86,7 +86,8 @@ export async function getVisionMonthlyKlines(asset: SupportedAsset, months: numb
       all.push(...candles);
     }
   } catch {
-    VISION_CACHE.set(cacheKey, { value: null, at: Date.now() });
+    // خطأ مؤقت — كاش قصير جداً (دقيقة واحدة) حتى لا يُحظر الأصل 24 ساعة بسبب فشل اتصال عابر
+    VISION_CACHE.set(cacheKey, { value: null, at: Date.now() - VISION_TTL_MS + 60_000 });
     return null;
   }
 

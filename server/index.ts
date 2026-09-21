@@ -194,6 +194,11 @@ function allowBacktestRequest(req: express.Request, res: express.Response, heavy
 function allowDuneSqlRequest(req: express.Request, res: express.Response): boolean {
   const key = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
+  if (duneSqlBuckets.size > 500) {
+    for (const [k, v] of duneSqlBuckets.entries()) {
+      if (v.resetAt <= now) duneSqlBuckets.delete(k);
+    }
+  }
   const bucket = duneSqlBuckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
     duneSqlBuckets.set(key, { count: 1, resetAt: now + DUNE_SQL_WINDOW_MS });
@@ -384,7 +389,7 @@ app.get('/api/market/map', async (_req, res) => {
 app.get('/api/market/klines', async (req, res) => {
   const asset = String(req.query.asset || 'BTC').toUpperCase() as SupportedAsset;
   const interval = String(req.query.interval || '1h') === '4h' ? '4h' : '1h';
-  const limit = Math.min(500, Math.max(60, Number(req.query.limit) || 300));
+  const limit = Math.floor(Math.min(500, Math.max(60, Number(req.query.limit) || 300)));
   if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
   try {
     const candles = interval === '4h' ? await getCandles4h(asset, limit) : await getCandles1h(asset, limit);
@@ -529,7 +534,7 @@ app.get('/api/dune/whale-trades', async (_req, res) => {
     const trades = await getDuneWhaleTrades(25);
     return res.json({ ok: true, available: true, trades });
   } catch (e) {
-    return res.status(503).json({ ok: false, available: true, error: e instanceof Error ? e.message : String(e) });
+    return res.status(503).json({ ok: false, available: false, error: e instanceof Error ? e.message : String(e) });
   }
 });
 
@@ -539,11 +544,17 @@ app.get('/api/dune/top-tokens', async (_req, res) => {
     const tokens = await getDuneTopTokens24h(10);
     return res.json({ ok: true, available: true, tokens });
   } catch (e) {
-    return res.status(503).json({ ok: false, available: true, error: e instanceof Error ? e.message : String(e) });
+    return res.status(503).json({ ok: false, available: false, error: e instanceof Error ? e.message : String(e) });
   }
 });
 
-app.post('/api/dune/sql', async (req, res) => {
+app.post('/api/dune/sql', (req, res, next) => {
+  const config = loadConfig();
+  if (config.adminToken || process.env.BOT_ADMIN_TOKEN) {
+    return requireAdmin(req, res, next);
+  }
+  next();
+}, async (req, res) => {
   if (!allowDuneSqlRequest(req, res)) return;
   const sql = String(req.body?.sql || '').trim();
   const validationError = validateDuneSql(sql, true);
@@ -1077,9 +1088,15 @@ async function runScanCycle(): Promise<void> {
       // إشعارات المحفظة غير قاتلة — لا توقف المسح
     }
 
-    // تحديث عدّاد الأداء (Attribution) للإشارات المفتوحة
+    // تحديث عدّاد الأداء (Attribution) للإشارات المفتوحة وحفظها في التخزين الدائم
     try {
-      await updateOutcomes(listSignals(120), (a, _iv, limit) => getCandles1h(a, limit));
+      await updateOutcomes(
+        listSignals(120),
+        (a, _iv, limit) => getCandles1h(a, limit),
+        (id, outcomes) => {
+          if (outcomes) updateSignalOutcomes(id, outcomes);
+        },
+      );
     } catch {
       // تجاهل — المحاولة القادمة
     }

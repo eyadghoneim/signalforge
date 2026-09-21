@@ -7,7 +7,7 @@ function compactUsd(value: number): string {
   return `$${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}`;
 }
 
-export default function DunePanel({ data, lang }: { data: DuneInfo | null; lang: Lang }) {
+export default function DuneContextPanel({ data, lang }: { data: DuneInfo | null; lang: Lang }) {
   if (!data) return null;
 
   return (

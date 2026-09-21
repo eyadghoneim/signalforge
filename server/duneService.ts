@@ -2,6 +2,8 @@
 // The Dune layer is intentionally kept out of signal scoring and trading decisions.
 // The API key is accepted from the process environment only; it is never persisted.
 
+import { STABLECOIN_SYMBOLS } from '../shared/stablecoins';
+
 const DUNE_API = 'https://api.dune.com/api/v1';
 const DEFAULT_CACHE_TTL_MS = 30 * 60_000;
 const QUERY_TIMEOUT_MS = 45_000;
@@ -9,7 +11,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 const MAX_SQL_LENGTH = 20_000;
 const MAX_RESULT_ROWS = 500;
 
-const STABLE_SYMBOLS = ['USDC', 'USDT', 'DAI', 'FDUSD', 'USDbC', 'USDE', 'USD'];
+const STABLE_SYMBOLS = STABLECOIN_SYMBOLS;
 
 const WATCHED_ASSETS = {
   BTC: { blockchain: 'ethereum', address: '0x2260fac5e5542a773aa44fbcedf7c193bc2c599' },

@@ -78,6 +78,10 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+function round8(n: number): number {
+  return Math.round(n * 1e8) / 1e8;
+}
+
 function feeFor(notional: number): number {
   return Math.max(0, notional) * PAPER_EXECUTION.FEE_RATE;
 }
@@ -279,7 +283,7 @@ export function markToMarket(
       const fillPrice = sellFillPrice(p.tp1);
       const proceeds = fillPrice * out;
       const exitFee = feeFor(proceeds);
-      p.qty = round2(p.qty - out);
+      p.qty = round8(Math.max(0, p.qty - out));
       p.feesPaid = round2((p.feesPaid ?? 0) + exitFee);
       p.pnlAccum = round2(p.pnlAccum + (fillPrice - p.entry) * out - exitFee);
       acct.cash = round2(acct.cash + proceeds - exitFee);
@@ -291,7 +295,7 @@ export function markToMarket(
       const fillPrice = sellFillPrice(p.tp2);
       const proceeds = fillPrice * out;
       const exitFee = feeFor(proceeds);
-      p.qty = round2(p.qty - out);
+      p.qty = round8(Math.max(0, p.qty - out));
       p.feesPaid = round2((p.feesPaid ?? 0) + exitFee);
       p.pnlAccum = round2(p.pnlAccum + (fillPrice - p.entry) * out - exitFee);
       acct.cash = round2(acct.cash + proceeds - exitFee);

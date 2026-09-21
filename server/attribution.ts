@@ -10,9 +10,13 @@ interface CandleProvider {
 
 /**
  * يحدّث نتائج كل إشارة مفتوحة من شموع 1h الحقيقية.
- * يُرجع عدد الإشارات التي تغيّرت نتائجها.
+ * يُرجع عدد الإشارات التي تغيّرت نتائجها، ويستدعي onPersist لحفظ التغييرات فوراً.
  */
-export async function updateOutcomes(signals: StoredSignal[], getCandles: CandleProvider): Promise<number> {
+export async function updateOutcomes(
+  signals: StoredSignal[],
+  getCandles: CandleProvider,
+  onPersist?: (id: string, outcomes: StoredSignal['outcomes']) => void,
+): Promise<number> {
   let changed = 0;
   const candlesCache = new Map<string, Candle[]>();
 
@@ -29,6 +33,7 @@ export async function updateOutcomes(signals: StoredSignal[], getCandles: Candle
           const h72 = computed.windows.h72;
           const resolution = h72.hitTp1BeforeSl === true ? 'TP1_FIRST' : h72.hitTp1BeforeSl === false ? 'SL_FIRST' : 'EXPIRED';
           sig.outcomes = { windows: computed.windows, resolution, resolvedAt: Date.now() };
+          onPersist?.(sig.id, sig.outcomes);
           changed++;
         }
       } catch {
@@ -44,8 +49,13 @@ export async function updateOutcomes(signals: StoredSignal[], getCandles: Candle
       const h72 = computed.windows.h72;
       const resolution: StoredSignal['outcomes']['resolution'] =
         h72.hitTp1BeforeSl === true ? 'TP1_FIRST' : h72.hitTp1BeforeSl === false ? 'SL_FIRST' : 'OPEN';
-      if (resolution !== 'OPEN') sig.outcomes.resolvedAt = Date.now();
-      sig.outcomes = { windows: computed.windows, resolution };
+      const resolvedAt = resolution !== 'OPEN' ? (sig.outcomes?.resolvedAt ?? Date.now()) : undefined;
+      sig.outcomes = {
+        windows: computed.windows,
+        resolution,
+        ...(resolvedAt ? { resolvedAt } : {}),
+      };
+      onPersist?.(sig.id, sig.outcomes);
       changed++;
     } catch {
       // تجاهل — المحاولة القادمة

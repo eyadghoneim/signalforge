@@ -37,9 +37,10 @@ export default function PriceChart({ asset, signal, lang }: Props) {
   const lastAssetRef = useRef<string>('');
   const [candles, setCandles] = useState<Candle[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
   const [showLevels, setShowLevels] = useState<boolean>(true);
 
-  // إنشاء الرسم مرة واحدة
+  // إنشاء الرسم البياني مرة واحدة وتثبيته في الحاوية
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
@@ -87,28 +88,27 @@ export default function PriceChart({ asset, signal, lang }: Props) {
     };
   }, []);
 
-  // جلب البيانات
+  // دالة جلب البيانات
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await api.klines(asset, '1h', 300);
+      setCandles(normalizeCandlesForChart(res.candles));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // جلب البيانات عند تغير الأصل وتحديث دوري
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await api.klines(asset, '1h', 300);
-        if (!cancelled) {
-          setCandles(normalizeCandlesForChart(res.candles));
-          setError(null);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      }
-    };
-    void load();
+    void loadData();
     const t = setInterval(() => {
-      if (!document.hidden) void load();
+      if (!document.hidden) void loadData();
     }, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    return () => clearInterval(t);
   }, [asset]);
 
   // تحديث السلاسل
@@ -290,11 +290,22 @@ export default function PriceChart({ asset, signal, lang }: Props) {
           )}
         </div>
       </div>
-      {error ? (
-        <div className="flex h-72 items-center justify-center text-sm text-rose-300">{t(lang, 'chartError')} {error}</div>
-      ) : (
-        <div ref={containerRef} className="h-72 w-full sm:h-80" />
-      )}
+      <div className="relative h-72 w-full sm:h-80">
+        <div ref={containerRef} className="h-full w-full" />
+        {error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-zinc-950/85 p-4 text-center backdrop-blur-sm">
+            <div className="text-sm font-semibold text-rose-300">
+              {t(lang, 'chartError')}: {error}
+            </div>
+            <button
+              onClick={() => void loadData()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-200 transition hover:bg-zinc-700 hover:text-white"
+            >
+              {lang === 'ar' ? 'إعادة المحاولة 🔄' : 'Retry 🔄'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -268,10 +268,32 @@ export interface DailyReportData {
   recentMegaWhaleSwaps: DuneWhaleTrade[];
 }
 
+const ADMIN_TOKEN_KEY = 'sf_admin_token';
+
+export function getAdminToken(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+}
+
+export function setAdminToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  if (token.trim()) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, token.trim());
+  } else {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  }
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
+  const token = getAdminToken();
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    ...(token ? { 'x-bot-admin-token': token } : {}),
+    ...(init?.headers as Record<string, string> | undefined),
+  };
   const res = await fetch(url, {
-    headers: { 'content-type': 'application/json' },
     ...init,
+    headers,
   });
   const json = (await res.json().catch(() => ({ ok: false, error: `رد غير صالح (HTTP ${res.status})` }))) as Record<string, unknown>;
   if (!res.ok || json.ok === false) {

@@ -48,6 +48,9 @@ export default function App() {
   const [showDailyReport, setShowDailyReport] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(0);
   const hiddenRef = useRef(false);
+  const activeAssetRef = useRef(activeAsset);
+  activeAssetRef.current = activeAsset;
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
     applyDocumentDir(lang);
@@ -60,29 +63,43 @@ export default function App() {
 
   const refreshCore = useCallback(async () => {
     if (hiddenRef.current) return;
+    const currentSeq = ++requestSeqRef.current;
+    const reqAsset = activeAsset;
     try {
-      const [s, sig, h, att, hp, liq, provs, duneSnapshot] = await Promise.all([
+      const [sRes, sigRes, hRes, attRes, hpRes, liqRes, provsRes, duneRes] = await Promise.allSettled([
         api.summary(),
-        api.signal(activeAsset),
+        api.signal(reqAsset),
         api.signals(60),
         api.attribution(),
         api.health(),
-        api.liquidity().catch(() => null),
-        api.providers().catch(() => null),
-        api.dune().catch(() => null),
+        api.liquidity(),
+        api.providers(),
+        api.dune(),
       ]);
-      setSummary(s.assets);
-      setSignal(sig.signal);
-      setSignalError(null);
-      setHistory(h.signals);
-      setAttribution(att.summary);
-      setHealth(hp);
-      if (liq) setRegime(liq.regime);
-      if (provs) setProviders(provs.providers);
-      if (duneSnapshot) setDune(duneSnapshot);
+
+      // If user switched asset or a newer request began, avoid stale overwrite
+      if (currentSeq !== requestSeqRef.current || reqAsset !== activeAssetRef.current) {
+        return;
+      }
+
+      if (sRes.status === 'fulfilled') setSummary(sRes.value.assets);
+      if (sigRes.status === 'fulfilled') {
+        setSignal(sigRes.value.signal);
+        setSignalError(null);
+      } else {
+        setSignalError(sigRes.reason instanceof Error ? sigRes.reason.message : String(sigRes.reason));
+      }
+      if (hRes.status === 'fulfilled') setHistory(hRes.value.signals);
+      if (attRes.status === 'fulfilled') setAttribution(attRes.value.summary);
+      if (hpRes.status === 'fulfilled') setHealth(hpRes.value);
+      if (liqRes.status === 'fulfilled' && liqRes.value) setRegime(liqRes.value.regime);
+      if (provsRes.status === 'fulfilled' && provsRes.value) setProviders(provsRes.value.providers);
+      if (duneRes.status === 'fulfilled' && duneRes.value) setDune(duneRes.value);
       setLastUpdate(Date.now());
     } catch (e) {
-      setSignalError(e instanceof Error ? e.message : String(e));
+      if (currentSeq === requestSeqRef.current) {
+        setSignalError(e instanceof Error ? e.message : String(e));
+      }
     }
   }, [activeAsset]);
 

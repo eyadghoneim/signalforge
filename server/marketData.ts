@@ -26,6 +26,15 @@ type CacheEntry = { data: unknown; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<unknown>>();
 
+// تنظيف دوري للعناصر منتهية الصلاحية كل 5 دقائق لمنع تراكم الذاكرة
+const cacheCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of cache.entries()) {
+    if (v.expiresAt <= now) cache.delete(k);
+  }
+}, 5 * 60_000);
+if (typeof cacheCleanupTimer.unref === 'function') cacheCleanupTimer.unref();
+
 function readCache<T>(key: string): T | null {
   const e = cache.get(key);
   if (!e) return null;
@@ -333,32 +342,33 @@ export function invalidateCandleCache(asset: SupportedAsset): void {
   }
 }
 export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<Candle[]> {
-  return cached(`c1h:${asset}:${limit}`, 60_000, async () => {
+  const safeLimit = Math.max(10, Math.floor(limit));
+  return cached(`c1h:${asset}:${safeLimit}`, 60_000, async () => {
     try {
-      const out = await candlesFromOkx(asset, '1h', Math.min(limit, 1000));
+      const out = await candlesFromOkx(asset, '1h', Math.min(safeLimit, 1000));
       noteProviderHealth('okx:klines', true);
       return out;
     } catch (e) {
       noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
       try {
-        const out = await candlesFromBinance(asset, '1h', Math.min(limit, 1000));
+        const out = await candlesFromBinance(asset, '1h', Math.min(safeLimit, 1000));
         noteProviderHealth('binance:klines', true);
         return out;
       } catch (e2) {
         noteProviderHealth('binance:klines', false, e2 instanceof Error ? e2.message : String(e2));
       }
-      if (limit <= 300) {
+      if (safeLimit <= 300) {
         try {
           const cb = await candlesFromCoinbase1h(asset);
           noteProviderHealth('coinbase:candles', true);
-          return cb.slice(-limit);
+          return cb.slice(-safeLimit);
         } catch (e3) {
           noteProviderHealth('coinbase:candles', false, e3 instanceof Error ? e3.message : String(e3));
         }
       }
       // مظلة ccxt: بورصات إضافية كخيار أخير عندما تتعطل المصادر المباشرة.
       try {
-        return await candlesFromCcxt(asset, '1h', limit);
+        return await candlesFromCcxt(asset, '1h', safeLimit);
       } catch (e4) {
         noteProviderHealth('ccxt:klines', false, e4 instanceof Error ? e4.message : String(e4));
       }
@@ -369,9 +379,10 @@ export async function getCandles1h(asset: SupportedAsset, limit = 500): Promise<
 
 // شموع الفريم اليومي — لبوابة الماكرو اليومية
 export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<Candle[]> {
-  return cached(`c1d:${asset}:${limit}`, 10 * 60_000, async () => {
+  const safeLimit = Math.max(10, Math.floor(limit));
+  return cached(`c1d:${asset}:${safeLimit}`, 10 * 60_000, async () => {
     try {
-      const out = await candlesFromOkx(asset, '1d', Math.min(limit, 400));
+      const out = await candlesFromOkx(asset, '1d', Math.min(safeLimit, 400));
       noteProviderHealth('okx:klines', true);
       if (out.length < 75) throw new Error('okx daily too short');
       return out;
@@ -379,14 +390,14 @@ export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<
       noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
       let out: Candle[];
       try {
-        out = await candlesFromBinance(asset, '1d', Math.min(limit, 1000));
+        out = await candlesFromBinance(asset, '1d', Math.min(safeLimit, 1000));
         noteProviderHealth('binance:klines', true);
       } catch {
-        out = await candlesFromBybit(asset, '1d', Math.min(limit, 1000));
+        out = await candlesFromBybit(asset, '1d', Math.min(safeLimit, 1000));
         noteProviderHealth('bybit:klines', true);
       }
       if (out.length < 75) {
-        out = await candlesFromCcxt(asset, '1d', limit);
+        out = await candlesFromCcxt(asset, '1d', safeLimit);
       }
       if (out.length < 75) throw new DataUnavailableError(asset, 'daily klines (too short)');
       return out;
@@ -396,10 +407,11 @@ export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<
 
 export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<Candle[] | null> {
   // قد تكون غير متاحة (تعطل مصدر الشموع) — نرجع null بصراحة بدل بيانات مزيفة
+  const safeLimit = Math.max(10, Math.floor(limit));
   try {
-    return await cached(`c4h:${asset}:${limit}`, 120_000, async () => {
+    return await cached(`c4h:${asset}:${safeLimit}`, 120_000, async () => {
       try {
-        const rows = await candlesFromOkx(asset, '4h', Math.min(limit, 1000));
+        const rows = await candlesFromOkx(asset, '4h', Math.min(safeLimit, 1000));
         noteProviderHealth('okx:klines', true);
         if (rows.length < 230) throw new Error('4h too short for HTF gate');
         return rows;
@@ -407,7 +419,7 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
         noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
         let rows: Candle[];
         try {
-          rows = await candlesFromBinance(asset, '4h', Math.min(limit, 1000));
+          rows = await candlesFromBinance(asset, '4h', Math.min(safeLimit, 1000));
           noteProviderHealth('binance:klines', true);
         } catch {
           rows = await candlesFromBybit(asset, '4h', Math.min(limit, 1000));
