@@ -440,6 +440,10 @@ export interface MacroCalendarResponse {
   activeEvent: MacroEvent | null;
   lockReasonAr: string | null;
   lockReasonEn: string | null;
+  /** True: this is a display-only reference rhythm of typical release times, NOT a real calendar. */
+  isReferenceSchedule?: boolean;
+  noteAr?: string;
+  noteEn?: string;
   upcomingEvents: MacroEvent[];
   lastUpdated: number;
 }

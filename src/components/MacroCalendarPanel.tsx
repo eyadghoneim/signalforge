@@ -83,16 +83,16 @@ export default function MacroCalendarPanel({ lang }: Props) {
                     : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400'
                 }`}
               >
-                {isBlackout ? '⚠️ ACTIVE BLACKOUT' : '🛡️ NORMAL SAFE WINDOW'}
+                {isBlackout ? '⚠️ REFERENCE EVENT WINDOW' : '🛡️ NO REFERENCE OVERLAP'}
               </span>
               <span className="rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
-                {lang === 'ar' ? 'جدول مرجعي' : 'Reference Calendar'}
+                {lang === 'ar' ? 'جدول استرشادي — ليس حجلاً حقيقياً' : 'Reference schedule — not a real calendar'}
               </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
               {lang === 'ar'
-                ? 'حظر آلي للصفقات قبل الأخبار الأمريكية العنيفة بـ ساعتين لتجنب مصائد السيولة وضرب الوقف'
-                : 'Automated 2-hour blackout buffer around high-impact releases to protect capital from whipsaws'}
+                ? 'تنبيه عرضي حول نوافذ الأخبار الأمريكية عالية التأثير (نمط مرجعي) — لا يحظر أي صفقات فعلياً'
+                : 'Display-only notice around high-impact US release windows (reference rhythm) — it does NOT block any trades'}
             </p>
           </div>
         </div>
@@ -123,8 +123,8 @@ export default function MacroCalendarPanel({ lang }: Props) {
           <div>
             <span className="font-bold block text-sm">
               {isBlackout
-                ? (lang === 'ar' ? '⚠️ نافذة الحظر نشطة: تم قفل توليد صفقات الشراء مؤقتاً' : '⚠️ Blackout Mode Active: New BUY entries paused')
-                : (lang === 'ar' ? '✅ التداول آمن: لا توجد أحداث تضخم أو فائدة خلال الساعتين القادمتين' : '✅ Safe Trading Window: No high-impact events within the buffer')}
+                ? (lang === 'ar' ? '⚠️ تداخل مع نافذة حدث مرجعي — تنبيه عرضي فقط، لا يوجد حظر فعلي' : '⚠️ Overlap with a reference event window — display-only, nothing is blocked')
+                : (lang === 'ar' ? '✅ لا تداخل مع نوافذ الأحداث المرجعية حالياً' : '✅ No overlap with reference event windows right now')}
             </span>
             {isBlackout && data?.lockReasonAr && (
               <span className="text-[11px] text-rose-300 block mt-0.5">
@@ -142,6 +142,13 @@ export default function MacroCalendarPanel({ lang }: Props) {
         )}
       </div>
 
+      {/* إفصاح صدق: هذا جدول استرشادي وليس مفكرة اقتصادية حقيقية */}
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-200/80">
+        {lang === 'ar'
+          ? 'ℹ️ إفصاح: هذا جدول استرشادي بنمط المواعيد المتكررة المعتادة (يتكرر يومياً كنموذج مرجعي) وليس مفكرة اقتصادية حقيقية، ولا يحظر أي صفقات تلقائياً. راجع المواعيد الفعلية من مصادر رسمية.'
+          : 'ℹ️ Disclosure: this is a reference schedule of typical recurring release times (repeats daily as a template), not a real economic calendar, and it does NOT block any trading automatically. Verify actual dates from official sources.'}
+      </div>
+
       {/* جدول الأحداث الاقتصادية الكبرى */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
@@ -150,7 +157,7 @@ export default function MacroCalendarPanel({ lang }: Props) {
             {lang === 'ar' ? 'جدول الأحداث الاقتصادية الأمريكية المرتقبة:' : 'Upcoming High-Impact US Releases:'}
           </span>
           <span className="text-[11px] text-zinc-500">
-            {lang === 'ar' ? 'نافذة الحظر: ساعتان قبل وساعة بعد الحدث' : 'Buffer: 2h Before / 1h After'}
+            {lang === 'ar' ? 'النمط المرجعي للفترة المحيطة بالحدث' : 'Reference buffer around the event'}
           </span>
         </div>
 
@@ -205,8 +212,8 @@ export default function MacroCalendarPanel({ lang }: Props) {
                     </td>
                     <td className="p-3 text-center whitespace-nowrap">
                       {isActive ? (
-                        <span className="rounded-md bg-rose-600 px-2 py-1 text-[10px] font-bold text-white animate-pulse">
-                          🛑 {lang === 'ar' ? 'حظر صفقات' : 'LOCKED'}
+                        <span className="rounded-md bg-amber-600/80 px-2 py-1 text-[10px] font-bold text-white">
+                          ⚠️ {lang === 'ar' ? 'تنبيه عرضي' : 'Notice'}
                         </span>
                       ) : (
                         <span className="rounded-md border border-zinc-700/60 bg-zinc-800/50 px-2 py-0.5 text-[10px] text-zinc-400">

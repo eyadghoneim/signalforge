@@ -518,8 +518,14 @@ app.get('/api/liquidity-regime', async (_req, res) => {
 });
 
 app.get('/api/dune', async (_req, res) => {
-  const snapshot = await getDuneSnapshot();
-  res.json(snapshot);
+  try {
+    const snapshot = await getDuneSnapshot();
+    res.json(snapshot);
+  } catch (e) {
+    // getDuneSnapshot normally never throws, but an unhandled rejection here
+    // would crash the whole process (Node >= 15 default). Fail safe instead.
+    res.status(503).json({ ok: false, enabled: false, source: 'DUNE', fetchedAt: null, error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 // ─── Dune Analytics research tab ───
@@ -577,10 +583,14 @@ app.get('/api/report/daily', async (_req, res) => {
     const winRate = paper.closed.length > 0
       ? (paper.closed.filter((t) => t.pnlUsd > 0).length / paper.closed.length) * 100
       : 0;
-    const totalPnl = paper.closed.reduce((acc, t) => acc + t.pnlUsd, 0);
 
     const fng = await getFearGreedIndex().catch(() => null);
     const whaleTrades = isDuneAvailable() ? await getDuneWhaleTrades(6).catch(() => []) : [];
+    // Equity must be marked to the live market (sell-side slippage + fees), not the
+    // entry price. Adding pnlAccum on top of entry-value double-counts realized
+    // partial profits (TP1/TP2) — currentEquity() is the single source of truth.
+    const openPrices = await getOpenPaperPrices();
+    const liveEquity = currentEquity(paperAccount, openPrices);
 
     const signals = SUPPORTED_ASSETS.map((asset) => {
       const last = getLastSignalForAsset(asset);
@@ -619,8 +629,8 @@ app.get('/api/report/daily', async (_req, res) => {
       paperTrading: {
         initialBalance: paper.startingEquity,
         cash: Math.round(paper.cash * 100) / 100,
-        equity: Math.round((paper.cash + paper.open.reduce((acc, p) => acc + (p.entry * p.qty) + p.pnlAccum, 0)) * 100) / 100,
-        totalRealizedPnlUsd: Math.round(totalPnl * 100) / 100,
+        equity: Math.round(liveEquity * 100) / 100,
+        totalRealizedPnlUsd: Math.round(paper.realizedPnl * 100) / 100,
         winRatePercent: Math.round(winRate * 10) / 10,
         openPositionsCount: paper.open.length,
         closedTradesCount: paper.closed.length,
@@ -725,9 +735,13 @@ app.post('/api/telegram/test', requireAdmin, async (_req, res) => {
   const config = loadConfig();
   const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
   const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
-  const result = await sendTelegramMessage(token, chatId, buildTestMessageHtml());
-  appendLog(result.ok ? 'INFO' : 'WARN', `Telegram test: ${result.ok ? 'sent' : `failed (${result.error})`}`);
-  res.json({ ok: result.ok, error: result.error });
+  try {
+    const result = await sendTelegramMessage(token, chatId, buildTestMessageHtml());
+    appendLog(result.ok ? 'INFO' : 'WARN', `Telegram test: ${result.ok ? 'sent' : `failed (${result.error})`}`);
+    res.json({ ok: result.ok, error: result.error });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 // ═══════════════════ حلقة المسح الآلي ═══════════════════
@@ -1152,8 +1166,8 @@ function scheduleNextScan(delayMs?: number): void {
 // ═══════════════════ التقرير اليومي الصادق ═══════════════════
 
 function buildDailyDigestHtml(): string {
-  const summary = computeAttributionSummary(listSignals(500));
   const all = listSignals(500);
+  const summary = computeAttributionSummary(all);
   const lines = [
     '📊 <b>[التقرير اليومي — SignalForge]</b>',
     '',
@@ -1225,6 +1239,11 @@ async function shutdown(signal: string): Promise<void> {
 }
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 process.once('SIGINT', () => void shutdown('SIGINT'));
+// Node >= 15 turns an unhandled rejection into a process crash. A 24/7 paper
+// engine must not die from one stray promise; log it loudly instead.
+process.on('unhandledRejection', (reason) => {
+  appendLog('ERROR', `Unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
+});
 
 // Keep unknown API requests from falling through to Vite's SPA middleware in development.
 app.use('/api', (_req, res) => {

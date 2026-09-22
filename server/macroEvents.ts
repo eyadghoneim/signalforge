@@ -18,12 +18,12 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
       nameAr: 'مؤشر أسعار المستهلكين الأمريكي (التضخم السنوي CPI)',
       category: 'CPI' as const,
       impact: 'HIGH' as const,
-      dayOffsetHours: 12.5, // 12:30 UTC today
-      previousValue: '2.9%',
-      forecastValue: '2.8%',
+      dayOffsetHours: 12.5, // النمط المرجعي المعتاد: 12:30 UTC
+      previousValue: '—',
+      forecastValue: '—',
       blackoutHoursBefore: 2,
       blackoutHoursAfter: 1,
-      descriptionAr: 'بيانات التضخم الأمريكي الرئيسية تحدد مسار الفيدرالي في خفض أو تثبيت الفائدة',
+      descriptionAr: 'بيانات التضخم الأمريكي الرئيسية تحدد مسار الفيدرالي — نموذج مرجعي للموعد المتكرر، وليس إعلاناً مجدولاً فعلياً',
     },
     {
       id: 'evt_fomc',
@@ -31,12 +31,12 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
       nameAr: 'قرار الفائدة للبنك الاحتياطي الفيدرالي الأمريكي (FOMC)',
       category: 'FOMC' as const,
       impact: 'HIGH' as const,
-      dayOffsetHours: 42, // Tomorrow 18:00 UTC
-      previousValue: '5.25%',
-      forecastValue: '5.00%',
+      dayOffsetHours: 42, // النمط المرجعي: 18:00 UTC في اليوم التالي
+      previousValue: '—',
+      forecastValue: '—',
       blackoutHoursBefore: 2,
       blackoutHoursAfter: 1.5,
-      descriptionAr: 'الحدث المالي الأضخم عالمياً الذي يحرك مؤشر الدولار والسيولة في الأسواق الرقمية',
+      descriptionAr: 'الحدث المالي الأضخم عالمياً — نموذج مرجعي للموعد المتكرر، وليس إعلاناً مجدولاً فعلياً',
     },
     {
       id: 'evt_nfp',
@@ -44,12 +44,12 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
       nameAr: 'تقرير الوظائف غير الزراعية الأمريكي (NFP)',
       category: 'NFP' as const,
       impact: 'HIGH' as const,
-      dayOffsetHours: 60.5, // Day after tomorrow 12:30 UTC
-      previousValue: '142K',
-      forecastValue: '165K',
+      dayOffsetHours: 60.5, // النمط المرجعي: 12:30 UTC بعد يومين
+      previousValue: '—',
+      forecastValue: '—',
       blackoutHoursBefore: 1.5,
       blackoutHoursAfter: 1,
-      descriptionAr: 'مؤشر صحة سوق العمل الأمريكي وسرعة نمو الأجور، محرك قوي للتقلبات اللحظية',
+      descriptionAr: 'مؤشر صحة سوق العمل الأمريكي — نموذج مرجعي للموعد المتكرر، وليس إعلاناً مجدولاً فعلياً',
     },
     {
       id: 'evt_ppi',
@@ -58,11 +58,11 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
       category: 'PPI' as const,
       impact: 'MEDIUM' as const,
       dayOffsetHours: 84.5,
-      previousValue: '0.2%',
-      forecastValue: '0.1%',
+      previousValue: '—',
+      forecastValue: '—',
       blackoutHoursBefore: 1,
       blackoutHoursAfter: 0.5,
-      descriptionAr: 'مؤشر تضخم أسعار الجملة الذي يسبق مؤشر المستهلكين بشهر واحد',
+      descriptionAr: 'مؤشر تضخم أسعار الجملة — نموذج مرجعي للموعد المتكرر، وليس إعلاناً مجدولاً فعلياً',
     },
     {
       id: 'evt_gdp',
@@ -71,11 +71,11 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
       category: 'GDP' as const,
       impact: 'HIGH' as const,
       dayOffsetHours: 108.5,
-      previousValue: '3.0%',
-      forecastValue: '2.9%',
+      previousValue: '—',
+      forecastValue: '—',
       blackoutHoursBefore: 1.5,
       blackoutHoursAfter: 1,
-      descriptionAr: 'مقياس وتيرة النمو الاقتصادي للولايات المتحدة واحتمالات الركود',
+      descriptionAr: 'مقياس وتيرة النمو الاقتصادي الأمريكي — نموذج مرجعي للموعد المتكرر، وليس إعلاناً مجدولاً فعلياً',
     },
   ];
 
@@ -114,12 +114,16 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
   const activeEvent = events.find((e) => e.status === 'ACTIVE_BLACKOUT') || null;
   const isBlackoutActive = activeEvent !== null;
 
+  // Honest framing: this is a REFERENCE rhythm of typical release times, not a real
+  // economic calendar, and it does NOT block any trading by itself. The previous
+  // wording claimed new BUY entries were automatically locked - that was false:
+  // no engine, gate, or paper-trading code consumes this value.
   const lockReasonAr = isBlackoutActive
-    ? `⚠️ نافذة حظر نشطة بسبب صدور: ${activeEvent?.nameAr}. يتم حظر الصفقات الجديدة تلقائياً قبل الحدث بـ ${activeEvent?.blackoutHoursBefore} س وبعده بـ ${activeEvent?.blackoutHoursAfter} س لتجنب صيد الوقف.`
+    ? `⚠️ تنبيه استرشادي: تداخل مع النمط المرجعي لصدور "${activeEvent?.nameAr}". هذا تنبيه عرضي فقط — لا يوجد أي حظر فعلي للصفقات (المحرك لا يستهلك هذه القيمة).`
     : null;
 
   const lockReasonEn = isBlackoutActive
-    ? `⚠️ Active blackout window due to ${activeEvent?.name}. New entries are temporarily paused to avoid stop-hunt whipsaws.`
+    ? `⚠️ Reference notice: overlaps the typical release window for ${activeEvent?.name}. Display-only warning — no trading is actually blocked by this calendar.`
     : null;
 
   return {
@@ -127,6 +131,9 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
     activeEvent,
     lockReasonAr,
     lockReasonEn,
+    isReferenceSchedule: true,
+    noteAr: 'جدول استرشادي بنمط المواعيد المتكررة المعتادة للمؤشرات الأمريكية — ليس جدولاً حقيقياً؛ المواعيد تتكرر يومياً كنموذج مرجعي، والقيم الفعلية تُنشر من مصادر رسمية. لا يحظر هذا الجدول أي صفقات تلقائياً.',
+    noteEn: 'Reference schedule of typical recurring release times for US indicators — not a real calendar; times repeat daily as a template. It does NOT block any trading automatically.',
     upcomingEvents: events,
     lastUpdated: now,
   };

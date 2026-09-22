@@ -46,6 +46,15 @@ The backtest is transparent about its own edge cases instead of hiding them:
 | **Live candle timing** | Live scans may read the latest still-forming 1h candle, while the backtest replays historical candles; signal timing can therefore differ. |
 | **Liquidity layer disabled in backtests** | DefiLlama history is not freely available; the layer is off in the simulation (disclosed). |
 
+## Honest data disclosures
+
+Beyond the backtest limitations above, two display-only layers deserve explicit framing:
+
+| Layer | Honest status |
+|---|---|
+| **Macro calendar tab** | A REFERENCE schedule of typical recurring US release times (CPI/FOMC/NFP/PPI/GDP) — it repeats daily as a template, is NOT a real economic calendar, shows no real prev/forecast values (`—`), and does NOT block any trading automatically. Verify actual dates from official sources. |
+| **Order book depth tab** | Live Binance L2 depth when reachable. When every provider fails, the panel falls back to a deterministic synthetic model built from the last known price; it is labeled `isSimulated` + a visible warning banner, and the walls/volumes are NOT real orders. |
+
 ## Quick start
 
 ```bash

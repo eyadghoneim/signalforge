@@ -249,10 +249,15 @@ export class PostgresDurableStore implements DurableStore {
   }
 
   private static async readSignals(pool: Pool): Promise<StoredSignal[]> {
+    // DESC + in-memory reverse: if the table transiently holds more than 500 rows
+    // (async trim), we must load the NEWEST signals, not the oldest 500.
     const result = await pool.query<SignalRow>(
-      'SELECT id, payload, generated_at FROM signalforge_signals ORDER BY generated_at ASC LIMIT 500',
+      'SELECT id, payload, generated_at FROM signalforge_signals ORDER BY generated_at DESC LIMIT 500',
     );
-    return result.rows.map((row) => row.payload).filter((signal): signal is StoredSignal => Boolean(signal?.id));
+    return result.rows
+      .map((row) => row.payload)
+      .filter((signal): signal is StoredSignal => Boolean(signal?.id))
+      .reverse();
   }
 
   private static async readLogs(pool: Pool): Promise<DurableLog[]> {

@@ -80,8 +80,6 @@ export function runBacktest(
 
   // ─── فريم 4h من نفس البيانات ───
   const htf = resample(candles1h, 14400);
-  const htfCloses = htf.map((c) => c.close);
-  void htfCloses;
 
   // آخر شمعة 1h داخل كل دلو 4h — نستخدم فقط الدلوس المكتملة (بلا تسريب)
   const htfLast1hIndex: number[] = [];
@@ -155,12 +153,21 @@ export function runBacktest(
   let equity = opts.initialEquity;
   let position: OpenPosition | null = null;
   let cooldownUntil = -1;
+  let hPtr = -1; // monotonic pointer into htfLast1hIndex
+  let dPtr = -1; // monotonic pointer into dailyLast1hIndex
   const trades: BacktestTrade[] = [];
   const equityCurve: { time: number; equity: number; buyHold: number }[] = [];
   const firstPrice = candles1h[WARMUP].close;
 
   for (let i = WARMUP; i < candles1h.length; i++) {
     const candle = candles1h[i];
+
+    // Advance the completed-bucket pointers monotonically (O(n) total instead of
+    // a per-candle rescan). htfLast1hIndex/dailyLast1hIndex are strictly increasing,
+    // so the "last bucket completed before i" is a prefix — identical semantics
+    // to the previous linear scan, without the O(n·m) cost.
+    while (hPtr + 1 < htfLast1hIndex.length && htfLast1hIndex[hPtr + 1] < i) hPtr++;
+    while (dPtr + 1 < dailyLast1hIndex.length && dailyLast1hIndex[dPtr + 1] < i) dPtr++;
 
     // ─── 1) إدارة مركز مفتوح (افتُتح في شمعة سابقة) ───
     if (position) {
@@ -177,7 +184,7 @@ export function runBacktest(
         const reason: BacktestTrade['exitReason'] = position.tp2Taken ? 'TP2_SL' : position.tp1Taken ? 'TP1_SL' : 'SL';
         const pos = position;
         position = null;
-        recordAndClose(pos, exit, reason, candle.time, pnl);
+        recordAndClose(pos, exit, reason, candle.time);
       } else {
         // سلّم الأهداف
         if (!position.tp1Taken && candle.high >= position.tp1) {
@@ -202,7 +209,7 @@ export function runBacktest(
           const pos = position;
           const avgExit = computeAvgExit(pos);
           position = null;
-          recordAndClose(pos, avgExit, 'TP3', candle.time, pos.realizedPnl);
+          recordAndClose(pos, avgExit, 'TP3', candle.time);
         }
       }
       // freqtrade-style active trailing after TP2: wait for 1×ATR profit, then
@@ -219,19 +226,11 @@ export function runBacktest(
     if (!position && i >= cooldownUntil) {
       const snap = snapshotAt(i);
       if (snap) {
-        // آخر دلو 4h مكتمل قبل هذه الشمعة
-        let hIdx = -1;
-        for (let k = 0; k < htfLast1hIndex.length; k++) {
-          if (htfLast1hIndex[k] < i) hIdx = k;
-          else break;
-        }
+        // آخر دلو 4h مكتمل قبل هذه الشمعة (مؤشر تزايدي)
+        const hIdx = hPtr;
         const htfSnap = hIdx >= 200 ? computeHtfSnapshot(htf, hIdx) : null;
-        // آخر دلو يومي مكتمل
-        let dIdx = -1;
-        for (let k = 0; k < dailyLast1hIndex.length; k++) {
-          if (dailyLast1hIndex[k] < i) dIdx = k;
-          else break;
-        }
+        // آخر دلو يومي مكتمل (مؤشر تزايدي)
+        const dIdx = dPtr;
         const dailySnap = dIdx >= 70 ? computeDailyTrend(daily, dIdx) : null;
         // بنية SMC على نافذة 160 شمعة حتى i
         const smcSnap: SmcSnapshot | null = computeSmcStructure(candles1h, i, snap.atr14);
@@ -294,7 +293,6 @@ export function runBacktest(
     exitAvgPrice: number,
     reason: BacktestTrade['exitReason'],
     time: number,
-    pnlExtra: number,
   ): void {
     trades.push({
       entryTime: pos.entryTime,
@@ -306,7 +304,6 @@ export function runBacktest(
       exitReason: reason,
       signalScore: pos.score,
     });
-    void pnlExtra;
     equity += pos.realizedPnl;
     const idx = candles1h.findIndex((c) => c.time === time);
     const bh = idx >= 0 ? opts.initialEquity * (candles1h[idx].close / firstPrice) : opts.initialEquity;
@@ -321,7 +318,7 @@ export function runBacktest(
     position.realizedPnl += (lastCandle.close - position.entry) * qtyPart - position.entryFeeTotal * position.remainingRatio;
     const pos = position;
     position = null;
-    recordAndClose(pos, lastCandle.close, 'END', lastCandle.time, pos.realizedPnl);
+    recordAndClose(pos, lastCandle.close, 'END', lastCandle.time);
   }
 
   // ─── الإحصائيات ───

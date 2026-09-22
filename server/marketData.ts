@@ -388,18 +388,31 @@ export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<
       return out;
     } catch (e) {
       noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
-      let out: Candle[];
+      let out: Candle[] | null = null;
       try {
         out = await candlesFromBinance(asset, '1d', Math.min(safeLimit, 1000));
         noteProviderHealth('binance:klines', true);
-      } catch {
-        out = await candlesFromBybit(asset, '1d', Math.min(safeLimit, 1000));
-        noteProviderHealth('bybit:klines', true);
+      } catch (e2) {
+        noteProviderHealth('binance:klines', false, e2 instanceof Error ? e2.message : String(e2));
       }
-      if (out.length < 75) {
-        out = await candlesFromCcxt(asset, '1d', safeLimit);
+      if (!out) {
+        try {
+          out = await candlesFromBybit(asset, '1d', Math.min(safeLimit, 1000));
+          noteProviderHealth('bybit:klines', true);
+        } catch (e3) {
+          noteProviderHealth('bybit:klines', false, e3 instanceof Error ? e3.message : String(e3));
+        }
       }
-      if (out.length < 75) throw new DataUnavailableError(asset, 'daily klines (too short)');
+      if (!out) {
+        // المظلة الأخيرة (ccxt) لازم تُجرَّب حتى لو فشل كل المصادر المباشرة —
+        // كانت غير قابلة للوصول سابقاً عندما يفشل Binance وBybit معاً.
+        try {
+          out = await candlesFromCcxt(asset, '1d', safeLimit);
+        } catch (e4) {
+          noteProviderHealth('ccxt:klines', false, e4 instanceof Error ? e4.message : String(e4));
+        }
+      }
+      if (!out || out.length < 75) throw new DataUnavailableError(asset, 'daily klines (all providers failed or too short)');
       return out;
     }
   });
@@ -417,22 +430,31 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
         return rows;
       } catch (e) {
         noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
-        let rows: Candle[];
+        let rows: Candle[] | null = null;
         try {
           rows = await candlesFromBinance(asset, '4h', Math.min(safeLimit, 1000));
           noteProviderHealth('binance:klines', true);
-        } catch {
-          rows = await candlesFromBybit(asset, '4h', Math.min(limit, 1000));
-          noteProviderHealth('bybit:klines', true);
+        } catch (e2) {
+          noteProviderHealth('binance:klines', false, e2 instanceof Error ? e2.message : String(e2));
         }
-        if (rows.length < 230) {
+        if (!rows) {
           try {
-            rows = await candlesFromCcxt(asset, '4h', limit);
-          } catch (e2) {
-            noteProviderHealth('ccxt:klines', false, e2 instanceof Error ? e2.message : String(e2));
+            rows = await candlesFromBybit(asset, '4h', Math.min(safeLimit, 1000));
+            noteProviderHealth('bybit:klines', true);
+          } catch (e3) {
+            noteProviderHealth('bybit:klines', false, e3 instanceof Error ? e3.message : String(e3));
           }
         }
-        if (rows.length < 230) throw new Error('4h too short for HTF gate');
+        if (!rows || rows.length < 230) {
+          // المظلة الأخيرة (ccxt) — كانت غير قابلة للوصول عندما يفشل Binance وBybit معاً.
+          try {
+            const ccxtRows = await candlesFromCcxt(asset, '4h', safeLimit);
+            if (ccxtRows.length >= 230) rows = ccxtRows;
+          } catch (e4) {
+            noteProviderHealth('ccxt:klines', false, e4 instanceof Error ? e4.message : String(e4));
+          }
+        }
+        if (!rows || rows.length < 230) throw new Error('4h too short for HTF gate');
         return rows;
       }
     });
