@@ -159,10 +159,13 @@ export interface BacktestTrade {
   signalScore: number;
 }
 
+/** تعريف موحّد واحد لمئينات مونتي كارلو — كان معرّفاً مرتين بأشكال مختلفة سابقاً. */
 export interface MonteCarloPercentiles {
   p5: number;
   p50: number;
   p95: number;
+  worst: number;
+  best: number;
 }
 
 export interface MonteCarloStats {
@@ -263,14 +266,6 @@ export interface ExitReasonStat {
   totalPnlUsd: number;
 }
 
-export interface MonteCarloPercentiles {
-  p5: number;
-  p50: number;
-  p95: number;
-  worst: number;
-  best: number;
-}
-
 export interface MonteCarloResult {
   iterations: number;
   maxDrawdown: MonteCarloPercentiles;
@@ -351,18 +346,27 @@ export interface ProtectionConfig {
   paperMaxHoldHours: number;
 }
 // --- Learning system (v3) ---
+// الأشكال القانونية الموحّدة (مفتاح "TAG|REGIME") — كانت مكررة هنا وفي server/learning.ts بأشكال مختلفة.
 export interface TagLearningStat {
+  key: string; // "TAG|REGIME"
   tag: string;
+  regime: string;
+  /** مرجّح بالزمن (اضمحلال نصف عمر 30 يوم) */
   samples: number;
+  /** مرجّح بالزمن */
   wins: number;
+  /** مرجّح بالزمن */
   losses: number;
   winRatePercent: number;
+  /** realized R مرجّح بالزمن */
   netR: number;
 }
 
 export interface LearningLesson {
   at: number;
+  key: string;
   tag: string;
+  regime: string;
   from: number;
   to: number;
   samples: number;

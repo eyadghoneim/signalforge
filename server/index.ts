@@ -90,7 +90,7 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
-const VERSION = '3.0.0';
+const VERSION = '3.1.0';
 
 app.disable('x-powered-by');
 // خلف البروكسي السحابي (Render وغيره) كل الطلبات توصل من localhost فيظهر أي زائر كأنه
@@ -617,7 +617,7 @@ app.get('/api/report/daily', async (_req, res) => {
       timestamp: Date.now(),
       engine: {
         signature: ENGINE_SIGNATURE,
-        version: '3.0.0',
+        version: VERSION,
         breakerTripped: evaluateCircuitBreaker(listSignals(100), config.protection, Date.now()).tripped,
         protection: config.protection,
       },

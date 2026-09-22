@@ -2,8 +2,6 @@
 // The Dune layer is intentionally kept out of signal scoring and trading decisions.
 // The API key is accepted from the process environment only; it is never persisted.
 
-import { STABLECOIN_SYMBOLS } from '../shared/stablecoins';
-
 const DUNE_API = 'https://api.dune.com/api/v1';
 const DEFAULT_CACHE_TTL_MS = 30 * 60_000;
 const QUERY_TIMEOUT_MS = 45_000;
@@ -11,16 +9,12 @@ const FETCH_TIMEOUT_MS = 10_000;
 const MAX_SQL_LENGTH = 20_000;
 const MAX_RESULT_ROWS = 500;
 
-const STABLE_SYMBOLS = STABLECOIN_SYMBOLS;
-
 const WATCHED_ASSETS = {
   BTC: { blockchain: 'ethereum', address: '0x2260fac5e5542a773aa44fbcedf7c193bc2c599' },
   ETH: { blockchain: 'ethereum', address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2' },
   PAXG: { blockchain: 'ethereum', address: '0x45804880de22913dafe09f4980848ece6ecbaf78' },
   SOL: { blockchain: 'solana', address: 'so11111111111111111111111111111111111111112' },
 } as const;
-
-type WatchedAsset = keyof typeof WATCHED_ASSETS;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -174,36 +168,6 @@ export async function executeDuneSql<T = Record<string, unknown>>(
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-/** Asset-specific Dune netflow for the verified contract address only. */
-export async function getDuneWhaleNetflow(asset: string): Promise<{ netInflowUsd: number; txCount: number } | null> {
-  const key = String(asset || '').toUpperCase() as WatchedAsset;
-  const watched = WATCHED_ASSETS[key];
-  if (!watched) return null;
-  const address = sqlLiteral(watched.address);
-  const blockchain = sqlLiteral(watched.blockchain);
-  const stables = STABLE_SYMBOLS.map(sqlLiteral).join(', ');
-  const sql = `
-SELECT
-  SUM(CASE WHEN LOWER(CAST(token_sold_address AS VARCHAR)) = ${address} THEN amount_usd ELSE 0 END) AS sell_usd,
-  SUM(CASE WHEN LOWER(CAST(token_bought_address AS VARCHAR)) = ${address} THEN amount_usd ELSE 0 END) AS buy_usd,
-  COUNT(*) AS tx_count
-FROM dex.trades
-WHERE blockchain = ${blockchain}
-  AND block_time > NOW() - INTERVAL '24' HOUR
-  AND amount_usd >= 25000
-  AND ((LOWER(CAST(token_sold_address AS VARCHAR)) = ${address} AND token_bought_symbol IN (${stables}))
-    OR (LOWER(CAST(token_bought_address AS VARCHAR)) = ${address} AND token_sold_symbol IN (${stables})))
-`.trim();
-
-  const result = await executeDuneSql<{ sell_usd: number | null; buy_usd: number | null; tx_count: number | null }>(sql, DEFAULT_CACHE_TTL_MS);
-  if (!result.ok || result.rows.length === 0) return null;
-  const row = result.rows[0];
-  return {
-    netInflowUsd: Math.round((Number(row.sell_usd) || 0) - (Number(row.buy_usd) || 0)),
-    txCount: Math.round(Number(row.tx_count) || 0),
-  };
 }
 
 /** Recent large swaps involving only the verified BTC/ETH/PAXG/SOL contracts. */

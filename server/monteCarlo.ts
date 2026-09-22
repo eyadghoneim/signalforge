@@ -40,10 +40,53 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/** عيّنة واحدة من إعادة ترتيب حتمية لتسلسل الصفقات. */
+export interface PermutationSample {
+  maxDrawdownPercent: number;
+  minimumEquity: number;
+  finalEquity: number;
+}
+
 /**
- * Reorders completed trade P&Ls without changing the strategy or its trade set.
- * This is a research-only stress test: it measures path dependency, not a new
- * forecast and never feeds signal scoring or Paper Trading.
+ * المحرك الوحيد المشترك لمونتي كارلو (مصدر واحد للحقيقة) — كان هناك محركان مختلفان
+ * (mulberry32 في backtest وLCG في performance) بنفس الفكرة وتنفيذين منفصلين.
+ * يعيد ترتيب أرباح الصفقات المكتملة فقط دون تغيير الاستراتيجية أو مجموعة الصفقات.
+ * اختبار ضغط بحثي: يقيس الاعتماد على مسار الترتيب، ولا يغذي الإشارات أو Paper Trading إطلاقاً.
+ */
+export function runPermutationSamples(
+  pnls: number[],
+  initialEquity: number,
+  simulations: number,
+  seed: number,
+): PermutationSample[] {
+  const random = mulberry32(seed);
+  const samples: PermutationSample[] = [];
+  for (let simulation = 0; simulation < simulations; simulation++) {
+    const shuffled = [...pnls];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    let equity = initialEquity;
+    let minimumEquity = initialEquity;
+    let peak = initialEquity;
+    let maxDrawdown = 0;
+    for (const pnl of shuffled) {
+      equity += pnl;
+      minimumEquity = Math.min(minimumEquity, equity);
+      peak = Math.max(peak, equity);
+      const drawdown = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+      maxDrawdown = Math.max(maxDrawdown, drawdown);
+    }
+    samples.push({ maxDrawdownPercent: maxDrawdown, minimumEquity, finalEquity: equity });
+  }
+  return samples;
+}
+
+/**
+ * إحصاءات مونتي كارلو للباك تست (مبنيّة على المحرك المشترك أعلاه).
+ * اختبار بحثي فقط: يقيس الاعتماد على المسار ولا يغير الإشارة أو Paper Trading.
  */
 export function runMonteCarlo(
   trades: BacktestTrade[],
@@ -55,35 +98,15 @@ export function runMonteCarlo(
   const count = Math.max(1, Math.floor(Number(simulations) || MONTE_CARLO_SIMULATIONS));
   if (pnls.length === 0 || !(initialEquity > 0)) return null;
 
-  const random = mulberry32(seed);
   const drawdowns: number[] = [];
   const minimumEquities: number[] = [];
   let capitalDipCount = 0;
 
-  for (let simulation = 0; simulation < count; simulation++) {
-    const shuffled = [...pnls];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    let equity = initialEquity;
-    let minimumEquity = initialEquity;
-    let peak = initialEquity;
-    let maxDrawdown = 0;
-    let dippedBelowStart = false;
-    for (const pnl of shuffled) {
-      equity += pnl;
-      minimumEquity = Math.min(minimumEquity, equity);
-      if (equity < initialEquity) dippedBelowStart = true;
-      peak = Math.max(peak, equity);
-      const drawdown = peak > 0 ? ((peak - equity) / peak) * 100 : 100;
-      maxDrawdown = Math.max(maxDrawdown, drawdown);
-    }
-
-    minimumEquities.push(Math.max(0, minimumEquity));
-    drawdowns.push(maxDrawdown);
-    if (dippedBelowStart) capitalDipCount++;
+  const samples = runPermutationSamples(pnls, initialEquity, count, seed);
+  for (const sample of samples) {
+    minimumEquities.push(Math.max(0, sample.minimumEquity));
+    drawdowns.push(sample.maxDrawdownPercent);
+    if (sample.minimumEquity < initialEquity) capitalDipCount++;
   }
 
   return {

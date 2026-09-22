@@ -67,6 +67,42 @@ function asObject(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null;
 }
 
+/**
+ * Reads a PostgreSQL CA certificate chain from the environment.
+ * PGSSL_CA accepts the PEM inline (\n escapes allowed); PGSSL_CA_FILE points to a file.
+ */
+function readPgCaCert(): string | null {
+  const inline = String(process.env.PGSSL_CA || '').trim();
+  if (inline) return inline.replace(/\\n/g, '\n');
+  const caFile = String(process.env.PGSSL_CA_FILE || '').trim();
+  if (caFile) {
+    try {
+      return fs.readFileSync(caFile, 'utf-8');
+    } catch {
+      console.warn(`[durable] PGSSL_CA_FILE is set but unreadable: ${caFile}`);
+    }
+  }
+  return null;
+}
+
+/**
+ * TLS policy for the managed Postgres connection.
+ * Strict certificate validation is the DEFAULT whenever a CA chain is available
+ * (PGSSL_CA / PGSSL_CA_FILE). Deployments can force either side explicitly with
+ * PGSSL_STRICT=1 (always strict) or PGSSL_STRICT=0 (compatible legacy default).
+ * Without any CA, the compatible default stays rejectUnauthorized:false because
+ * platform-managed databases (Supabase/Neon poolers) present CAs Node does not
+ * trust out of the box.
+ */
+function buildPgSslConfig(): { rejectUnauthorized: boolean; ca?: string } {
+  const ca = readPgCaCert();
+  const raw = String(process.env.PGSSL_STRICT || '').trim();
+  const explicit =
+    raw === '1' || raw.toLowerCase() === 'true' ? true : raw === '0' || raw.toLowerCase() === 'false' ? false : null;
+  const rejectUnauthorized = explicit ?? Boolean(ca);
+  return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
+}
+
 export class PostgresDurableStore implements DurableStore {
   private readonly pool: Pool;
   private config: BotConfig;
@@ -104,10 +140,9 @@ export class PostgresDurableStore implements DurableStore {
       max: Number(process.env.DATABASE_POOL_MAX) > 0 ? Number(process.env.DATABASE_POOL_MAX) : 4,
       connectionTimeoutMillis: 8_000,
       idleTimeoutMillis: 30_000,
-      // Supabase's external connection requires TLS. Keep the compatible default,
-      // with an opt-in strict certificate check for deployments that provide the
-      // platform CA chain (PGSSL_STRICT=1).
-      ssl: { rejectUnauthorized: process.env.PGSSL_STRICT === '1' || process.env.PGSSL_STRICT === 'true' },
+      // Supabase's external connection requires TLS. Strict certificate checking
+      // is on by default whenever a CA chain is provided; see buildPgSslConfig().
+      ssl: buildPgSslConfig(),
     });
 
     try {

@@ -10,36 +10,13 @@
 // All changes are audited by the caller (lessons ledger). No evidence -> no bias.
 // Comments are English-only on purpose (codepage safety under shell tooling).
 
-import type { StoredSignal } from '../shared/types';
-
-export interface TagLearningStat {
-  key: string; // "TAG|REGIME"
-  tag: string;
-  regime: string;
-  samples: number; // decay-weighted
-  wins: number; // decay-weighted
-  losses: number; // decay-weighted
-  winRatePercent: number;
-  netR: number; // decay-weighted realized R
-}
+import type { StoredSignal, TagLearningStat, LearningLesson } from '../shared/types';
 
 export interface LearningState {
   baselineWinRatePercent: number;
   totalResolved: number;
   perTag: TagLearningStat[];
   biases: Record<string, number>;
-}
-
-export interface LearningLesson {
-  at: number;
-  key: string;
-  tag: string;
-  regime: string;
-  from: number;
-  to: number;
-  samples: number;
-  tagWinRatePercent: number;
-  baselineWinRatePercent: number;
 }
 
 const MIN_SAMPLES = 10;
