@@ -179,7 +179,7 @@ export default function MacroCalendarPanel({ lang }: Props) {
                   <tr
                     key={evt.id}
                     className={`hover:bg-zinc-900/40 transition-colors ${
-                      isActive ? 'bg-rose-950/20' : ''
+                      isActive ? 'bg-rose-950/20' : evt.status === 'PASSED' ? 'opacity-50' : ''
                     }`}
                   >
                     <td className="p-3 text-right">
@@ -214,6 +214,10 @@ export default function MacroCalendarPanel({ lang }: Props) {
                       {isActive ? (
                         <span className="rounded-md bg-amber-600/80 px-2 py-1 text-[10px] font-bold text-white">
                           ⚠️ {lang === 'ar' ? 'تنبيه عرضي' : 'Notice'}
+                        </span>
+                      ) : evt.status === 'PASSED' ? (
+                        <span className="rounded-md border border-zinc-700/60 bg-zinc-800/30 px-2 py-0.5 text-[10px] text-zinc-500">
+                          ✅ {lang === 'ar' ? 'انتهى' : 'Passed'}
                         </span>
                       ) : (
                         <span className="rounded-md border border-zinc-700/60 bg-zinc-800/50 px-2 py-0.5 text-[10px] text-zinc-400">
