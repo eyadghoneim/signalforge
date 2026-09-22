@@ -437,6 +437,8 @@ export interface MacroEvent {
   blackoutHoursAfter: number;
   descriptionAr: string;
   status: 'ACTIVE_BLACKOUT' | 'UPCOMING' | 'PASSED';
+  country?: string;
+  source?: string;
 }
 
 export interface MacroCalendarResponse {
@@ -446,6 +448,7 @@ export interface MacroCalendarResponse {
   lockReasonEn: string | null;
   /** True: this is a display-only reference rhythm of typical release times, NOT a real calendar. */
   isReferenceSchedule?: boolean;
+  source?: string;
   noteAr?: string;
   noteEn?: string;
   upcomingEvents: MacroEvent[];

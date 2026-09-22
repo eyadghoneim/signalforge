@@ -58,7 +58,7 @@ import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
-import { getMacroCalendar } from './macroEvents';
+import { getMacroCalendar, getMacroCalendarAsync } from './macroEvents';
 import { getOrderBookDepth } from './orderBookDepth';
 import { analyzeElliottWave } from '../shared/elliottWave';
 import { closeCcxtExchangePool } from './ccxtProvider';
@@ -284,12 +284,17 @@ app.get('/api/market/summary', async (_req, res) => {
 });
 
 // ─── 1. المفكرة الاقتصادية وفترات الحظر (Macro Calendar & Blackout Filter) ───
-app.get('/api/market/macro-events', (_req, res) => {
+app.get('/api/market/macro-events', async (_req, res) => {
   try {
-    const calendar = getMacroCalendar();
+    const calendar = await getMacroCalendarAsync();
     res.json({ ok: true, ...calendar });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    try {
+      const fallback = getMacroCalendar();
+      res.json({ ok: true, ...fallback });
+    } catch (e2) {
+      res.status(500).json({ ok: false, error: e2 instanceof Error ? e2.message : String(e2) });
+    }
   }
 });
 
