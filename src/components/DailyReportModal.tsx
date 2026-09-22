@@ -37,6 +37,7 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const handleDownloadCsv = () => {
@@ -54,7 +55,12 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
         s.regimeGateStatus,
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const sanitizeCsvCell = (val: string) => {
+      let clean = val.replace(/"/g, '""');
+      if (/^[=\-+@\t\r]/.test(clean)) clean = `'${clean}`;
+      return clean;
+    };
+    const csv = rows.map((r) => r.map((c) => `"${sanitizeCsvCell(c)}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -63,6 +69,7 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const handlePrint = () => {

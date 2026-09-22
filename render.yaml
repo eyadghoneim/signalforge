@@ -16,6 +16,9 @@ services:
       # Optional Dune read-only research context; set this as a Render Secret.
       - key: DUNE_API_KEY
         sync: false
+      # Optional Bot Admin Token to guard admin routes like /api/dune/sql in production.
+      - key: BOT_ADMIN_TOKEN
+        sync: false
     # ملاحظات سريعة:
     # • عند وجود DATABASE_URL ينتقل SignalForge تلقائيًا إلى PostgreSQL دائم
     #   ويستورد data/*.json مرة واحدة بدون حذف السجل الموجود.

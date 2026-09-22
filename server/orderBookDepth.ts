@@ -77,6 +77,102 @@ function generateFallbackDepth(asset: SupportedAsset, midPrice: number): OrderBo
   };
 }
 
+function parseL2Depth(
+  asset: SupportedAsset,
+  rawBids: Array<[string, string] | string[]>,
+  rawAsks: Array<[string, string] | string[]>,
+  source: string,
+): OrderBookDepth | null {
+  if (!rawBids.length || !rawAsks.length) return null;
+  const bids: OrderBookTier[] = [];
+  const asks: OrderBookTier[] = [];
+  let cumBid = 0;
+  let cumAsk = 0;
+
+  for (const [p, a] of rawBids.slice(0, 15)) {
+    const price = parseFloat(p);
+    const amount = parseFloat(a);
+    if (!Number.isFinite(price) || !Number.isFinite(amount)) continue;
+    cumBid += amount;
+    bids.push({
+      price: Number(price.toFixed(2)),
+      amount: Number(amount.toFixed(4)),
+      total: Number(cumBid.toFixed(4)),
+    });
+  }
+
+  for (const [p, a] of rawAsks.slice(0, 15)) {
+    const price = parseFloat(p);
+    const amount = parseFloat(a);
+    if (!Number.isFinite(price) || !Number.isFinite(amount)) continue;
+    cumAsk += amount;
+    asks.push({
+      price: Number(price.toFixed(2)),
+      amount: Number(amount.toFixed(4)),
+      total: Number(cumAsk.toFixed(4)),
+    });
+  }
+
+  if (!bids.length || !asks.length) return null;
+
+  const bestBid = bids[0]?.price || 0;
+  const bestAsk = asks[0]?.price || 0;
+  const midPrice = Number(((bestBid + bestAsk) / 2).toFixed(2));
+  const spread = Number((bestAsk - bestBid).toFixed(2));
+  const spreadPct = midPrice > 0 ? Number(((spread / midPrice) * 100).toFixed(4)) : 0;
+
+  const totalBidVol = cumBid;
+  const totalAskVol = cumAsk;
+  const total = totalBidVol + totalAskVol || 1;
+  const buyerPct = Math.round((totalBidVol / total) * 100);
+  const sellerPct = 100 - buyerPct;
+  const imbalance = Math.round(((totalBidVol - totalAskVol) / total) * 100);
+
+  let maxBid = bids[0];
+  for (const b of bids) {
+    if (b.amount > (maxBid?.amount || 0)) maxBid = b;
+  }
+
+  let maxAsk = asks[0];
+  for (const a of asks) {
+    if (a.amount > (maxAsk?.amount || 0)) maxAsk = a;
+  }
+
+  const bidWall: OrderBookWall | null = maxBid
+    ? {
+        price: maxBid.price,
+        amount: maxBid.amount,
+        distancePercent: Number((((midPrice - maxBid.price) / midPrice) * 100).toFixed(2)),
+      }
+    : null;
+
+  const askWall: OrderBookWall | null = maxAsk
+    ? {
+        price: maxAsk.price,
+        amount: maxAsk.amount,
+        distancePercent: Number((((maxAsk.price - midPrice) / midPrice) * 100).toFixed(2)),
+      }
+    : null;
+
+  return {
+    asset,
+    source,
+    isSimulated: false,
+    bids,
+    asks,
+    spread,
+    spreadPercent: spreadPct,
+    midPrice,
+    imbalancePercent: imbalance,
+    buyerPercentage: buyerPct,
+    sellerPercentage: sellerPct,
+    bidWall,
+    askWall,
+    rule3Passed: spreadPct < 0.15,
+    lastUpdated: Date.now(),
+  };
+}
+
 export async function getOrderBookDepth(asset: SupportedAsset): Promise<OrderBookDepth> {
   const conf = SYMBOL_MAP[asset] || SYMBOL_MAP.BTC;
 
@@ -88,101 +184,32 @@ export async function getOrderBookDepth(asset: SupportedAsset): Promise<OrderBoo
     );
     if (res.ok) {
       const data = (await res.json()) as { bids?: [string, string][]; asks?: [string, string][] };
-      const rawBids = data.bids || [];
-      const rawAsks = data.asks || [];
+      const parsed = parseL2Depth(asset, data.bids || [], data.asks || [], 'Binance L2 Depth API');
+      if (parsed) return parsed;
+    }
+  } catch {
+    // Proceed to next fallback
+  }
 
-      if (rawBids.length > 0 && rawAsks.length > 0) {
-        const bids: OrderBookTier[] = [];
-        const asks: OrderBookTier[] = [];
-        let cumBid = 0;
-        let cumAsk = 0;
-
-        for (const [p, a] of rawBids.slice(0, 15)) {
-          const price = parseFloat(p);
-          const amount = parseFloat(a);
-          cumBid += amount;
-          bids.push({
-            price: Number(price.toFixed(2)),
-            amount: Number(amount.toFixed(4)),
-            total: Number(cumBid.toFixed(4)),
-          });
-        }
-
-        for (const [p, a] of rawAsks.slice(0, 15)) {
-          const price = parseFloat(p);
-          const amount = parseFloat(a);
-          cumAsk += amount;
-          asks.push({
-            price: Number(price.toFixed(2)),
-            amount: Number(amount.toFixed(4)),
-            total: Number(cumAsk.toFixed(4)),
-          });
-        }
-
-        const bestBid = bids[0]?.price || 0;
-        const bestAsk = asks[0]?.price || 0;
-        const midPrice = Number(((bestBid + bestAsk) / 2).toFixed(2));
-        const spread = Number((bestAsk - bestBid).toFixed(2));
-        const spreadPct = midPrice > 0 ? Number(((spread / midPrice) * 100).toFixed(4)) : 0;
-
-        const totalBidVol = cumBid;
-        const totalAskVol = cumAsk;
-        const total = totalBidVol + totalAskVol || 1;
-        const buyerPct = Math.round((totalBidVol / total) * 100);
-        const sellerPct = 100 - buyerPct;
-        const imbalance = Math.round(((totalBidVol - totalAskVol) / total) * 100);
-
-        // Find Whale Walls (highest amount orders in the top 15 tiers)
-        let maxBid = bids[0];
-        for (const b of bids) {
-          if (b.amount > (maxBid?.amount || 0)) maxBid = b;
-        }
-
-        let maxAsk = asks[0];
-        for (const a of asks) {
-          if (a.amount > (maxAsk?.amount || 0)) maxAsk = a;
-        }
-
-        const bidWall: OrderBookWall | null = maxBid
-          ? {
-              price: maxBid.price,
-              amount: maxBid.amount,
-              distancePercent: Number((((midPrice - maxBid.price) / midPrice) * 100).toFixed(2)),
-            }
-          : null;
-
-        const askWall: OrderBookWall | null = maxAsk
-          ? {
-              price: maxAsk.price,
-              amount: maxAsk.amount,
-              distancePercent: Number((((maxAsk.price - midPrice) / midPrice) * 100).toFixed(2)),
-            }
-          : null;
-
-        return {
-          asset,
-          source: 'Binance L2 Depth API',
-          isSimulated: false,
-          bids,
-          asks,
-          spread,
-          spreadPercent: spreadPct,
-          midPrice,
-          imbalancePercent: imbalance,
-          buyerPercentage: buyerPct,
-          sellerPercentage: sellerPct,
-          bidWall,
-          askWall,
-          rule3Passed: spreadPct < 0.15,
-          lastUpdated: Date.now(),
-        };
+  // 2. Try OKX Live Order Book Depth (reachable in geo-restricted regions like SA)
+  try {
+    const okxInst = `${asset}-USDT`;
+    const res = await fetchWithTimeout(
+      `https://www.okx.com/api/v5/market/books?instId=${okxInst}&sz=20`,
+      3500,
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { code?: string; data?: Array<{ bids?: [string, string, string, string][]; asks?: [string, string, string, string][] }> };
+      if (data.code === '0' && data.data?.[0]) {
+        const parsed = parseL2Depth(asset, data.data[0].bids || [], data.data[0].asks || [], 'OKX L2 Depth API');
+        if (parsed) return parsed;
       }
     }
   } catch {
     // Proceed to fallback
   }
 
-  // 2. Fallback to latest ticker price with synthetic L2 depth
+  // 3. Fallback to latest ticker price with synthetic L2 depth
   let price = conf.fallbackPrice;
   try {
     const ticker = await getTicker(asset);

@@ -294,7 +294,8 @@ export function buildPaperEventHtml(ev: PaperEventShape, lang: TelegramLang): st
     if (ev.entry !== undefined) lines.push(ar ? `<b>الدخول:</b> ${fmtUsd(ev.entry)}` : `<b>Entry:</b> ${fmtUsd(ev.entry)}`);
     if (ev.pnlUsd !== undefined) {
       const sign = ev.pnlUsd >= 0 ? '+' : '';
-      lines.push(ar ? `<b>المحصَّل حتى الآن:</b> 🟢 ${sign}${ev.pnlUsd.toFixed(2)}` : `<b>Realized so far:</b> 🟢 ${sign}${ev.pnlUsd.toFixed(2)}`);
+      const icon = ev.pnlUsd >= 0 ? '🟢' : '🔴';
+      lines.push(ar ? `<b>المحصَّل حتى الآن:</b> ${icon} ${sign}${ev.pnlUsd.toFixed(2)}` : `<b>Realized so far:</b> ${icon} ${sign}${ev.pnlUsd.toFixed(2)}`);
     }
     if (ev.feesUsd !== undefined) lines.push(ar ? `<b>الرسوم التراكمية:</b> ${fmtUsd(ev.feesUsd)}` : `<b>Accumulated fees:</b> ${fmtUsd(ev.feesUsd)}`);
   }
