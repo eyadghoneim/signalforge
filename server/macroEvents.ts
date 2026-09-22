@@ -132,6 +132,7 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
     lockReasonAr,
     lockReasonEn,
     isReferenceSchedule: true,
+    calendarSource: 'REFERENCE_TEMPLATE',
     noteAr: 'جدول استرشادي بنمط المواعيد المتكررة المعتادة للمؤشرات الأمريكية — ليس جدولاً حقيقياً؛ المواعيد تتكرر يومياً كنموذج مرجعي، والقيم الفعلية تُنشر من مصادر رسمية. لا يحظر هذا الجدول أي صفقات تلقائياً.',
     noteEn: 'Reference schedule of typical recurring release times for US indicators — not a real calendar; times repeat daily as a template. It does NOT block any trading automatically.',
     upcomingEvents: events,

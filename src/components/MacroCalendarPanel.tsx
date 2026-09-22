@@ -11,6 +11,7 @@ export default function MacroCalendarPanel({ lang }: Props) {
   const [data, setData] = useState<MacroCalendarResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [timeLeftStr, setTimeLeftStr] = useState<string>('');
+  const [nowTick, setNowTick] = useState<number>(Date.now());
 
   const loadData = async () => {
     try {
@@ -50,9 +51,31 @@ export default function MacroCalendarPanel({ lang }: Props) {
     };
 
     updateCountdown();
-    const timer = setInterval(updateCountdown, 1000);
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+      updateCountdown();
+    }, 1000);
     return () => clearInterval(timer);
   }, [data, lang]);
+
+  // Relative label per event row (ticking every second with nowTick)
+  const formatRelative = (ts: number): string | null => {
+    const diff = ts - nowTick;
+    if (diff <= 0) return null;
+    const days = Math.floor(diff / 86_400_000);
+    const hrs = Math.floor((diff % 86_400_000) / 3_600_000);
+    const mins = Math.floor((diff % 3_600_000) / 60_000);
+    if (lang === 'ar') {
+      if (days > 0) return `بعد ${days}ي ${hrs}س`;
+      if (hrs > 0) return `بعد ${hrs}س ${mins}د`;
+      return `بعد ${mins}د`;
+    }
+    if (days > 0) return `in ${days}d ${hrs}h`;
+    if (hrs > 0) return `in ${hrs}h ${mins}m`;
+    return `in ${mins}m`;
+  };
+
+  const isRealCalendar = data?.calendarSource === 'REAL_EXTERNAL';
 
   const isBlackout = data?.isBlackoutActive ?? false;
   const events = data?.upcomingEvents || [];
@@ -85,8 +108,16 @@ export default function MacroCalendarPanel({ lang }: Props) {
               >
                 {isBlackout ? '⚠️ REFERENCE EVENT WINDOW' : '🛡️ NO REFERENCE OVERLAP'}
               </span>
-              <span className="rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
-                {lang === 'ar' ? 'جدول استرشادي — ليس حجلاً حقيقياً' : 'Reference schedule — not a real calendar'}
+              <span
+                className={`rounded-md border px-2 py-0.5 text-[10px] font-medium ${
+                  isRealCalendar
+                    ? 'border-sky-500/40 bg-sky-500/15 text-sky-300'
+                    : 'border-zinc-700/60 bg-zinc-800/60 text-zinc-400'
+                }`}
+              >
+                {isRealCalendar
+                  ? (lang === 'ar' ? '🗓️ مفكرة حقيقية — مصدر خارجي' : '🗓️ Real calendar — external feed')
+                  : (lang === 'ar' ? 'جدول استرشادي — ليس حجلاً حقيقياً' : 'Reference schedule — not a real calendar')}
               </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -142,11 +173,17 @@ export default function MacroCalendarPanel({ lang }: Props) {
         )}
       </div>
 
-      {/* إفصاح صدق: هذا جدول استرشادي وليس مفكرة اقتصادية حقيقية */}
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-200/80">
+      {/* إفصاح المصدر: مفكرة حقيقية أو جدول استرشادي (نص السيرفر الديناميكي إن توفر) */}
+      <div
+        className={`rounded-xl border p-3 text-[11px] leading-5 ${
+          isRealCalendar
+            ? 'border-sky-500/30 bg-sky-500/5 text-sky-200/80'
+            : 'border-amber-500/30 bg-amber-500/5 text-amber-200/80'
+        }`}
+      >
         {lang === 'ar'
-          ? 'ℹ️ إفصاح: هذا جدول استرشادي بنمط المواعيد المتكررة المعتادة (يتكرر يومياً كنموذج مرجعي) وليس مفكرة اقتصادية حقيقية، ولا يحظر أي صفقات تلقائياً. راجع المواعيد الفعلية من مصادر رسمية.'
-          : 'ℹ️ Disclosure: this is a reference schedule of typical recurring release times (repeats daily as a template), not a real economic calendar, and it does NOT block any trading automatically. Verify actual dates from official sources.'}
+          ? (data?.noteAr ?? 'ℹ️ إفصاح: هذا جدول استرشادي بنمط المواعيد المتكررة المعتادة (يتكرر يومياً كنموذج مرجعي) وليس مفكرة اقتصادية حقيقية، ولا يحظر أي صفقات تلقائياً. راجع المواعيد الفعلية من مصادر رسمية.')
+          : (data?.noteEn ?? 'ℹ️ Disclosure: this is a reference schedule of typical recurring release times (repeats daily as a template), not a real economic calendar, and it does NOT block any trading automatically. Verify actual dates from official sources.')}
       </div>
 
       {/* جدول الأحداث الاقتصادية الكبرى */}
@@ -202,6 +239,11 @@ export default function MacroCalendarPanel({ lang }: Props) {
                     </td>
                     <td className="p-3 text-center text-zinc-300 whitespace-nowrap">
                       {evt.timeFormatted}
+                      {evt.status !== 'PASSED' && formatRelative(evt.timestamp) && (
+                        <div className="text-[10px] font-bold text-amber-400/90 mt-0.5" dir="ltr">
+                          {formatRelative(evt.timestamp)}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3 text-center text-zinc-400 whitespace-nowrap">
                       <span className="text-zinc-500">{lang === 'ar' ? 'سابق: ' : 'Prev: '}</span>

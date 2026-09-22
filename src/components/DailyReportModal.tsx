@@ -57,7 +57,10 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
     ];
     const sanitizeCsvCell = (val: string) => {
       let clean = val.replace(/"/g, '""');
-      if (/^[=\-+@\t\r]/.test(clean)) clean = `'${clean}`;
+      // Guard against CSV formula injection, but keep plain numbers intact
+      // (e.g. "-2.5" stays numeric; "-cmd|..." still gets neutralized).
+      const isPlainNumber = /^-?\d+(\.\d+)?$/.test(clean);
+      if (!isPlainNumber && /^[=\-+@\t\r]/.test(clean)) clean = `'${clean}`;
       return clean;
     };
     const csv = rows.map((r) => r.map((c) => `"${sanitizeCsvCell(c)}"`).join(',')).join('\n');

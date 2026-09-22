@@ -426,7 +426,7 @@ export interface MacroEvent {
   id: string;
   name: string;
   nameAr: string;
-  category: 'FOMC' | 'CPI' | 'NFP' | 'PPI' | 'GDP' | 'CRYPTO_EVENT';
+  category: 'FOMC' | 'CPI' | 'NFP' | 'PPI' | 'GDP' | 'CRYPTO_EVENT' | 'OTHER';
   impact: 'HIGH' | 'MEDIUM' | 'LOW';
   timestamp: number;
   timeFormatted: string;
@@ -446,6 +446,8 @@ export interface MacroCalendarResponse {
   lockReasonEn: string | null;
   /** True: this is a display-only reference rhythm of typical release times, NOT a real calendar. */
   isReferenceSchedule?: boolean;
+  /** 'REAL_EXTERNAL': built from a live external calendar feed. 'REFERENCE_TEMPLATE': built-in recurring rhythm fallback. */
+  calendarSource?: 'REAL_EXTERNAL' | 'REFERENCE_TEMPLATE';
   noteAr?: string;
   noteEn?: string;
   upcomingEvents: MacroEvent[];

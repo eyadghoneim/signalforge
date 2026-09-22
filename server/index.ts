@@ -58,7 +58,7 @@ import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
-import { getMacroCalendar } from './macroEvents';
+import { getMacroCalendarLive } from './realMacroCalendar';
 import { getOrderBookDepth } from './orderBookDepth';
 import { analyzeElliottWave } from '../shared/elliottWave';
 import { closeCcxtExchangePool } from './ccxtProvider';
@@ -90,7 +90,7 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 
 app.disable('x-powered-by');
 // خلف البروكسي السحابي (Render وغيره) كل الطلبات توصل من localhost فيظهر أي زائر كأنه
@@ -284,9 +284,9 @@ app.get('/api/market/summary', async (_req, res) => {
 });
 
 // ─── 1. المفكرة الاقتصادية وفترات الحظر (Macro Calendar & Blackout Filter) ───
-app.get('/api/market/macro-events', (_req, res) => {
+app.get('/api/market/macro-events', async (_req, res) => {
   try {
-    const calendar = getMacroCalendar();
+    const calendar = await getMacroCalendarLive();
     res.json({ ok: true, ...calendar });
   } catch (e) {
     res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
