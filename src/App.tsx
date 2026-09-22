@@ -385,7 +385,7 @@ export default function App() {
       />
 
       <footer className="mx-auto max-w-[1600px] px-4 py-8 text-center text-[11px] text-zinc-600">
-        SignalForge v{health?.version ?? '3.0.0'} — {health?.engineSignature ?? ''}
+        SignalForge v{health?.version ?? '3.1.0'} — {health?.engineSignature ?? ''}
       </footer>
     </div>
   );
