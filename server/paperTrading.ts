@@ -7,14 +7,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { PaperTradeOutcome, Signal, SupportedAsset } from '../shared/types';
-import { PAPER_EXECUTION, STRATEGY_RISK_MULTIPLIERS, TRAILING } from '../shared/strategyConstants';
+import { PAPER_EXECUTION, STRATEGY_RISK_MULTIPLIERS, TARGET_RATIOS, TRAILING } from '../shared/strategyConstants';
 import { DEFAULT_PROTECTION } from './protection';
 import { getDurablePersistence } from './persistence';
 
 export const PAPER_INITIAL_EQUITY = 10_000;
 export const PAPER_RISK_PERCENT = 1; // مخاطرة لكل صفقة: 1% من إجمالي Equity المتاح
-const TP1_RATIO = 0.5; // أول جني: نصف الكمية
-const TP2_RATIO = 0.3; // ثاني جني: 30% من الكمية الأصلية
+const TP1_RATIO = TARGET_RATIOS.TP1; // أول جني: نصف الكمية
+const TP2_RATIO = TARGET_RATIOS.TP2; // ثاني جني: 30% من الكمية الأصلية
 // (تم توحيد ثوابت الرحل في shared/strategyConstants.ts → TRAILING)
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -257,19 +257,7 @@ export function markToMarket(
       continue;
     }
 
-    // 0) وقف متحرك مدرّج (freqtrade-style) بعد TP2: لا يتحرك قبل 1×ATR ربح،
-    // ثم يتبع القمة بهامش 2×ATR ويضيق إلى 1×ATR فوق 2×ATR ربح.
-    if (p.tp2Taken) {
-      p.trailPeak = Math.max(p.trailPeak, candle.high);
-      const profitAtr = p.atrEntry > 0 ? (p.trailPeak - p.entry) / p.atrEntry : 0;
-      if (profitAtr >= TRAILING.ACTIVATE_AFTER_ATR) {
-        const offset = profitAtr >= TRAILING.TIGHT_AFTER_ATR ? TRAILING.TIGHT_OFFSET_ATR : TRAILING.OFFSET_ATR;
-        const trail = p.trailPeak - p.atrEntry * offset;
-        if (trail > p.stop) p.stop = trail;
-      }
-    }
-
-    // 1) الوقف أولاً (متحفظ — نفس ترتيب الباك تست) بانزلاق الثوابت
+    // 1) الوقف أولاً (متحفظ — نفس ترتيب الباك تست بالضبط) بانزلاق الثوابت
     if (candle.low <= p.stop) {
       const slippage = p.atrEntry * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
       const exit = Math.min(candle.open, p.stop - slippage);
@@ -308,11 +296,21 @@ export function markToMarket(
       continue;
     }
 
-    // Time exit is deliberately checked after stop/targets so same-candle price
-    // protection remains conservative and deterministic.
+    // 4) خروج بالزمن إذا انتهت أقصى فترة احتفاظ
     if (holdExpired) {
       closeRemainder(acct, p, price, 'TIME', nowMs);
       continue;
+    }
+
+    // 5) وقف متحرك مدرّج (freqtrade-style) بعد TP2 يُقيَّم في نهاية الشمعة للمركز المستمر (مطابق للباك تست تماماً)
+    if (p.tp2Taken) {
+      p.trailPeak = Math.max(p.trailPeak, candle.high);
+      const profitAtr = p.atrEntry > 0 ? (p.trailPeak - p.entry) / p.atrEntry : 0;
+      if (profitAtr >= TRAILING.ACTIVATE_AFTER_ATR) {
+        const offset = profitAtr >= TRAILING.TIGHT_AFTER_ATR ? TRAILING.TIGHT_OFFSET_ATR : TRAILING.OFFSET_ATR;
+        const trail = p.trailPeak - p.atrEntry * offset;
+        if (trail > p.stop) p.stop = trail;
+      }
     }
 
     surviving.push(p);

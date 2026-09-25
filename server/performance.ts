@@ -3,7 +3,6 @@
 // console codepage when written/read through shell tooling.
 
 import type { BacktestTrade, PerformanceStats, ScoreBucketStat, ExitReasonStat, MonteCarloResult } from '../shared/types';
-import { runPermutationSamples } from './monteCarlo';
 
 function round(value: number, digits: number): number {
   const f = 10 ** digits;
@@ -31,11 +30,17 @@ function scoreBucket(score: number): string {
   return '<70';
 }
 
+function seededRng(seed: number) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 /**
  * Deterministic seeded Monte Carlo permutation test (1,000 iterations).
  * Re-orders trade PnL sequence to test whether backtest results depend on a lucky sequence.
- * Delegates to the single shared permutation engine in server/monteCarlo.ts (mulberry32)
- * instead of maintaining a second, divergent implementation here.
  */
 export function computeMonteCarloSimulation(
   trades: BacktestTrade[],
@@ -45,13 +50,48 @@ export function computeMonteCarloSimulation(
 ): MonteCarloResult | undefined {
   if (trades.length < 5 || initialEquity <= 0) return undefined;
 
+  const rand = seededRng(seed);
   const pnlList = trades.map((t) => t.pnlUsd);
-  const samples = runPermutationSamples(pnlList, initialEquity, iterations, seed);
-
-  const simDrawdowns = samples.map((s) => s.maxDrawdownPercent).sort((a, b) => a - b);
-  const simFinalEquities = samples.map((s) => s.finalEquity).sort((a, b) => a - b);
+  const simDrawdowns: number[] = [];
+  const simFinalEquities: number[] = [];
+  let ruinHits = 0;
   const ruinThreshold = initialEquity * 0.5; // Capital drop >= 50%
-  const ruinHits = samples.filter((s) => s.minimumEquity <= ruinThreshold).length;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const shuffled = [...pnlList];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const temp = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = temp;
+    }
+
+    let eq = initialEquity;
+    let peak = initialEquity;
+    let iterMaxDD = 0;
+    let touchedRuin = false;
+
+    for (let i = 0; i < shuffled.length; i++) {
+      eq += shuffled[i];
+      if (eq > peak) {
+        peak = eq;
+      }
+      const dd = peak > 0 ? ((peak - eq) / peak) * 100 : 0;
+      if (dd > iterMaxDD) {
+        iterMaxDD = dd;
+      }
+      if (eq <= ruinThreshold) {
+        touchedRuin = true;
+      }
+    }
+
+    if (touchedRuin) ruinHits++;
+    simDrawdowns.push(iterMaxDD);
+    simFinalEquities.push(eq);
+  }
+
+  simDrawdowns.sort((a, b) => a - b);
+  simFinalEquities.sort((a, b) => a - b);
 
   const idx5 = Math.floor(iterations * 0.05);
   const idx50 = Math.floor(iterations * 0.50);

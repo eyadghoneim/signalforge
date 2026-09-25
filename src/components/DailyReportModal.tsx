@@ -57,10 +57,7 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
     ];
     const sanitizeCsvCell = (val: string) => {
       let clean = val.replace(/"/g, '""');
-      // Guard against CSV formula injection, but keep plain numbers intact
-      // (e.g. "-2.5" stays numeric; "-cmd|..." still gets neutralized).
-      const isPlainNumber = /^-?\d+(\.\d+)?$/.test(clean);
-      if (!isPlainNumber && /^[=\-+@\t\r]/.test(clean)) clean = `'${clean}`;
+      if (/^[=\-+@\t\r]/.test(clean)) clean = `'${clean}`;
       return clean;
     };
     const csv = rows.map((r) => r.map((c) => `"${sanitizeCsvCell(c)}"`).join(',')).join('\n');
@@ -187,7 +184,7 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
                     )}
                   </div>
                   <div className="text-[10px] text-zinc-400">
-                    {data.market.duneConnected ? 'Dune On-chain Online' : 'Dune Standby'}
+                    {isAr ? 'حماية رأس المال فعالة' : 'Capital protection active'}
                   </div>
                 </div>
               </div>
@@ -269,39 +266,6 @@ export default function DailyReportModal({ lang, isOpen, onClose }: Props) {
                   </div>
                 </div>
               </div>
-
-              {/* صفقات الحيتان المرصودة */}
-              {data.recentMegaWhaleSwaps.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="font-bold text-zinc-200 print:text-black">
-                    {isAr ? '3. أحدث صفقات الحيتان على البلوكشين (Dune Verified)' : '3. Recent Mega Whale Swaps (Dune Verified)'}
-                  </h3>
-                  <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900/40 print:border-zinc-300">
-                    <table className="w-full text-left text-xs">
-                      <thead className="border-b border-zinc-800 bg-zinc-900 text-zinc-400 print:border-zinc-300 print:text-black">
-                        <tr>
-                          <th className="px-3 py-2">{isAr ? 'الوقت' : 'Time'}</th>
-                          <th className="px-3 py-2">{isAr ? 'البروتوكول' : 'Protocol'}</th>
-                          <th className="px-3 py-2">{isAr ? 'شراء' : 'Bought'}</th>
-                          <th className="px-3 py-2">{isAr ? 'بيع' : 'Sold'}</th>
-                          <th className="px-3 py-2">{isAr ? 'القيمة USD' : 'Amount USD'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-800/60 print:divide-zinc-200">
-                        {data.recentMegaWhaleSwaps.map((w, idx) => (
-                          <tr key={idx}>
-                            <td className="px-3 py-1.5 font-mono text-[11px] text-zinc-400">{w.block_time}</td>
-                            <td className="px-3 py-1.5 capitalize">{w.project}</td>
-                            <td className="px-3 py-1.5 font-bold text-emerald-400 print:text-emerald-700">{w.token_bought_symbol}</td>
-                            <td className="px-3 py-1.5 font-medium text-rose-400 print:text-rose-700">{w.token_sold_symbol}</td>
-                            <td className="px-3 py-1.5 font-mono font-bold" dir="ltr">${Math.round(w.amount_usd).toLocaleString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>

@@ -108,15 +108,6 @@ export default function WhaleDepthPanel({ asset, lang }: Props) {
         </button>
       </div>
 
-      {/* إفصاح صدق: البيانات المُحاكاة ليست دفتر أوامر حقيقياً */}
-      {data.isSimulated && (
-        <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-200/90">
-          {lang === 'ar'
-            ? '⚠️ تنبيه أمانة: تعذر الوصول لدفتر الأوامر الحي — المعروض الآن نموذج محاكاة حتمي مبني على آخر سعر معروف (الجدران والأحجام ليست أوامر حقيقية). لا تتخذ قرارات بناءً عليها.'
-            : '⚠️ Honest notice: live order book is unreachable — what you see is a deterministic simulation built from the last known price (the walls/volumes are NOT real orders). Do not act on them.'}
-        </div>
-      )}
-
       {/* شريط توازن المشتري مقابل البائع */}
       <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/50 p-3.5 space-y-2">
         <div className="flex items-center justify-between text-xs font-mono">

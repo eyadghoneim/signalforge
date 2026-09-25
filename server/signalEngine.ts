@@ -14,6 +14,7 @@ import {
   STRATEGY_THRESHOLDS,
   deriveSignalTypeAndAction,
   computeRiskTargets,
+  tickSizeForPrice,
   fnv1a64Hex,
 } from '../shared/strategyConstants';
 import type { IndicatorSnapshot, HtfSnapshot } from '../shared/indicators';
@@ -296,13 +297,17 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     htfAvailable: htf !== null,
     // ─── حقول v2.0 ───
     entryZone: ctx.entryZone
-      ? {
-          low: Math.round(ctx.entryZone.low),
-          high: Math.round(ctx.entryZone.high),
-          basisAr: 'منطقة ارتداد: بين EMA21 وتصحيح 38.2-50% لآخر موجة',
-          priceInside:
-            ctx.entryZone.low <= s.close && s.close <= ctx.entryZone.high,
-        }
+      ? (() => {
+          const tick = tickSizeForPrice(s.close);
+          const decimals = Math.max(0, Math.ceil(-Math.log10(tick)));
+          return {
+            low: Number(ctx.entryZone.low.toFixed(decimals)),
+            high: Number(ctx.entryZone.high.toFixed(decimals)),
+            basisAr: 'منطقة ارتداد: بين EMA21 وتصحيح 38.2-50% لآخر موجة',
+            priceInside:
+              ctx.entryZone.low <= s.close && s.close <= ctx.entryZone.high,
+          };
+        })()
       : null,
     chaseWarning: s.close - s.ema21 > STRATEGY_THRESHOLDS.CHASE_ATR_DISTANCE * s.atr14,
     smc: ctx.smc ?? null,

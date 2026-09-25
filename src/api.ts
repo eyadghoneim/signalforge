@@ -189,42 +189,6 @@ export interface DexPairInfo {
   priceChange24hPercent: number | null;
 }
 
-export interface DuneAssetMetric {
-  asset: SupportedAsset;
-  blockchain: string;
-  volume24hUsd: number;
-  tradeCount: number;
-  whaleTradeCount: number;
-  whaleVolume24hUsd: number;
-  largestTradeUsd: number | null;
-}
-
-export interface DuneInfo {
-  ok: boolean;
-  enabled: boolean;
-  source: 'DUNE';
-  windowHours?: number;
-  fetchedAt: number | null;
-  assets?: DuneAssetMetric[];
-  noteAr?: string;
-  noteEn?: string;
-  error?: string;
-}
-
-export interface DuneWhaleTrade {
-  block_time: string;
-  project: string;
-  token_bought_symbol: string;
-  token_sold_symbol: string;
-  amount_usd: number;
-}
-
-export interface DuneTopToken {
-  token_bought_symbol: string;
-  trades: number;
-  total_usd: number;
-}
-
 export interface DailyReportData {
   ok: boolean;
   generatedAt: string;
@@ -237,7 +201,6 @@ export interface DailyReportData {
   };
   market: {
     fearAndGreed: { value: number; classification: string } | null;
-    duneConnected: boolean;
   };
   signals: {
     asset: SupportedAsset;
@@ -265,7 +228,6 @@ export interface DailyReportData {
     openPositions: PaperAccountInfo['open'];
     recentClosedTrades: PaperAccountInfo['closed'];
   };
-  recentMegaWhaleSwaps: DuneWhaleTrade[];
 }
 
 const ADMIN_TOKEN_KEY = 'sf_admin_token';
@@ -327,18 +289,6 @@ export const api = {
   }) => j<{ ok: true }>('/api/config', { method: 'POST', body: JSON.stringify(body) }),
   telegramTest: () => j<{ ok: boolean; error?: string }>('/api/telegram/test', { method: 'POST', body: '{}' }),
   liquidity: () => j<{ ok: true; regime: LiquidityRegime }>('/api/liquidity-regime'),
-  dune: async (): Promise<DuneInfo> => {
-    const res = await fetch('/api/dune', { headers: { 'content-type': 'application/json' } });
-    return (await res.json()) as DuneInfo;
-  },
-  duneStatus: () => j<{ ok: true; available: boolean; tier: string; researchOnly: true }>('/api/dune/status'),
-  duneWhaleTrades: () => j<{ ok: true; available: true; trades: DuneWhaleTrade[] }>('/api/dune/whale-trades'),
-  duneTopTokens: () => j<{ ok: true; available: true; tokens: DuneTopToken[] }>('/api/dune/top-tokens'),
-  duneRunSql: (sql: string) =>
-    j<{ ok: true; rows: Record<string, unknown>[]; executionTimeMs: number; researchOnly: true }>('/api/dune/sql', {
-      method: 'POST',
-      body: JSON.stringify({ sql }),
-    }),
   dexPairs: (q: string) => j<{ ok: true; pairs: DexPairInfo[] }>(`/api/dex/pairs?asset=${encodeURIComponent(q)}`),
   providers: () => j<{ ok: true; providers: ProviderHealthInfo[] }>('/api/providers'),
   paper: () => j<{

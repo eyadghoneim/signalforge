@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, Globe, Settings, ShieldCheck, Wifi, WifiOff, FileText } from 'lucide-react';
-import { api, type SupportedAsset, type Signal, type StoredSignal, type TickerSummary, type AttributionSummary, type HealthInfo, type DuneInfo } from './api';
+import { api, type SupportedAsset, type Signal, type StoredSignal, type TickerSummary, type AttributionSummary, type HealthInfo } from './api';
 import { SUPPORTED_ASSETS, ASSET_LABELS_AR } from '../shared/types';
 import PriceChart from './components/PriceChart';
 import SignalCard from './components/SignalCard';
@@ -12,8 +12,6 @@ import AttributionPanel from './components/AttributionPanel';
 import DexPanel from './components/DexPanel';
 import LiquidationPanel from './components/LiquidationPanel';
 import PaperPanel from './components/PaperPanel';
-import DuneContextPanel from './components/DuneContextPanel';
-import DuneResearchPanel from './components/DunePanel';
 import DailyReportModal from './components/DailyReportModal';
 import ElliottWavePanel from './components/ElliottWavePanel';
 import MacroCalendarPanel from './components/MacroCalendarPanel';
@@ -22,7 +20,7 @@ import { LiquidityCard, ProviderDots } from './components/LiquidityCard';
 import { t, applyDocumentDir, type Lang } from './i18n';
 import type { LiquidityRegime, ProviderHealthInfo } from './api';
 
-type Tab = 'history' | 'elliott' | 'macro' | 'depth' | 'backtest' | 'learning' | 'dex' | 'dune' | 'settings';
+type Tab = 'history' | 'elliott' | 'macro' | 'depth' | 'backtest' | 'learning' | 'dex' | 'settings';
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(() => {
@@ -42,7 +40,6 @@ export default function App() {
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [regime, setRegime] = useState<LiquidityRegime | null>(null);
   const [providers, setProviders] = useState<ProviderHealthInfo[]>([]);
-  const [dune, setDune] = useState<DuneInfo | null>(null);
   const [tab, setTab] = useState<Tab>('history');
   const [showSettings, setShowSettings] = useState(false);
   const [showDailyReport, setShowDailyReport] = useState(false);
@@ -66,7 +63,7 @@ export default function App() {
     const currentSeq = ++requestSeqRef.current;
     const reqAsset = activeAsset;
     try {
-      const [sRes, sigRes, hRes, attRes, hpRes, liqRes, provsRes, duneRes] = await Promise.allSettled([
+      const [sRes, sigRes, hRes, attRes, hpRes, liqRes, provsRes] = await Promise.allSettled([
         api.summary(),
         api.signal(reqAsset),
         api.signals(60),
@@ -74,7 +71,6 @@ export default function App() {
         api.health(),
         api.liquidity(),
         api.providers(),
-        api.dune(),
       ]);
 
       // If user switched asset or a newer request began, avoid stale overwrite
@@ -94,7 +90,6 @@ export default function App() {
       if (hpRes.status === 'fulfilled') setHealth(hpRes.value);
       if (liqRes.status === 'fulfilled' && liqRes.value) setRegime(liqRes.value.regime);
       if (provsRes.status === 'fulfilled' && provsRes.value) setProviders(provsRes.value.providers);
-      if (duneRes.status === 'fulfilled' && duneRes.value) setDune(duneRes.value);
       setLastUpdate(Date.now());
     } catch (e) {
       if (currentSeq === requestSeqRef.current) {
@@ -197,13 +192,6 @@ export default function App() {
                 {health?.protection?.breakerTripped ? (lang === 'ar' ? '⚠️ مفعّل' : '⚠️ Tripped') : (lang === 'ar' ? '✅ نشط وآمن' : '✅ Protected')}
               </span>
             </div>
-            <div className="h-3 w-px bg-zinc-800" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-zinc-500">{lang === 'ar' ? 'شبكة Dune:' : 'Dune On-Chain:'}</span>
-              <span className={dune?.enabled ? 'font-bold text-sky-400' : 'text-zinc-500'}>
-                {dune?.enabled ? (lang === 'ar' ? 'متصل 🐋' : 'Online 🐋') : (lang === 'ar' ? 'جاهز' : 'Standby')}
-              </span>
-            </div>
           </div>
 
           {/* الجانب الأيسر: الإجراءات والإعدادات واللغة والتقرير اليومي */}
@@ -277,7 +265,6 @@ export default function App() {
                   ['depth', te('tabDepth')],
                   ['backtest', te('tabBacktest')],
                   ['dex', te('tabDex')],
-                  ['dune', te('tabDune')],
                   ['learning', te('tabLearning')],
                   ['settings', te('tabSettings')],
                 ] as [Tab, string][]).map(([key, label]) => (
@@ -301,7 +288,6 @@ export default function App() {
                 {tab === 'depth' && <WhaleDepthPanel asset={activeAsset} lang={lang} />}
                 {tab === 'backtest' && <BacktestPanel lang={lang} />}
                 {tab === 'dex' && <DexPanel lang={lang} />}
-                {tab === 'dune' && <DuneResearchPanel lang={lang} />}
                 {tab === 'learning' && <LearningPanel lang={lang} />}
                 {tab === 'settings' && <SettingsPanel onSaved={() => void refreshCore()} lang={lang} />}
               </div>
@@ -347,8 +333,6 @@ export default function App() {
 
             <LiquidityCard regime={regime} lang={lang} />
 
-            <DuneContextPanel data={dune} lang={lang} />
-
             <PaperPanel lang={lang} />
 
             <LiquidationPanel asset={activeAsset} lang={lang} />
@@ -385,7 +369,7 @@ export default function App() {
       />
 
       <footer className="mx-auto max-w-[1600px] px-4 py-8 text-center text-[11px] text-zinc-600">
-        SignalForge v{health?.version ?? '3.2.0'} — {health?.engineSignature ?? ''}
+        SignalForge v{health?.version ?? '1.0.0'} — {health?.engineSignature ?? ''}
       </footer>
     </div>
   );

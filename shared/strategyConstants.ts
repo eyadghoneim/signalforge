@@ -29,6 +29,12 @@ export const STRATEGY_RISK_MULTIPLIERS = {
   STOP_SLIPPAGE_ATR: 0.15, // انزلاق تنفيذي واقعي لأوامر Stop-Market عند ضرب الوقف (كنسبة من ATR)
 } as const;
 
+export const TARGET_RATIOS = {
+  TP1: 0.5, // 50% of position
+  TP2: 0.3, // 30% of position
+  TP3: 0.2, // 20% remainder
+} as const;
+
 // ─── وقف متحرك مدرّج (freqtrade-style: trailing_only_offset_is_reached) ───
 // لا يتحرك الإيقاف قبل أن يتجاوز الربح العتبة؛ بعدها يتبع القمة بهامش،
 // ويضيق الهامش تلقائياً عند مستويات ربح أعلى لقفل المزيد من الأرباح.

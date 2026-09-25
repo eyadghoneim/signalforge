@@ -14,7 +14,7 @@ async function fetchWithTimeout(url: string, ms = 3000): Promise<Response> {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'signalforge-terminal/3.2' },
+      headers: { 'User-Agent': 'signalforge-terminal/3.1' },
     });
     return res;
   } finally {
@@ -77,7 +77,7 @@ function generateFallbackDepth(asset: SupportedAsset, midPrice: number): OrderBo
   };
 }
 
-export function parseL2Depth(
+function parseL2Depth(
   asset: SupportedAsset,
   rawBids: Array<[string, string] | string[]>,
   rawAsks: Array<[string, string] | string[]>,
@@ -209,24 +209,7 @@ export async function getOrderBookDepth(asset: SupportedAsset): Promise<OrderBoo
     // Proceed to fallback
   }
 
-  // 3. Try Bybit Spot Order Book (third independent source)
-  try {
-    const res = await fetchWithTimeout(
-      `https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${conf.binance}&limit=25`,
-      3500,
-    );
-    if (res.ok) {
-      const data = (await res.json()) as { retCode?: number; result?: { b?: string[][]; a?: string[][] } };
-      if (data.retCode === 0 && data.result) {
-        const parsed = parseL2Depth(asset, data.result.b || [], data.result.a || [], 'Bybit L2 Depth API');
-        if (parsed) return parsed;
-      }
-    }
-  } catch {
-    // Proceed to synthetic fallback
-  }
-
-  // 4. Fallback to latest ticker price with synthetic L2 depth
+  // 3. Fallback to latest ticker price with synthetic L2 depth
   let price = conf.fallbackPrice;
   try {
     const ticker = await getTicker(asset);

@@ -144,7 +144,7 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
         </div>
         <p className="mb-3 text-[10px] leading-4 text-zinc-500">
           {lang === 'ar'
-            ? 'إذا كان السيرفر محمياً بـ BOT_ADMIN_TOKEN، أدخل التوكن هنا لتتمكن من حفظ الإعدادات وتصفير الحسابات وتشغيل استعلامات Dune بأمان.'
+            ? 'إذا كان السيرفر محمياً بـ BOT_ADMIN_TOKEN، أدخل التوكن هنا لتتمكن من حفظ الإعدادات وتصفير الحسابات وإجراء العمليات الإدارية بأمان.'
             : 'If the server is configured with BOT_ADMIN_TOKEN, enter your token here to authorize saving settings and privileged actions.'}
         </p>
         <div className="relative">

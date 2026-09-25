@@ -21,7 +21,6 @@ measured results - with a full audit trail.
 |---|---|
 | **Deterministic signal engine** | Multi-timeframe scoring (1h/4h/daily) with regime gates: HTF trend, chop (ADX), volume (RVOL) and funding squeeze - signals are reproducible, not hand-waved |
 | **Entry quality transparency** | Every signal exposes its 0–100 entry-quality score and the grouped positive/negative factor contributions in Arabic and English |
-| **Optional Dune context** | Cached read-only DEX volume and large-trade context for verified BTC/ETH/PAXG/SOL token addresses; shown for research only and never changes signals automatically |
 | **Advanced measurement** | Win rate, profit factor, expectancy (R), payoff, per-trade Sharpe and Sortino, Calmar (when the period is long enough), max drawdown + duration, streaks, time-in-market, score-bucket and exit-reason diagnostics, deterministic 1,000-path Monte Carlo drawdown stress test, equity curve with buy & hold benchmark, CSV export |
 | **Honest walk-forward optimizer** | Grid-search on the first half of the data, verdict on the unseen second half - ranking uses in-sample performance only, so the validation result cannot flatter itself |
 | **Capital protection** | Daily loss circuit breaker (R-based), unique-asset exposure cap with a BTC/ETH correlation guard, automatic expiry of stale signals, 3-loss choppy-market cooldown, and configurable Paper max-hold exit |
@@ -127,9 +126,3 @@ SignalForge stands on the shoulders of excellent open-source projects:
 ## License
 
 MIT - see [LICENSE](LICENSE).
-
-## Dune Analytics research context
-
-Dune is an optional, read-only research layer. It reports DEX activity for the verified BTC/WBTC, ETH/WETH, PAXG, and SOL contracts, plus a separate bounded research panel for large swaps and read-only SQL exploration. Dune data does not enter signal scoring, learning, alerts, or Paper Trading until a historical asset-specific baseline and tests are completed.
-
-Set `DUNE_API_KEY` as a server-side Secret/environment variable only. Never put the key in `data/`, `config.json`, source code, Git, or the client bundle. Dune SQL requests are limited to read-only statements with a `LIMIT`, rate-limited, cached, and capped in the response. The deployed app remains paper-only; no live trading is implemented.

@@ -79,21 +79,20 @@ export default function LearningPanel({ lang }: { lang: Lang }) {
             </thead>
             <tbody>
               {data.perTag.map((x) => {
-                // الأنواع موحّدة بمفتاح "TAG|REGIME" — القيمة الصحيحة تُقرأ بالمفتاح أولاً ثم بالـtag الاحتياطي.
-                const bias = data.biases[x.key] ?? data.biases[x.tag] ?? 0;
+                const biasVal = data.biases[x.key] ?? data.biases[x.tag] ?? 0;
                 return (
-                  <tr key={x.key} className="border-b border-zinc-800/50">
+                  <tr key={x.key ?? `${x.tag}-${x.regime}`} className="border-b border-zinc-800/50">
                     <td className="px-3 py-1.5 font-mono text-zinc-300" dir="ltr">
-                      {x.tag}
-                      {x.regime && x.regime !== 'UNKNOWN' ? <span className="text-zinc-500"> | {x.regime}</span> : null}
+                      <span>{x.tag}</span>
+                      {x.regime && <span className="ml-1.5 text-[10px] text-zinc-500 font-normal">({x.regime})</span>}
                     </td>
                     <td className="px-3 py-1.5 tabular-nums text-zinc-400" dir="ltr">{x.samples}</td>
                     <td className="px-3 py-1.5 tabular-nums text-emerald-300" dir="ltr">{x.wins}</td>
                     <td className="px-3 py-1.5 tabular-nums text-rose-300" dir="ltr">{x.losses}</td>
                     <td className={`px-3 py-1.5 tabular-nums font-bold ${x.winRatePercent >= data.baselineWinRatePercent ? 'text-emerald-300' : 'text-amber-300'}`} dir="ltr">{x.winRatePercent}%</td>
                     <td className="px-3 py-1.5 tabular-nums text-zinc-300" dir="ltr">{x.netR > 0 ? '+' : ''}{x.netR}</td>
-                    <td className={`px-3 py-1.5 tabular-nums font-extrabold ${bias > 0 ? 'text-emerald-300' : bias < 0 ? 'text-rose-300' : 'text-zinc-500'}`} dir="ltr">
-                      {bias > 0 ? '+' : ''}{bias}
+                    <td className={`px-3 py-1.5 tabular-nums font-extrabold ${biasVal > 0 ? 'text-emerald-300' : biasVal < 0 ? 'text-rose-300' : 'text-zinc-500'}`} dir="ltr">
+                      {biasVal > 0 ? '+' : ''}{biasVal}
                     </td>
                   </tr>
                 );

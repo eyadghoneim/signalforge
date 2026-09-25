@@ -58,14 +58,12 @@ import { computeLearningState, diffLessons } from './learning';
 import { getOpenInterestChange24h } from './oiFactor';
 import { getFearGreedIndex } from './fng';
 import { getTopDexPairs } from './dexscreener';
-import { getMacroCalendarLive } from './realMacroCalendar';
+import { getMacroCalendar, getMacroCalendarAsync } from './macroEvents';
 import { getOrderBookDepth } from './orderBookDepth';
 import { analyzeElliottWave } from '../shared/elliottWave';
 import { closeCcxtExchangePool } from './ccxtProvider';
 import { getWhaleNetflow } from './whaleAlert';
 import { getLiquidationRadar } from './liquidationRadar';
-import { getDuneSnapshot } from './dune';
-import { executeDuneSql, getDuneTopTokens24h, getDuneWhaleTrades, isDuneAvailable, validateDuneSql } from './duneService';
 import {
   loadPaperAccount,
   savePaperAccount,
@@ -90,7 +88,7 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
-const VERSION = '3.2.0';
+const VERSION = '3.1.0';
 
 app.disable('x-powered-by');
 // خلف البروكسي السحابي (Render وغيره) كل الطلبات توصل من localhost فيظهر أي زائر كأنه
@@ -120,9 +118,6 @@ const RATE_LIMIT_MAX = 240; // 240 طلب/دقيقة لكل عنوان
 const BACKTEST_WINDOW_MS = 10 * 60_000;
 const BACKTEST_MAX_STANDARD = 12;
 const BACKTEST_MAX_HEAVY = 3;
-const duneSqlBuckets = new Map<string, { count: number; resetAt: number }>();
-const DUNE_SQL_WINDOW_MS = 10 * 60_000;
-const DUNE_SQL_MAX = 3;
 app.use('/api', (req, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -154,9 +149,6 @@ function sweepRateBuckets(): void {
   for (const [ip, b] of backtestBuckets) {
     if (b.resetAt <= now) backtestBuckets.delete(ip);
   }
-  for (const [ip, b] of duneSqlBuckets) {
-    if (b.resetAt <= now) duneSqlBuckets.delete(ip);
-  }
   if (rateBuckets.size > RATE_BUCKETS_MAX) {
     const oldest = [...rateBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
     for (const [ip] of oldest.slice(0, rateBuckets.size - RATE_BUCKETS_MAX)) rateBuckets.delete(ip);
@@ -164,10 +156,6 @@ function sweepRateBuckets(): void {
   if (backtestBuckets.size > RATE_BUCKETS_MAX) {
     const oldest = [...backtestBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
     for (const [ip] of oldest.slice(0, backtestBuckets.size - RATE_BUCKETS_MAX)) backtestBuckets.delete(ip);
-  }
-  if (duneSqlBuckets.size > RATE_BUCKETS_MAX) {
-    const oldest = [...duneSqlBuckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
-    for (const [ip] of oldest.slice(0, duneSqlBuckets.size - RATE_BUCKETS_MAX)) duneSqlBuckets.delete(ip);
   }
 }
 setInterval(sweepRateBuckets, 60_000).unref();
@@ -188,29 +176,6 @@ function allowBacktestRequest(req: express.Request, res: express.Response, heavy
   res.setHeader('X-Backtest-RateLimit-Limit', String(max));
   res.setHeader('X-Backtest-RateLimit-Remaining', '0');
   res.status(429).json({ ok: false, error: 'Backtest rate limit exceeded', retryAfterSeconds: retryAfter });
-  return false;
-}
-
-function allowDuneSqlRequest(req: express.Request, res: express.Response): boolean {
-  const key = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  if (duneSqlBuckets.size > 500) {
-    for (const [k, v] of duneSqlBuckets.entries()) {
-      if (v.resetAt <= now) duneSqlBuckets.delete(k);
-    }
-  }
-  const bucket = duneSqlBuckets.get(key);
-  if (!bucket || bucket.resetAt <= now) {
-    duneSqlBuckets.set(key, { count: 1, resetAt: now + DUNE_SQL_WINDOW_MS });
-    return true;
-  }
-  bucket.count++;
-  if (bucket.count <= DUNE_SQL_MAX) return true;
-  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-  res.setHeader('Retry-After', String(retryAfter));
-  res.setHeader('X-Dune-SQL-RateLimit-Limit', String(DUNE_SQL_MAX));
-  res.setHeader('X-Dune-SQL-RateLimit-Remaining', '0');
-  res.status(429).json({ ok: false, error: 'Dune SQL rate limit exceeded', retryAfterSeconds: retryAfter });
   return false;
 }
 
@@ -286,10 +251,15 @@ app.get('/api/market/summary', async (_req, res) => {
 // ─── 1. المفكرة الاقتصادية وفترات الحظر (Macro Calendar & Blackout Filter) ───
 app.get('/api/market/macro-events', async (_req, res) => {
   try {
-    const calendar = await getMacroCalendarLive();
+    const calendar = await getMacroCalendarAsync();
     res.json({ ok: true, ...calendar });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    try {
+      const fallback = getMacroCalendar();
+      res.json({ ok: true, ...fallback });
+    } catch (e2) {
+      res.status(500).json({ ok: false, error: e2 instanceof Error ? e2.message : String(e2) });
+    }
   }
 });
 
@@ -517,64 +487,6 @@ app.get('/api/liquidity-regime', async (_req, res) => {
   }
 });
 
-app.get('/api/dune', async (_req, res) => {
-  try {
-    const snapshot = await getDuneSnapshot();
-    res.json(snapshot);
-  } catch (e) {
-    // getDuneSnapshot normally never throws, but an unhandled rejection here
-    // would crash the whole process (Node >= 15 default). Fail safe instead.
-    res.status(503).json({ ok: false, enabled: false, source: 'DUNE', fetchedAt: null, error: e instanceof Error ? e.message : String(e) });
-  }
-});
-
-// ─── Dune Analytics research tab ───
-// These endpoints are read-only, asset-scoped where possible, and never feed scoring.
-app.get('/api/dune/status', (_req, res) => {
-  res.json({ ok: true, available: isDuneAvailable(), tier: isDuneAvailable() ? 'Plus' : 'disabled', researchOnly: true });
-});
-
-app.get('/api/dune/whale-trades', async (_req, res) => {
-  if (!isDuneAvailable()) return res.status(503).json({ ok: false, available: false, error: 'DUNE_API_KEY is not configured' });
-  try {
-    const trades = await getDuneWhaleTrades(25);
-    return res.json({ ok: true, available: true, trades });
-  } catch (e) {
-    return res.status(503).json({ ok: false, available: false, error: e instanceof Error ? e.message : String(e) });
-  }
-});
-
-app.get('/api/dune/top-tokens', async (_req, res) => {
-  if (!isDuneAvailable()) return res.status(503).json({ ok: false, available: false, error: 'DUNE_API_KEY is not configured' });
-  try {
-    const tokens = await getDuneTopTokens24h(10);
-    return res.json({ ok: true, available: true, tokens });
-  } catch (e) {
-    return res.status(503).json({ ok: false, available: false, error: e instanceof Error ? e.message : String(e) });
-  }
-});
-
-app.post('/api/dune/sql', (req, res, next) => {
-  const config = loadConfig();
-  if (config.adminToken || process.env.BOT_ADMIN_TOKEN) {
-    return requireAdmin(req, res, next);
-  }
-  next();
-}, async (req, res) => {
-  if (!allowDuneSqlRequest(req, res)) return;
-  const sql = String(req.body?.sql || '').trim();
-  const validationError = validateDuneSql(sql, true);
-  if (validationError) return res.status(400).json({ ok: false, error: validationError });
-  if (!isDuneAvailable()) return res.status(503).json({ ok: false, error: 'DUNE_API_KEY is not configured' });
-  try {
-    const result = await executeDuneSql(sql);
-    if (!result.ok) return res.status(503).json({ ok: false, error: result.error });
-    return res.json({ ok: true, rows: result.rows, executionTimeMs: result.executionTimeMs, researchOnly: true });
-  } catch (e) {
-    return res.status(503).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
-  }
-});
-
 // ─── Daily Comprehensive Terminal Report ───
 app.get('/api/report/daily', async (_req, res) => {
   try {
@@ -585,7 +497,6 @@ app.get('/api/report/daily', async (_req, res) => {
       : 0;
 
     const fng = await getFearGreedIndex().catch(() => null);
-    const whaleTrades = isDuneAvailable() ? await getDuneWhaleTrades(6).catch(() => []) : [];
     // Equity must be marked to the live market (sell-side slippage + fees), not the
     // entry price. Adding pnlAccum on top of entry-value double-counts realized
     // partial profits (TP1/TP2) — currentEquity() is the single source of truth.
@@ -623,7 +534,6 @@ app.get('/api/report/daily', async (_req, res) => {
       },
       market: {
         fearAndGreed: fng,
-        duneConnected: isDuneAvailable(),
       },
       signals,
       paperTrading: {
@@ -637,7 +547,6 @@ app.get('/api/report/daily', async (_req, res) => {
         openPositions: paper.open,
         recentClosedTrades: paper.closed.slice(-5),
       },
-      recentMegaWhaleSwaps: whaleTrades,
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
@@ -667,15 +576,18 @@ app.get('/api/providers', (_req, res) => {
 
 app.get('/api/config', (_req, res) => {
   const config = loadConfig();
+  const activeToken = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
+  const activeChatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
+  const hasEnvTelegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
   res.json({
     ok: true,
     config: {
       scanIntervalSeconds: config.scanIntervalSeconds,
-      telegramEnabled: config.telegramEnabled,
-      telegramTokenMasked: maskToken(config.telegramToken),
-      telegramChatId: config.telegramChatId ? maskToken(config.telegramChatId) : '',
-      hasTelegramToken: Boolean(config.telegramToken),
-      hasChatId: Boolean(config.telegramChatId),
+      telegramEnabled: config.telegramEnabled || hasEnvTelegram,
+      telegramTokenMasked: maskToken(activeToken),
+      telegramChatId: activeChatId ? maskToken(activeChatId) : '',
+      hasTelegramToken: Boolean(activeToken),
+      hasChatId: Boolean(activeChatId),
       gates: config.gates,
       adminRequired: Boolean(config.adminToken || process.env.BOT_ADMIN_TOKEN),
       regimeEnabled: config.regimeEnabled,
@@ -767,10 +679,14 @@ let paperEnginePaused = false;
 
 function telegramRuntimeConfig(): { enabled: boolean; token: string; chatId: string } {
   const config = loadConfig();
+  const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
+  const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
+  const hasEnvKeys = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+  const enabled = (config.telegramEnabled || hasEnvKeys) && Boolean(token) && Boolean(chatId);
   return {
-    enabled: config.telegramEnabled,
-    token: config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '',
-    chatId: config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '',
+    enabled,
+    token,
+    chatId,
   };
 }
 
@@ -881,10 +797,9 @@ async function runScanCycle(): Promise<void> {
     if (breaker.tripped && lastBreakerAlertDay !== utcDayStart(nowMs)) {
       lastBreakerAlertDay = utcDayStart(nowMs);
       appendLog('WARN', `CIRCUIT BREAKER: ${breaker.realizedR}R today (limit -${breaker.limit}R) - new BUY signals refused until next UTC day`);
-      const btToken = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-      const btChat = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
-      if (config.telegramEnabled && btToken && btChat) {
-        void sendTelegramMessage(btToken, btChat, '<b>Circuit breaker</b>: ' + breaker.realizedR + 'R today (limit -' + breaker.limit + 'R). New BUY signals paused until 00:00 UTC.');
+      const tg = telegramRuntimeConfig();
+      if (tg.enabled) {
+        void sendTelegramMessage(tg.token, tg.chatId, '<b>Circuit breaker</b>: ' + breaker.realizedR + 'R today (limit -' + breaker.limit + 'R). New BUY signals paused until 00:00 UTC.');
       }
     }
     // لقطة المحفظة قبل تغييرات هذه الدورة — لنشتق أحداث فتح/جني/قفل بدقة.
@@ -1000,8 +915,7 @@ async function runScanCycle(): Promise<void> {
 
         // إشعار تليجرام الذكي: نُعلن فقط عندما تتغيّر الصورة القابلة للتنفيذ
         // (توصية جديدة أو مختلفة عن آخر ما أُعلن)، لا مع كل مسح يتكرر نفس الحال.
-        const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-        const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
+        const tg = telegramRuntimeConfig();
         const now = Date.now();
         const lastSent = lastTelegramSentAt.get(asset) || 0;
         const vNow = verdictOf(signal);
@@ -1011,13 +925,11 @@ async function runScanCycle(): Promise<void> {
         // نُعلن دائمًا عن توصية قابلة للتنفيذ (BUY/SELL) إن تغيّرت؛ أما البوابات
         // والتكرار فيخضعان لفحص التغيّر + التهدئة.
         const shouldSend =
-          config.telegramEnabled &&
-          token &&
-          chatId &&
+          tg.enabled &&
           verdictChanged &&
           (eligible ? true : cooldownOk); // gate-blocked transitions also respect cooldown
         if (shouldSend) {
-          const sendResult = await sendTelegramMessage(token, chatId, buildSignalMessageHtml(signal, vPrev));
+          const sendResult = await sendTelegramMessage(tg.token, tg.chatId, buildSignalMessageHtml(signal, vPrev));
           markTelegramSent(stored.id, sendResult.ok);
           if (sendResult.ok) {
             lastTelegramSentAt.set(asset, now);
@@ -1057,44 +969,41 @@ async function runScanCycle(): Promise<void> {
     try {
       const paperAfter = snapshotPaperAccount(paperAccount);
       const events = diffPaperEvents(paperBefore, paperAfter);
-      if (events.length > 0 && config.paperAlertsEnabled) {
-        const pwToken = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-        const pwChat = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
-        if (config.telegramEnabled && pwToken && pwChat) {
-          const tgLang = config.telegramLang ?? 'ar';
-          for (const ev of events) {
-            let html = '';
-            if (ev.kind === 'OPENED') {
-              html = buildPaperEventHtml(
-                { kind: 'OPENED', asset: ev.asset, qty: ev.pos.qty, entry: ev.pos.entry, feesUsd: ev.pos.feesPaid },
-                tgLang,
-              );
-            } else if (ev.kind === 'TP1' || ev.kind === 'TP2') {
-              html = buildPaperEventHtml(
-                { kind: ev.kind, asset: ev.asset, entry: ev.pos.entry, pnlUsd: ev.pos.pnlAccum, feesUsd: ev.pos.feesPaid },
-                tgLang,
-              );
-            } else {
-              html = buildPaperEventHtml(
-                {
-                  kind: 'CLOSED',
-                  asset: ev.asset,
-                  exitAvg: ev.trade?.exitAvg,
-                  pnlUsd: ev.trade?.pnlUsd,
-                  feesUsd: ev.trade?.feesUsd,
-                  reason: ev.trade?.reason,
-                },
-                tgLang,
-              );
-            }
-            const eventIdentity =
-              ev.kind === 'CLOSED'
-                ? ev.trade?.id ?? ev.posBefore?.id ?? `${ev.asset}:${paperAfter.updatedAt}`
-                : ev.pos.id;
-            const pwResult = await sendTelegramDedupedMessage(pwToken, pwChat, html, `paper:${ev.kind}:${ev.asset}:${eventIdentity}`);
-            if (!pwResult.ok) {
-              appendLog('WARN', `Paper alert ${ev.kind} ${ev.asset}: ${pwResult.error ?? 'failed'}`);
-            }
+      const tg = telegramRuntimeConfig();
+      if (events.length > 0 && config.paperAlertsEnabled && tg.enabled) {
+        const tgLang = config.telegramLang ?? 'ar';
+        for (const ev of events) {
+          let html = '';
+          if (ev.kind === 'OPENED') {
+            html = buildPaperEventHtml(
+              { kind: 'OPENED', asset: ev.asset, qty: ev.pos.qty, entry: ev.pos.entry, feesUsd: ev.pos.feesPaid },
+              tgLang,
+            );
+          } else if (ev.kind === 'TP1' || ev.kind === 'TP2') {
+            html = buildPaperEventHtml(
+              { kind: ev.kind, asset: ev.asset, entry: ev.pos.entry, pnlUsd: ev.pos.pnlAccum, feesUsd: ev.pos.feesPaid },
+              tgLang,
+            );
+          } else {
+            html = buildPaperEventHtml(
+              {
+                kind: 'CLOSED',
+                asset: ev.asset,
+                exitAvg: ev.trade?.exitAvg,
+                pnlUsd: ev.trade?.pnlUsd,
+                feesUsd: ev.trade?.feesUsd,
+                reason: ev.trade?.reason,
+              },
+              tgLang,
+            );
+          }
+          const eventIdentity =
+            ev.kind === 'CLOSED'
+              ? ev.trade?.id ?? ev.posBefore?.id ?? `${ev.asset}:${paperAfter.updatedAt}`
+              : ev.pos.id;
+          const pwResult = await sendTelegramDedupedMessage(tg.token, tg.chatId, html, `paper:${ev.kind}:${ev.asset}:${eventIdentity}`);
+          if (!pwResult.ok) {
+            appendLog('WARN', `Paper alert ${ev.kind} ${ev.asset}: ${pwResult.error ?? 'failed'}`);
           }
         }
       }
@@ -1135,15 +1044,11 @@ async function runScanCycle(): Promise<void> {
   } catch (err) {
     consecutiveScanFailures++;
     appendLog('ERROR', `Scan cycle failed (${consecutiveScanFailures}): ${err instanceof Error ? err.message : String(err)}`);
-    const config = loadConfig();
     const now = Date.now();
-    if (consecutiveScanFailures >= 3 && config.telegramEnabled && now - lastFailureAlertAt > TELEGRAM_COOLDOWN_MS) {
+    const tg = telegramRuntimeConfig();
+    if (consecutiveScanFailures >= 3 && tg.enabled && now - lastFailureAlertAt > TELEGRAM_COOLDOWN_MS) {
       lastFailureAlertAt = now;
-      const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-      const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
-      if (token && chatId) {
-        void sendTelegramMessage(token, chatId, '🚨 <b>[تنبيه طوارئ — SignalForge]</b>\nفشل حلقة المسح 3 مرات متتالية — الحلقة مستمرة ولن تتوقف.');
-      }
+      void sendTelegramMessage(tg.token, tg.chatId, '🚨 <b>[تنبيه طوارئ — SignalForge]</b>\nفشل حلقة المسح 3 مرات متتالية — الحلقة مستمرة ولن تتوقف.');
     }
   } finally {
     scanning = false;
@@ -1209,15 +1114,13 @@ function buildDailyDigestHtml(): string {
 
 async function sendDailyDigestIfDue(): Promise<void> {
   const config = loadConfig();
-  if (!config.digestEnabled || !config.telegramEnabled) return;
-  const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-  const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
-  if (!token || !chatId) return;
+  const tg = telegramRuntimeConfig();
+  if (!config.digestEnabled || !tg.enabled) return;
   const last = new Date(lastDigestAt);
   const now = new Date();
   const isNewDay = last.getFullYear() !== now.getFullYear() || last.getMonth() !== now.getMonth() || last.getDate() !== now.getDate();
   if (!isNewDay) return;
-  const result = await sendTelegramMessage(token, chatId, buildDailyDigestHtml());
+  const result = await sendTelegramMessage(tg.token, tg.chatId, buildDailyDigestHtml());
   if (result.ok) {
     lastDigestAt = Date.now();
     appendLog('INFO', 'Daily digest sent');

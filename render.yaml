@@ -10,13 +10,15 @@ services:
         value: production
       - key: PORT
         value: "3000"
-      # ضع قيمة DATABASE_URL من Supabase Free في إعدادات Render كـ Secret.
+      # ضع قيمة DATABASE_URL من Supabase Free في إعدادات Render كـ Secret لحفظ الصفقات دائماً.
       - key: DATABASE_URL
         sync: false
-      # Optional Dune read-only research context; set this as a Render Secret.
-      - key: DUNE_API_KEY
+      # تليجرام: ضع توكن البوت ومعرف الشات كـ Secret لضمان استمرار الإشعارات دائماً حتى بعد إعادة التشغيل.
+      - key: TELEGRAM_BOT_TOKEN
         sync: false
-      # Optional Bot Admin Token to guard admin routes like /api/dune/sql in production.
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      # Optional Bot Admin Token to guard admin routes in production.
       - key: BOT_ADMIN_TOKEN
         sync: false
     # ملاحظات سريعة:

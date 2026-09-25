@@ -1333,21 +1333,7 @@ console.log('\n=== 25. إصلاح جلب أزواج DEX ===');
   assert(normalizeDexPairs(null).length === 0 && normalizeDexPairs({ pairs: raw }).length === 0, 'الرد غير الصالح لا يكسر المسار');
 }
 
-console.log('\n=== 26. Dune research guardrails ===');
-{
-  const { getDuneApiKey, validateDuneSql } = await import('../server/duneService');
-  const previousKey = process.env.DUNE_API_KEY;
-  process.env.DUNE_API_KEY = 'test-only-key';
-  assert(getDuneApiKey() === 'test-only-key', 'Dune key is read from environment');
-  if (previousKey === undefined) delete process.env.DUNE_API_KEY;
-  else process.env.DUNE_API_KEY = previousKey;
-  assert(validateDuneSql('SELECT 1 LIMIT 1', true) === null, 'bounded SELECT is accepted');
-  assert(validateDuneSql('SELECT 1', true) !== null, 'custom SQL requires LIMIT');
-  assert(validateDuneSql('SELECT 1; DROP TABLE x', true) !== null, 'multiple statements are rejected');
-  assert(validateDuneSql('UPDATE x SET y = 1', true) !== null, 'write SQL is rejected');
-}
-
-console.log('\n=== 27. Monte Carlo simulation & Sortino/Calmar metrics ===');
+console.log('\n=== 26. Monte Carlo simulation & Sortino/Calmar metrics ===');
 {
   const { computePerformanceStats, computeMonteCarloSimulation } = await import('../server/performance');
   const mockTrades: import('../shared/types').BacktestTrade[] = [
@@ -1379,7 +1365,7 @@ console.log('\n=== 27. Monte Carlo simulation & Sortino/Calmar metrics ===');
   assert(mc1?.maxDrawdown.p50 === mc2?.maxDrawdown.p50, 'Monte Carlo simulation is strictly deterministic given same seed');
 }
 
-console.log('\n=== 28. Elliott Wave, Macro Calendar & Whale Order Book Depth ===');
+console.log('\n=== 27. Elliott Wave, Macro Calendar & Whale Order Book Depth ===');
 {
   const { analyzeElliottWave, extractValidatedSwings } = await import('../shared/elliottWave');
   const { getMacroCalendar } = await import('../server/macroEvents');
@@ -1431,70 +1417,6 @@ console.log('\n=== 28. Elliott Wave, Macro Calendar & Whale Order Book Depth ===
   assert(depth.bidWall !== null, 'Whale bid wall is detected');
   assert(depth.askWall !== null, 'Whale ask wall is detected');
   assert(typeof depth.rule3Passed === 'boolean', 'Rule 3 tight spread liquidity check is evaluated');
-}
-
-console.log('\n=== 29. Real Macro Calendar Feed & Shared L2 Depth Parser ===');
-{
-  const { classifyMacroTitle, buildRealMacroCalendar } = await import('../server/realMacroCalendar');
-  const { getMacroCalendar } = await import('../server/macroEvents');
-  const { parseL2Depth } = await import('../server/orderBookDepth');
-
-  // 1. External release title classification
-  assert(classifyMacroTitle('CPI m/m') === 'CPI', 'classifyMacroTitle maps CPI');
-  assert(classifyMacroTitle('Core CPI m/m') === 'CPI', 'classifyMacroTitle maps Core CPI to CPI');
-  assert(classifyMacroTitle('Federal Funds Rate') === 'FOMC', 'classifyMacroTitle maps Federal Funds Rate to FOMC');
-  assert(classifyMacroTitle('FOMC Statement') === 'FOMC', 'classifyMacroTitle maps FOMC statement');
-  assert(classifyMacroTitle('Non-Farm Employment Change') === 'NFP', 'classifyMacroTitle maps Non-Farm to NFP');
-  assert(classifyMacroTitle('PPI m/m') === 'PPI', 'classifyMacroTitle maps PPI');
-  assert(classifyMacroTitle('GDP q/q') === 'GDP', 'classifyMacroTitle maps GDP');
-  assert(classifyMacroTitle('Retail Sales m/m') === 'OTHER', 'classifyMacroTitle maps unknown titles to OTHER');
-
-  // 2. Real calendar builder: source markers, sorting, statuses, blackout windows
-  const now = Date.now();
-  const releases = [
-    { title: 'Federal Funds Rate', timestamp: now + 1.5 * 3600 * 1000, impact: 'HIGH' as const, forecast: '5.25%', previous: '5.00%' },
-    { title: 'CPI m/m', timestamp: now - 3 * 3600 * 1000, impact: 'HIGH' as const, forecast: '0.2%', previous: '0.3%' },
-    { title: 'Retail Sales m/m', timestamp: now + 26 * 3600 * 1000, impact: 'MEDIUM' as const, forecast: '0.4%', previous: '0.5%' },
-  ];
-  const real = buildRealMacroCalendar(releases, now);
-  assert(real.calendarSource === 'REAL_EXTERNAL', 'Real calendar is marked REAL_EXTERNAL');
-  assert(real.isReferenceSchedule === false, 'Real calendar is not a reference schedule');
-  assert(real.upcomingEvents.length === 3, 'Real calendar includes all provided releases');
-  assert(
-    real.upcomingEvents[0].timestamp <= real.upcomingEvents[1].timestamp &&
-      real.upcomingEvents[1].timestamp <= real.upcomingEvents[2].timestamp,
-    'Real calendar events are sorted ascending by release time',
-  );
-  assert(real.upcomingEvents.some((e) => e.status === 'PASSED'), 'Release older than its blackout window is PASSED');
-  assert(real.isBlackoutActive === true, 'Real calendar flags active blackout inside the window');
-  assert(real.activeEvent?.name === 'Federal Funds Rate', 'Active event is the upcoming HIGH release');
-  assert(typeof real.lockReasonAr === 'string' && real.lockReasonAr!.includes('Federal Funds Rate'), 'Arabic notice mentions the active event');
-  const retail = real.upcomingEvents.find((e) => e.name === 'Retail Sales m/m')!;
-  assert(retail.status === 'UPCOMING' && retail.category === 'OTHER', 'Future MEDIUM release stays UPCOMING with OTHER category');
-  assert(retail.blackoutHoursBefore === 1 && retail.blackoutHoursAfter === 0.5, 'MEDIUM blackout window is 1h before / 0.5h after');
-  const ffr = real.upcomingEvents.find((e) => e.name === 'Federal Funds Rate')!;
-  assert(ffr.blackoutHoursBefore === 2 && ffr.blackoutHoursAfter === 1, 'HIGH blackout window is 2h before / 1h after');
-  assert(ffr.forecastValue === '5.25%' && ffr.previousValue === '5.00%', 'Forecast and previous values are preserved');
-  assert(ffr.timeFormatted.endsWith('UTC'), 'Real event time is formatted in UTC');
-
-  // 3. Reference fallback keeps its own marker
-  const ref = getMacroCalendar(now);
-  assert(ref.calendarSource === 'REFERENCE_TEMPLATE', 'Reference calendar is marked REFERENCE_TEMPLATE');
-
-  // 4. Shared L2 depth parser (used by Binance / OKX / Bybit fallbacks)
-  assert(parseL2Depth('BTC', [], [], 'test') === null, 'parseL2Depth returns null for an empty book');
-  const book = parseL2Depth(
-    'BTC',
-    [['88000.10', '1.5'], ['87990.00', 'bad'], ['89760.50', '8.5']],
-    [['88010.20', '2.0'], ['88020.00', '3.0']],
-    'Unit Test Feed',
-  );
-  assert(book !== null, 'parseL2Depth parses a valid book');
-  assert(book!.bids.length === 2, 'parseL2Depth skips rows with non-numeric values');
-  assert(book!.bids[0].total === 1.5 && book!.bids[1].total === 10, 'parseL2Depth accumulates cumulative tier totals');
-  assert(book!.midPrice > 0 && book!.spread > 0, 'parseL2Depth computes mid price and spread');
-  assert(book!.bidWall !== null && book!.bidWall!.amount === 8.5, 'parseL2Depth detects the largest bid as the whale wall');
-  assert(book!.source === 'Unit Test Feed' && book!.isSimulated === false, 'parseL2Depth preserves source label and live flag');
 }
 
 console.log(`\n=============================================`);
