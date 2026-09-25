@@ -179,22 +179,17 @@ function allowBacktestRequest(req: express.Request, res: express.Response, heavy
   return false;
 }
 
-// ─── أدمن: توكن صريح أو ثقة محلية (localhost فقط) ───
+// ─── أدمن: توكن صريح (فقط إذا تم تعيين BOT_ADMIN_TOKEN أو adminToken) ───
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const config = loadConfig();
-  const token = config.adminToken || process.env.BOT_ADMIN_TOKEN || '';
-  // الثقة المحلية (بدون توكين) مسموحة في وضع التطوير فقط — خلف بروكسي سحابي
-  // (الإنتاج) لازم توكين admin صريح حتى من localhost، وإلا أي زائر هيتعامل "محلي".
-  if (!token && IS_DEV && (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1')) {
+  const token = (config.adminToken || process.env.BOT_ADMIN_TOKEN || '').trim();
+  // إذا لم يتم تحديد توكن إداري، فإن الحماية الإدارية غير مفعلة ومسموح بالتعديل فوراً
+  if (!token) {
     return next();
   }
-  if (!token) {
-    res.status(401).json({ ok: false, error: 'Admin token required' });
-    return;
-  }
-  const provided = String(req.headers['x-bot-admin-token'] || '');
+  const provided = String(req.headers['x-bot-admin-token'] || '').trim();
   if (provided.length === token.length && timingSafeEqual(Buffer.from(provided), Buffer.from(token))) return next();
-  res.status(401).json({ ok: false, error: 'Unauthorized' });
+  res.status(401).json({ ok: false, error: 'Unauthorized: Invalid Admin Token' });
 }
 
 // ═══════════════════ API ═══════════════════
