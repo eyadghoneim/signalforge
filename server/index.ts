@@ -709,6 +709,144 @@ function formatPaperUsd(value: number): string {
   return Number.isFinite(value) ? `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—';
 }
 
+function buildTelegramHelpMessage(): string {
+  return [
+    '🤖 <b>SignalForge — دليل الأوامر التفاعلية</b>',
+    '',
+    '• <b>/status</b> — تقرير شامل عن المحفظة والأداء والمراكز المفتوحة',
+    '• <b>/signals</b> — آخر إشارات التداول وتوافق الفريمات MTF ونقاط الدخول',
+    '• <b>/positions</b> — تفاصيل الصفقات الحالية مع أهداف الربح والـ Trailing SL',
+    '• <b>/history</b> — سجل آخر الصفقات المكتملة ومعدل الربح',
+    '• <b>/balance</b> — ملخص الرصيد والكاش والأرباح المحققة',
+    '• <b>/ping</b> — فحص استقرار السيرفر وقاعدة البيانات وقوة الاتصال',
+    '• <b>/pause</b> — إيقاف التداول والمحاكاة مؤقتاً',
+    '• <b>/resume</b> — استئناف التداول والمحاكاة',
+    '• <b>/panic</b> — إغلاق فوري لكافة الصفقات المفتوحة بالسعر السوقي',
+    '',
+    '💡 <i>يمكنك أيضاً استخدام الأزرار التفاعلية السريعة أدناه للتحكم بلمسة واحدة!</i>',
+  ].join('\n');
+}
+
+async function buildTelegramSignalsMessage(): Promise<string> {
+  const signals = listSignals(10);
+  if (!signals || signals.length === 0) {
+    return '🚨 <b>SignalForge — الإشارات</b>\nلا توجد إشارات مسجلة حالياً. جاري الفحص الدوري...';
+  }
+  const latestByAsset = new Map<SupportedAsset, StoredSignal>();
+  for (const s of signals) {
+    if (!latestByAsset.has(s.asset)) latestByAsset.set(s.asset, s);
+  }
+  const lines: string[] = ['🚨 <b>[SignalForge — آخر إشارات السوق]</b>', ''];
+  for (const [asset, s] of latestByAsset) {
+    const verdict = verdictOf(s);
+    const mtfAlign = s.mtfConfluence ? s.mtfConfluence.summaryAr : 'الفريمات قيد التحليل';
+    lines.push(
+      `• <b>${ASSET_LABELS_AR[asset] || asset} (${asset}):</b> ${verdictLabel(verdict)} (${s.convictionScore}/100)`,
+      `  السعر: ${formatPaperUsd(s.entryPrice)} | الوقف: ${formatPaperUsd(s.stopLoss)}`,
+      `  🎯 الأهداف: TP1 ${formatPaperUsd(s.target1)} | TP2 ${formatPaperUsd(s.target2)}`,
+      `  🌐 توافق الفريمات: <i>${mtfAlign}</i>`,
+      '',
+    );
+  }
+  lines.push('<i>محاكاة وبحث كمي — ليست نصيحة استثمارية.</i>');
+  return lines.join('\n');
+}
+
+async function buildTelegramPositionsMessage(): Promise<string> {
+  const prices = await getOpenPaperPrices();
+  if (paperAccount.open.length === 0) {
+    return '🧾 <b>[المراكز المفتوحة]</b>\nلا توجد صفقات مفتوحة حالياً في المحفظة الورقية.';
+  }
+  const lines: string[] = ['🧾 <b>[تفاصيل الصفقات المفتوحة]</b>', ''];
+  for (const p of paperAccount.open) {
+    const mark = prices[p.asset] ?? p.entry;
+    const diffUsd = (mark - p.entry) * p.qty;
+    const diffPct = p.entry > 0 ? ((mark - p.entry) / p.entry) * 100 : 0;
+    const sign = diffUsd >= 0 ? '+' : '';
+    const icon = diffUsd >= 0 ? '🟢' : '🔴';
+    lines.push(
+      `🔹 <b>${ASSET_LABELS_AR[p.asset]} (${p.asset}):</b>`,
+      `  • سعر الدخول: ${formatPaperUsd(p.entry)}`,
+      `  • السعر اللحظي: ${formatPaperUsd(mark)}`,
+      `  • الربح/الخسارة اللحظية: ${icon} ${sign}${formatPaperUsd(diffUsd)} (${sign}${diffPct.toFixed(2)}%)`,
+      `  • وقف الخسارة (Trailing SL): ${formatPaperUsd(p.stop)} ${p.tp1Taken ? '🛡️ (Breakeven مُفعل)' : ''}`,
+      `  • الأهداف: TP1 ${formatPaperUsd(p.tp1)} ${p.tp1Taken ? '✅' : '⏳'} | TP2 ${formatPaperUsd(p.tp2)} ${p.tp2Taken ? '✅' : '⏳'} | TP3 ${formatPaperUsd(p.tp3)}`,
+      '',
+    );
+  }
+  return lines.join('\n');
+}
+
+function buildTelegramHistoryMessage(): string {
+  const closed = paperAccount.closed;
+  if (!closed || closed.length === 0) {
+    return '📜 <b>[سجل الصفقات السابقة]</b>\nلا توجد صفقات مغلقة حتى الآن.';
+  }
+  const recent = closed.slice(-5).reverse();
+  const wins = closed.filter((c) => c.pnlUsd > 0).length;
+  const winRate = closed.length > 0 ? ((wins / closed.length) * 100).toFixed(1) : '0';
+  const lines: string[] = [
+    '📜 <b>[سجل آخر الصفقات المكتملة]</b>',
+    `إجمالي الصفقات: <b>${closed.length}</b> | نسبة النجاح (Win Rate): <b>${winRate}%</b>`,
+    `صافي الأرباح المحققة: <b>${formatPaperUsd(paperAccount.realizedPnl)}</b>`,
+    '',
+  ];
+  for (const c of recent) {
+    const sign = c.pnlUsd >= 0 ? '+' : '';
+    const icon = c.pnlUsd >= 0 ? '🟢' : '🔴';
+    lines.push(
+      `• ${ASSET_LABELS_AR[c.asset]} (${c.asset}): ${icon} ${sign}${formatPaperUsd(c.pnlUsd)} (${c.reason})`,
+      `  دخول: ${formatPaperUsd(c.entry)} ➔ خروج: ${formatPaperUsd(c.exitAvg)}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function buildTelegramPingMessage(): string {
+  const uptimeHours = (process.uptime() / 3600).toFixed(1);
+  const memMb = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
+  const durable = getDurablePersistence();
+  const dbStatus = durable ? '🟢 متصلة بنجاح (PostgreSQL / Supabase)' : '🟡 تخزين محلي (Local Filesystem)';
+  return [
+    '⚡ <b>[حالة السيرفر وقاعدة البيانات — SignalForge]</b>',
+    '',
+    `• <b>حالة السيرفر:</b> 🟢 متصل ونشط 24/7`,
+    `• <b>وقت التشغيل (Uptime):</b> ${uptimeHours} ساعة`,
+    `• <b>استهلاك الذاكرة:</b> ${memMb} MB`,
+    `• <b>قاعدة البيانات السحابية:</b> ${dbStatus}`,
+    `• <b>دورة الفحص الحالية:</b> #${scanCycle}`,
+    `• <b>نظام منع النوم (Self-Keepalive):</b> 🟢 مفعل ويعمل كل 4 دقائق`,
+    '',
+    '<i>سيرفرك جاهز ومحمي من الإيقاف التلقائي.</i>',
+  ].join('\n');
+}
+
+function startKeepaliveRunner(port: number): void {
+  const KEEPALIVE_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes
+  setInterval(async () => {
+    try {
+      // 1. Local / API ping
+      const localRes = await fetch(`http://localhost:${port}/api/health`, { signal: AbortSignal.timeout(5000) });
+      if (localRes.ok) {
+        appendLog('INFO', `[Keepalive] Self-health ping OK (${new Date().toISOString()})`);
+      }
+      // 2. External public URL ping if configured (keeps Render / Railway router warm)
+      const publicUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+      if (publicUrl) {
+        const target = publicUrl.endsWith('/') ? `${publicUrl}api/health` : `${publicUrl}/api/health`;
+        await fetch(target, { signal: AbortSignal.timeout(8000) }).catch(() => {});
+      }
+      // 3. Cloud Database heartbeat to ensure Supabase never sleeps
+      const durable = getDurablePersistence();
+      if (durable) {
+        durable.listSignals(1);
+      }
+    } catch {
+      // Keepalive is resilient
+    }
+  }, KEEPALIVE_INTERVAL_MS);
+}
+
 async function buildPaperStatusMessage(includePositions = true): Promise<string> {
   const prices = await getOpenPaperPrices();
   const equity = currentEquity(paperAccount, prices);
@@ -1189,9 +1327,18 @@ async function main(): Promise<void> {
     appendLog('INFO', `Server started (port ${PORT}, ${IS_DEV ? 'dev' : 'production'})`);
     bootstrapLiquidityCache();
     scheduleNextScan(30_000);
+    startKeepaliveRunner(PORT);
     startTelegramPolling(telegramRuntimeConfig, {
+      start: buildTelegramHelpMessage,
+      help: buildTelegramHelpMessage,
       status: () => buildPaperStatusMessage(true),
       balance: () => buildPaperStatusMessage(false),
+      signals: buildTelegramSignalsMessage,
+      positions: buildTelegramPositionsMessage,
+      trades: buildTelegramPositionsMessage,
+      history: buildTelegramHistoryMessage,
+      ping: buildTelegramPingMessage,
+      health: buildTelegramPingMessage,
       pause: () => {
         paperEnginePaused = true;
         saveConfig({ paperEnginePaused: true });

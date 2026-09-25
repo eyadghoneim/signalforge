@@ -276,7 +276,9 @@ export function markToMarket(
       p.pnlAccum = round2(p.pnlAccum + (fillPrice - p.entry) * out - exitFee);
       acct.cash = round2(acct.cash + proceeds - exitFee);
       p.tp1Taken = true;
-      p.stop = Math.max(p.stop, p.entry); // وقف تعادل بعد TP1
+      // رفع الوقف فوراً إلى نقطة التعادل + تغطية الرسوم (True Breakeven)
+      const breakevenPlusFees = p.entry * (1 + PAPER_EXECUTION.FEE_RATE * 2);
+      p.stop = Math.max(p.stop, breakevenPlusFees);
     }
     if (p.tp1Taken && !p.tp2Taken && candle.high >= p.tp2) {
       const out = p.qtyOpen * TP2_RATIO;
@@ -302,15 +304,13 @@ export function markToMarket(
       continue;
     }
 
-    // 5) وقف متحرك مدرّج (freqtrade-style) بعد TP2 يُقيَّم في نهاية الشمعة للمركز المستمر (مطابق للباك تست تماماً)
-    if (p.tp2Taken) {
-      p.trailPeak = Math.max(p.trailPeak, candle.high);
-      const profitAtr = p.atrEntry > 0 ? (p.trailPeak - p.entry) / p.atrEntry : 0;
-      if (profitAtr >= TRAILING.ACTIVATE_AFTER_ATR) {
-        const offset = profitAtr >= TRAILING.TIGHT_AFTER_ATR ? TRAILING.TIGHT_OFFSET_ATR : TRAILING.OFFSET_ATR;
-        const trail = p.trailPeak - p.atrEntry * offset;
-        if (trail > p.stop) p.stop = trail;
-      }
+    // 5) وقف متحرك مدرّج ذكي (Trailing Stop Loss) لتأمين الأرباح تصاعدياً
+    p.trailPeak = Math.max(p.trailPeak, candle.high);
+    const profitAtr = p.atrEntry > 0 ? (p.trailPeak - p.entry) / p.atrEntry : 0;
+    if (profitAtr >= TRAILING.ACTIVATE_AFTER_ATR || p.tp1Taken) {
+      const offset = (p.tp2Taken || profitAtr >= TRAILING.TIGHT_AFTER_ATR) ? TRAILING.TIGHT_OFFSET_ATR : TRAILING.OFFSET_ATR;
+      const trail = p.trailPeak - p.atrEntry * offset;
+      if (trail > p.stop) p.stop = round2(trail);
     }
 
     surviving.push(p);

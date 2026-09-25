@@ -18,6 +18,7 @@ import {
   fnv1a64Hex,
 } from '../shared/strategyConstants';
 import type { IndicatorSnapshot, HtfSnapshot } from '../shared/indicators';
+import { computeMtfConfluence } from '../shared/indicators';
 import { openInterestAdjustment } from './oiFactor';
 import { biasForReasonsRegime } from './learning';
 import { fngAdjustment } from './fng';
@@ -139,8 +140,17 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     add('LIQUIDITY', ctx.liquidity.totalAdjustment, ctx.liquidity.summaryAr);
   }
 
-  // 11. تأكيد الفريم اليومي
-  if (ctx.daily) {
+  // 11. تأكيد الفريم اليومي وتوافق الفريمات المتعددة (MTF Confluence)
+  const mtf = computeMtfConfluence(s, htf, ctx.daily ?? null);
+  if (mtf.alignment === 'STRONG_BULLISH') {
+    add('MTF', 8, mtf.summaryAr);
+  } else if (mtf.alignment === 'BULLISH') {
+    add('MTF', 4, mtf.summaryAr);
+  } else if (mtf.alignment === 'STRONG_BEARISH') {
+    add('MTF', -8, mtf.summaryAr);
+  } else if (mtf.alignment === 'BEARISH') {
+    add('MTF', -4, mtf.summaryAr);
+  } else if (ctx.daily) {
     if (htf && htf.bullish && ctx.daily.bullish) add('HTF', 4, 'تأكيد مزدوج: فريم 4 ساعات واليومي صاعدين معاً');
     else if (ctx.daily.bearish && !(htf && htf.bullish)) add('HTF', -4, 'الفريم اليومي هابط — الصعود الحالي مضاربي قصير المدى');
   }
@@ -321,5 +331,6 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
           ? 'BEARISH'
           : 'UNKNOWN'
       : 'UNKNOWN',
+    mtfConfluence: mtf,
   };
 }

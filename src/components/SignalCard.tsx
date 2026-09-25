@@ -38,6 +38,7 @@ const QUALITY_TAG_KEYS: Record<string, TKey> = {
   FUNDING: 'tagFunding',
   BOLLINGER: 'tagBollinger',
   HTF: 'tagHtf',
+  MTF: 'tagMtf',
   SMC: 'tagSmc',
   LIQUIDITY: 'tagLiquidity',
   OI: 'tagOi',
@@ -250,6 +251,38 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
             <b>{gateLabel}:</b> {signal.blockReasonAr}
             <div className="mt-1 text-[10px] text-amber-200/60">{t(lang, 'gateNote')}</div>
           </div>
+        </div>
+      )}
+
+      {/* توافق الفريمات المتعددة (MTF Confluence) */}
+      {signal.mtfConfluence && (
+        <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="font-bold text-indigo-200">🌐 {lang === 'ar' ? 'توافق الفريمات المتعددة (MTF)' : 'MTF Confluence'}</span>
+            <span className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+              signal.mtfConfluence.score >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
+              signal.mtfConfluence.score <= 40 ? 'bg-rose-500/20 text-rose-300' : 'bg-zinc-800 text-zinc-300'
+            }`} dir="ltr">{signal.mtfConfluence.score}%</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            {Object.entries(signal.mtfConfluence.timeframes).map(([tf, state]) => (
+              <span
+                key={tf}
+                className={`rounded px-2 py-0.5 font-mono uppercase font-semibold ${
+                  state === 'BULLISH'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : state === 'BEARISH'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700/50'
+                }`}
+              >
+                {tf}: {state === 'BULLISH' ? '▲ صاعد' : state === 'BEARISH' ? '▼ هابط' : '— حياد'}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-zinc-300">
+            {lang === 'ar' ? signal.mtfConfluence.summaryAr : signal.mtfConfluence.summaryEn}
+          </p>
         </div>
       )}
 

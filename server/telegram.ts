@@ -51,9 +51,27 @@ export interface TelegramPollingConfig {
   chatId: string;
 }
 
+export interface TelegramInlineButton {
+  text: string;
+  callback_data?: string;
+  url?: string;
+}
+
+export interface TelegramInlineKeyboard {
+  inline_keyboard: TelegramInlineButton[][];
+}
+
 export interface TelegramCommandHandlers {
+  start?: () => string | Promise<string>;
+  help?: () => string | Promise<string>;
   status: () => string | Promise<string>;
   balance: () => string | Promise<string>;
+  signals?: () => string | Promise<string>;
+  positions?: () => string | Promise<string>;
+  trades?: () => string | Promise<string>;
+  history?: () => string | Promise<string>;
+  ping?: () => string | Promise<string>;
+  health?: () => string | Promise<string>;
   pause: () => string | Promise<string>;
   resume: () => string | Promise<string>;
   panic: () => string | Promise<string>;
@@ -61,7 +79,17 @@ export interface TelegramCommandHandlers {
 
 type TelegramUpdate = {
   update_id: number;
-  message?: { chat?: { id?: number | string }; text?: string };
+  message?: {
+    message_id?: number;
+    chat?: { id?: number | string };
+    text?: string;
+  };
+  callback_query?: {
+    id: string;
+    from?: { id: number | string };
+    message?: { chat?: { id?: number | string }; message_id?: number };
+    data?: string;
+  };
 };
 
 let pollingActive = false;
@@ -69,11 +97,44 @@ let pollingTimer: NodeJS.Timeout | null = null;
 let pollingOffset = 0;
 let pollingInitialized = false;
 
+/** Standard Quick Action Inline Keyboard for interactive Telegram experience */
+export const DEFAULT_TELEGRAM_KEYBOARD: TelegramInlineKeyboard = {
+  inline_keyboard: [
+    [
+      { text: '📊 الحالة والرصيد', callback_data: 'cmd_status' },
+      { text: '🚨 فحص الإشارات', callback_data: 'cmd_signals' },
+    ],
+    [
+      { text: '🧾 الصفقات المفتوحة', callback_data: 'cmd_positions' },
+      { text: '📜 السجل والأرباح', callback_data: 'cmd_history' },
+    ],
+    [
+      { text: '⚡ فحص السيرفر', callback_data: 'cmd_ping' },
+      { text: '❓ دليل الأوامر', callback_data: 'cmd_help' },
+    ],
+  ],
+};
+
 /** Parse only slash commands; bot usernames and arguments are ignored. */
 export function parseTelegramCommand(text: string | undefined): string | null {
   const first = String(text || '').trim().split(/\s+/, 1)[0];
   if (!first.startsWith('/')) return null;
   return first.slice(1).split('@', 1)[0].toLowerCase() || null;
+}
+
+async function answerTelegramCallbackQuery(token: string, callbackQueryId: string, text?: string): Promise<void> {
+  try {
+    const t = (token || '').replace(/\s+/g, '');
+    if (!t || !callbackQueryId) return;
+    await fetch(`https://api.telegram.org/bot${t}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+      signal: AbortSignal.timeout(4000),
+    });
+  } catch {
+    // best-effort
+  }
 }
 
 async function pollTelegramUpdates(
@@ -103,15 +164,46 @@ async function pollTelegramUpdates(
       pollingInitialized = true;
     } else {
       if (updates.length) pollingOffset = Math.max(...updates.map((u) => u.update_id)) + 1;
+      const expectedChat = String(config.chatId).replace(/\s+/g, '');
+
       for (const update of updates) {
+        // 1. Handle Inline Button Callback Queries
+        if (update.callback_query) {
+          const cb = update.callback_query;
+          const messageChat = String(cb.message?.chat?.id ?? cb.from?.id ?? '');
+          if (messageChat === expectedChat && cb.data) {
+            await answerTelegramCallbackQuery(config.token, cb.id, '⏳ جاري المعالجة...');
+            const rawCmd = cb.data.replace(/^cmd_/, '').toLowerCase();
+            const handler = handlers[rawCmd as keyof TelegramCommandHandlers];
+            if (typeof handler === 'function') {
+              const response = await handler();
+              if (response) {
+                await sendTelegramMessage(config.token, config.chatId, response, 6000, DEFAULT_TELEGRAM_KEYBOARD);
+              }
+            }
+          }
+          continue;
+        }
+
+        // 2. Handle Text Commands
         const messageChat = String(update.message?.chat?.id ?? '');
-        if (!messageChat || messageChat !== String(config.chatId).replace(/\s+/g, '')) continue;
+        if (!messageChat || messageChat !== expectedChat) continue;
         const command = parseTelegramCommand(update.message?.text);
         if (!command) continue;
-        const handler = handlers[command as keyof TelegramCommandHandlers];
+
+        let handler = handlers[command as keyof TelegramCommandHandlers];
+        if (!handler) {
+          if (command === 'start') handler = handlers.start ?? handlers.help;
+          else if (command === 'help') handler = handlers.help;
+          else if (command === 'trades') handler = handlers.positions ?? handlers.status;
+          else if (command === 'health') handler = handlers.ping;
+        }
+
         if (typeof handler !== 'function') continue;
         const response = await handler();
-        if (response) await sendTelegramMessage(config.token, config.chatId, response);
+        if (response) {
+          await sendTelegramMessage(config.token, config.chatId, response, 6000, DEFAULT_TELEGRAM_KEYBOARD);
+        }
       }
     }
   } catch {
@@ -143,6 +235,7 @@ export async function sendTelegramMessage(
   chatId: string,
   html: string,
   timeoutMs = 6000,
+  replyMarkup?: TelegramInlineKeyboard,
 ): Promise<TelegramSendResult> {
   const t = (token || '').replace(/\s+/g, '');
   const c = (chatId || '').replace(/\s+/g, '');
@@ -150,10 +243,19 @@ export async function sendTelegramMessage(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const payload: Record<string, unknown> = {
+      chat_id: c,
+      text: html,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    };
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
     const res = await fetch(`https://api.telegram.org/bot${t}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: c, text: html, parse_mode: 'HTML', disable_web_page_preview: true }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
     const json = (await res.json()) as { ok?: boolean; description?: string };
@@ -226,10 +328,14 @@ export function buildSignalMessageHtml(s: Signal, changedFrom?: VerdictClass | n
   if (s.spotAction === 'SPOT_BUY') {
     lines.push(
       '',
-      `🛑 <b>وقف الخسارة:</b> ${fmtUsd(s.stopLoss)}`,
+      `🛑 <b>وقف الخسارة:</b> ${fmtUsd(s.stopLoss)} <i>(مصحوب بـ Trailing SL & Breakeven تلقائي)</i>`,
       `🎯 <b>الأهداف:</b> TP1 ${fmtUsd(s.target1)} | TP2 ${fmtUsd(s.target2)} | TP3 ${fmtUsd(s.target3)}`,
       `⚖️ <b>المخاطرة/العائد:</b> ${s.riskRewardRatio}`,
     );
+  }
+
+  if (s.mtfConfluence) {
+    lines.push('', `🌐 <b>توافق الفريمات (MTF):</b> ${esc(s.mtfConfluence.summaryAr)}`);
   }
 
   const topReasons = s.reasons.filter((r) => r.adjustment !== 0).slice(0, 4);

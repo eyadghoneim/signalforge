@@ -109,6 +109,7 @@ const DICT = {
     tagFng: 'الخوف والجشع',
     tagOi: 'الفائدة المفتوحة',
     tagPattern: 'أنماط الشموع',
+    tagMtf: 'توافق الفريمات (MTF)',
     // الأصول
     assetBTC: 'البيتكوين',
     assetETH: 'الإيثريوم',
@@ -327,6 +328,7 @@ const DICT = {
     tagFng: 'Fear & Greed',
     tagOi: 'Open interest',
     tagPattern: 'Candlestick patterns',
+    tagMtf: 'Multi-Timeframe (MTF)',
     // Assets
     assetBTC: 'Bitcoin',
     assetETH: 'Ethereum',

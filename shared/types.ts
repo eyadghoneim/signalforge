@@ -38,12 +38,26 @@ export type ReasonTag =
   | 'FUNDING'
   | 'BOLLINGER'
   | 'HTF'
+  | 'MTF'
   | 'SMC'
   | 'LIQUIDITY'
   | 'OI'
   | 'FNG'
   | 'WHALE'
   | 'PATTERN';
+
+export interface MultiTimeframeConfluence {
+  score: number; // 0 - 100
+  alignment: 'STRONG_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'STRONG_BEARISH';
+  timeframes: {
+    m15: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    h1: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    h4: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    d1: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  };
+  summaryAr: string;
+  summaryEn: string;
+}
 
 export interface SignalReason {
   tag: ReasonTag;
@@ -87,6 +101,8 @@ export interface Signal {
   smc?: SmcSnapshot | null;
   liquidity?: { adjustment: number; verdict: string; summaryAr: string; summaryEn?: string } | null;
   dailyTrend?: 'BULLISH' | 'BEARISH' | 'UNKNOWN';
+  mtfConfluence?: MultiTimeframeConfluence | null;
+  trailingStop?: { active: boolean; currentStop: number; breakevenHit: boolean; highPeak: number } | null;
 }
 
 export type AttributionWindow = 'h4' | 'h24' | 'h72';

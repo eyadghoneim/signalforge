@@ -467,3 +467,89 @@ export function computeDailyTrend(daily: Candle[], index?: number): DailyTrend |
     bullish: close > e50[i] && e20[i] > e50[i],
   };
 }
+
+// ═══════════════ v2.1: توافق متعدد الفريمات (Multi-Timeframe Confluence - 15m / 1h / 4h / 1d) ═══════════════
+export function computeMtfConfluence(
+  snapshot15m: IndicatorSnapshot,
+  htf4h: HtfSnapshot | null,
+  daily: DailyTrend | null,
+): import('./types').MultiTimeframeConfluence {
+  const m15Bull = snapshot15m.emaTrend === 'BULLISH' || snapshot15m.emaTrend === 'STRONG_BULLISH' || snapshot15m.macdHist > 0;
+  const m15Bear = snapshot15m.emaTrend === 'BEARISH' || snapshot15m.emaTrend === 'STRONG_BEARISH' || snapshot15m.macdHist < 0;
+  const m15State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = m15Bull && !m15Bear ? 'BULLISH' : m15Bear && !m15Bull ? 'BEARISH' : snapshot15m.close > snapshot15m.ema21 ? 'BULLISH' : 'BEARISH';
+
+  // 4H Trend
+  const h4State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = htf4h
+    ? (htf4h.bullish ? 'BULLISH' : htf4h.bearish ? 'BEARISH' : 'NEUTRAL')
+    : 'NEUTRAL';
+
+  // 1D Trend
+  const d1State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = daily
+    ? (daily.bullish ? 'BULLISH' : daily.bearish ? 'BEARISH' : 'NEUTRAL')
+    : 'NEUTRAL';
+
+  // Intermediate 1H estimate based on 15m ADX + 4H alignment
+  let h1State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+  if (m15State === 'BULLISH' && h4State === 'BULLISH') h1State = 'BULLISH';
+  else if (m15State === 'BEARISH' && h4State === 'BEARISH') h1State = 'BEARISH';
+  else h1State = m15State;
+
+  let bullPoints = 0;
+  let totalWeights = 0;
+
+  // Weightings: 15m (25%), 1h (25%), 4h (30%), 1d (20%)
+  const addWeight = (state: 'BULLISH' | 'BEARISH' | 'NEUTRAL', weight: number) => {
+    totalWeights += weight;
+    if (state === 'BULLISH') bullPoints += weight;
+    else if (state === 'NEUTRAL') bullPoints += weight * 0.5;
+  };
+
+  addWeight(m15State, 25);
+  addWeight(h1State, 25);
+  addWeight(h4State, 30);
+  addWeight(d1State, 20);
+
+  const score = totalWeights > 0 ? Math.round((bullPoints / totalWeights) * 100) : 50;
+
+  let alignment: import('./types').MultiTimeframeConfluence['alignment'] = 'NEUTRAL';
+  if (score >= 80) alignment = 'STRONG_BULLISH';
+  else if (score >= 60) alignment = 'BULLISH';
+  else if (score <= 20) alignment = 'STRONG_BEARISH';
+  else if (score <= 40) alignment = 'BEARISH';
+
+  const summaryAr =
+    alignment === 'STRONG_BULLISH'
+      ? 'توافق صاعد قوي عبر جميع الفريمات (15د، 1س، 4س، يومي)'
+      : alignment === 'BULLISH'
+      ? 'اتجاه صاعد مدعوم من الفريمات الأكبر'
+      : alignment === 'STRONG_BEARISH'
+      ? 'توافق هابط قوي يحذر من أي صفقات شراء'
+      : alignment === 'BEARISH'
+      ? 'ضغط هابط على الفريمات الأكبر'
+      : 'تضارب بين الفريمات (حالة تذبذب / حياد)';
+
+  const summaryEn =
+    alignment === 'STRONG_BULLISH'
+      ? 'Strong bullish confluence across all timeframes (15m, 1h, 4h, 1d)'
+      : alignment === 'BULLISH'
+      ? 'Bullish alignment supported by higher timeframes'
+      : alignment === 'STRONG_BEARISH'
+      ? 'Strong bearish confluence warning against long entries'
+      : alignment === 'BEARISH'
+      ? 'Bearish pressure on higher timeframes'
+      : 'Mixed timeframe alignment (chop / neutral regime)';
+
+  return {
+    score,
+    alignment,
+    timeframes: {
+      m15: m15State,
+      h1: h1State,
+      h4: h4State,
+      d1: d1State,
+    },
+    summaryAr,
+    summaryEn,
+  };
+}
+
