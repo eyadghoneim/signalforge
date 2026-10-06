@@ -276,7 +276,11 @@ export default function SignalCard({ signal, lang }: { signal: Signal; lang: Lan
                     : 'bg-zinc-800 text-zinc-400 border border-zinc-700/50'
                 }`}
               >
-                {tf}: {state === 'BULLISH' ? '▲ صاعد' : state === 'BEARISH' ? '▼ هابط' : '— حياد'}
+                {tf}: {state === 'BULLISH'
+                  ? (lang === 'ar' ? '▲ صاعد' : '▲ Bullish')
+                  : state === 'BEARISH'
+                  ? (lang === 'ar' ? '▼ هابط' : '▼ Bearish')
+                  : (lang === 'ar' ? '— حياد' : '— Neutral')}
               </span>
             ))}
           </div>

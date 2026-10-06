@@ -8,10 +8,10 @@ let failed = 0;
 function assert(condition: boolean, testName: string, details?: string): void {
   if (condition) {
     passed++;
-    console.log(`  ✅ PASS: ${testName}`);
+    console.log(`  PASS: ${testName}`);
   } else {
     failed++;
-    console.error(`  ❌ FAIL: ${testName}${details ? ` — ${details}` : ''}`);
+    console.error(`  FAIL: ${testName}${details ? ` — ${details}` : ''}`);
   }
 }
 
@@ -196,7 +196,7 @@ console.log('\n=== 3. محرك الإشارات والبوابات ===');
     );
   }
 
-  // ⭐ أهم اختبار: الخروج الدفاعي يتخطى البوابات
+  // أهم اختبار: الخروج الدفاعي يتخطى البوابات
   const bearCandles = syntheticCandles(300, -35, 11);
   const bearSnap = computeSnapshot(bearCandles);
   assert(bearSnap !== null, 'لقطة هابطة جاهزة');
@@ -212,7 +212,7 @@ console.log('\n=== 3. محرك الإشارات والبوابات ===');
     });
     assert(
       defensive.spotAction === 'SPOT_SELL_ALL' && defensive.regimeGateStatus === 'CLEAR',
-      `⭐ الخروج الدفاعي يتخطى كل البوابات (${defensive.signalType}/${defensive.regimeGateStatus} @ ${defensive.convictionScore})`,
+      `الخروج الدفاعي يتخطى كل البوابات (${defensive.signalType}/${defensive.regimeGateStatus} @ ${defensive.convictionScore})`,
     );
   }
 
@@ -274,6 +274,9 @@ console.log('\n=== 5. التخزين المحلي (roundtrip) ===');
   persistence.saveConfig({ scanIntervalSeconds: 120, gates: { ...merged.gates, funding: true } });
   assert(persistence.maskToken('1234567890abcdef') === '1234…cdef', 'إخفاء التوكن صحيح');
   assert(persistence.maskToken('') === '', 'توكن فارغ → إخفاء فارغ');
+  // إعادة حالة الإعدادات زي ما كانت قبل الاختبار — الاختبار مبيسيبش أثر في data/config.json.
+  persistence.saveConfig(cfg);
+  assert(persistence.loadConfig().scanIntervalSeconds === cfg.scanIntervalSeconds, 'الإعدادات رجعت لحالتها قبل الاختبار');
 }
 
 console.log('\n=== 6. حارس النص الثابت — منع رجوع الأرقام اليدوية ===');
@@ -1268,7 +1271,7 @@ console.log('\n=== 24. أنماط الشموع اليابانية (عامل PATT
   // 2) ابتلاع هابط: شمعة حمراء كبيرة تبتلع الخضراء السابقة
   const engulf = [
     c(100, 102, 99, 101, 1_700_000_000 - 3600), // prev bull small
-    c(102, 103, 95, 96, 1_700_000_000),         // last bear big: open 102 > close 101 ✅ engulf
+    c(102, 103, 95, 96, 1_700_000_000),         // last bear big: open 102 > close 101 (engulfing)
   ];
   {
     const res = resolvePatternAdjustment(engulf);
@@ -1748,4 +1751,4 @@ console.log('\n=== 30. دروع نزاهة البيانات وسلوك بواب�
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);
-console.log('🎉 كل الاختبارات نجحت');
+console.log('كل الاختبارات نجحت');

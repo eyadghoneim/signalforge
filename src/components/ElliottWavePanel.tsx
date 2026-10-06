@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Activity, Compass, ShieldCheck, AlertTriangle, ArrowUpRight, BarChart3, RefreshCw } from 'lucide-react';
 import { api, type ElliottWaveAnalysis, type SupportedAsset } from '../api';
 import type { Lang } from '../i18n';
@@ -13,18 +13,23 @@ export default function ElliottWavePanel({ asset, lang }: Props) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadSeqRef = useRef(0);
   const loadData = async () => {
+    // تسلسل الطلبات: استجابة قديمة بعد تبديل الأصل ما بتتعرضش ببيانات أصل تاني.
+    const seq = ++loadSeqRef.current;
     try {
       setLoading(true);
       setError(null);
       const res = await api.elliott(asset);
+      if (seq !== loadSeqRef.current) return;
       if (res.ok && res.analysis) {
         setData(res.analysis);
       }
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   };
 

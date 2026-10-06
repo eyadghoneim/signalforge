@@ -1,6 +1,5 @@
 // Live API smoke test - run against a RUNNING server:  npm run smoke
 // Not part of npm test (which is deterministic and offline by design).
-// English-only comments on purpose (codepage safety under shell tooling).
 
 const BASE = process.env.SMOKE_BASE || 'http://localhost:3000';
 let pass = 0;
@@ -66,7 +65,7 @@ async function main(): Promise<void> {
   const kl = await j('/api/market/klines?asset=BTC&interval=4h&limit=300');
   check('klines 4h responds', kl.status === 200 && kl.json?.ok === true && kl.json?.candles?.length > 0, `status ${kl.status}`);
 
-  const bt = await j('/api/backtest', { method: 'POST', body: JSON.stringify({ asset: 'BTC', days: 90 }) });
+  const bt = await j('/api/backtest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ asset: 'BTC', days: 90 }) });
   check('backtest 90d responds', bt.status === 200 && !!bt.json?.result, `status ${bt.status}`);
   check('backtest carries performance stats', !!bt.json?.result?.performance);
 

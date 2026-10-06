@@ -2,27 +2,22 @@
 
 [![CI](https://github.com/eyadghoneim/signalforge/actions/workflows/ci.yml/badge.svg)](https://github.com/eyadghoneim/signalforge/actions/workflows/ci.yml)
 
-**A self-learning crypto signal terminal - measure, protect, adapt.**
-
-SignalForge is a local-first trading signal workstation for BTC, ETH, PAXG and SOL. It watches
-multi-timeframe market structure, scores conviction through a gated deterministic engine, tracks
-the outcome of every signal it publishes, and continuously adjusts its own factor weights from
-measured results - with a full audit trail.
-
-> **Honest by design:** SignalForge is an educational paper-trading research tool. It does not
-> place real orders, and it does not promise profits. Its own walk-forward analysis is published
-> in the repository because measured truth beats marketing.
-
----
+A self-hosted crypto signal terminal for BTC, ETH, PAXG and SOL. SignalForge watches
+multi-timeframe market structure, scores each setup through a gated deterministic engine,
+stores every signal it publishes, tracks how it resolves, and adjusts its factor weights
+from those measured results. It runs locally, keeps a full audit trail, and never places
+a real order — this is a paper-trading research tool, not a profit machine, and it does
+not promise profits. Its own walk-forward analysis ships in the repo so anyone can check
+the numbers instead of trusting the marketing.
 
 ## Features
 
 | | |
 |---|---|
-| **Deterministic signal engine** | Multi-timeframe scoring (1h/4h/daily) with regime gates: HTF trend, chop (ADX), volume (RVOL) and funding squeeze - signals are reproducible, not hand-waved |
+| **Deterministic signal engine** | Multi-timeframe scoring (1h/4h/daily) with regime gates: HTF trend, chop (ADX), volume (RVOL) and funding squeeze. Same inputs always produce the same signal. |
 | **Entry quality transparency** | Every signal exposes its 0–100 entry-quality score and the grouped positive/negative factor contributions in Arabic and English |
 | **Advanced measurement** | Win rate, profit factor, expectancy (R), payoff, per-trade Sharpe and Sortino, Calmar (when the period is long enough), max drawdown + duration, streaks, time-in-market, score-bucket and exit-reason diagnostics, deterministic 1,000-path Monte Carlo drawdown stress test, equity curve with buy & hold benchmark, CSV export |
-| **Honest walk-forward optimizer** | Grid-search on the first half of the data, verdict on the unseen second half - ranking uses in-sample performance only, so the validation result cannot flatter itself |
+| **Walk-forward optimizer** | Grid-search on the first half of the data, verdict on the unseen second half. Ranking uses in-sample performance only, so the validation result cannot flatter itself |
 | **Capital protection** | Daily loss circuit breaker (R-based), unique-asset exposure cap with a BTC/ETH correlation guard, automatic expiry of stale signals, 3-loss choppy-market cooldown, and configurable Paper max-hold exit |
 | **Self-learning** | Every resolved signal feeds a bounded per-factor bias (clamped, evidence-gated at 10+ samples, >= 8pt deviation from baseline). Every bias change is logged with its evidence in a lessons ledger |
 | **Open interest factor** | 24h open-interest change from Binance futures confirms or warns on the prevailing move (graceful degradation when unavailable) |
@@ -32,27 +27,28 @@ measured results - with a full audit trail.
 | **Telegram alerts** | Signal pushes, daily digest heartbeat, circuit-breaker and scan-failure alerts |
 | **Web dashboard** | React + Tailwind terminal: live chart, signal card, history, backtest lab, learning panel, settings |
 
-## Honest backtest limitations
+## Backtest limitations
 
-The backtest is transparent about its own edge cases instead of hiding them:
+The backtest reports its own edge cases instead of hiding them:
 
 | Limitation | How it is handled |
 |---|---|
-| **Same-candle ambiguity** | If a stop and a target are both inside one candle, the stop is assumed FIRST (conservative). The engine never pretends the target won; it assumes the worse outcome. |
-| **Stop-loss execution slippage** | Stop-market orders fill worse than the stop price in gaps/flash moves. The backtest now applies a realistic slippage of `STOP_SLIPPAGE_ATR` (15% of ATR) on stop exits instead of a perfect fill. |
-| **Funding gate disabled in backtests** | Historical funding is not freely available, so this gate is off in the simulation (disclosed, not silent). |
-| **24h momentum disabled in backtests** | Historical daily change is not available in the simulation, so `change24h` is zero; live and backtest signals should not be compared literally. |
-| **Live candle timing** | Live scans may read the latest still-forming 1h candle, while the backtest replays historical candles; signal timing can therefore differ. |
+| **Same-candle ambiguity** | If a stop and a target are both inside one candle, the stop is assumed FIRST (conservative). The engine takes the worse outcome, not the flattering one. |
+| **Stop-loss execution slippage** | Stop-market orders fill worse than the stop price in gaps/flash moves. The backtest applies a slippage of `STOP_SLIPPAGE_ATR` (15% of ATR) on stop exits instead of a perfect fill. |
+| **Funding gate disabled in backtests** | Historical funding is not freely available, so this gate is off in the simulation (disclosed). |
+| **24h momentum disabled in backtests** | Historical daily change is not available in the simulation, so `change24h` is zero. The OI, FNG, whale, BTC-macro and order-book-wall layers are off for the same reason — the backtest is a reduced version of the live engine, so live and backtest numbers should not be compared literally. |
+| **Live candle timing** | Live scans decide on the last CLOSED 1h candle while the backtest replays historical closes; both follow the same convention. |
 | **Liquidity layer disabled in backtests** | DefiLlama history is not freely available; the layer is off in the simulation (disclosed). |
+| **Drawdown measured on closes** | The equity curve records points at trade closes, so max drawdown reflects realized (not intratrade) pain. |
 
-## Honest data disclosures
+## Data disclosures
 
-Beyond the backtest limitations above, two display-only layers deserve explicit framing:
+Two display-only layers deserve explicit framing:
 
-| Layer | Honest status |
+| Layer | Status |
 |---|---|
 | **Macro calendar tab** | A REFERENCE schedule of typical recurring US release times (CPI/FOMC/NFP/PPI/GDP) — it repeats daily as a template, is NOT a real economic calendar, shows no real prev/forecast values (`—`), and does NOT block any trading automatically. Verify actual dates from official sources. |
-| **Order book depth tab** | Live Binance L2 depth when reachable. When every provider fails, the panel falls back to a deterministic synthetic model built from the last known price; it is labeled `isSimulated` + a visible warning banner, and the walls/volumes are NOT real orders. |
+| **Order book depth tab** | Live Binance L2 depth when reachable. When every provider fails, the panel falls back to a deterministic synthetic model built from the last known price; it is labeled `isSimulated` with a visible warning banner, and the walls/volumes are NOT real orders. |
 
 ## Quick start
 
@@ -74,6 +70,9 @@ Telegram notifications are optional - configure a bot token and chat id in the d
 **paper-only** commands: `/status`, `/balance`, `/pause`, `/resume`, and `/panic`. The bot never
 creates an exchange order; `/panic` closes only paper positions using the latest market ticker.
 
+Admin endpoints (`/api/config`, paper reset, telegram test) require `BOT_ADMIN_TOKEN` on any
+non-local deployment. Without a token they stay open to localhost only.
+
 ### Free durable storage (Supabase)
 
 For a deployment whose filesystem can reset (such as Render Free), create a Supabase Free project
@@ -92,7 +91,7 @@ of persistence on an ephemeral host. Supabase Free has usage limits and may paus
    bounded bias (+/-1..3) that nudges future scores.
 4. Every bias change is written to an audited lessons log - what changed, why, and on what evidence.
 
-No evidence, no bias. The system refuses to learn from thin data.
+Thin data earns no bias; the gate refuses to move on a handful of trades.
 
 ## Project structure
 
@@ -108,21 +107,23 @@ data/      Runtime state (gitignored - contains private config)
 
 This project is for educational and research purposes only. Nothing in this repository is financial
 advice. Crypto markets are risky; backtested and paper-traded performance is not indicative of
-future results. Always verify anything you read - including this repository.
+future results. Verify everything yourself.
 
 **Known limitation:** the exposure cap limits the NUMBER of open signals. Crypto assets
 remain broadly correlated - in a macro sell-off everything moves together. The cap reduces
 position count risk, not market beta.
-## Learn from the best
 
-SignalForge stands on the shoulders of excellent open-source projects:
+## Credits
 
-- [freqtrade](https://github.com/freqtrade/freqtrade) - protection patterns (StoplossGuard, CooldownPeriod) inspired our capital-protection layer
-- [trading-signals](https://github.com/bennycode/trading-signals) - used as an external reference to audit our indicator math (zero deviation)
-- [CCXT](https://github.com/ccxt/ccxt) - the universal exchange library; a candidate to consolidate our multi-source data layer
+SignalForge borrows ideas (and data) from open-source projects:
+
+- [freqtrade](https://github.com/freqtrade/freqtrade) - protection patterns (StoplossGuard, CooldownPeriod) inspired the capital-protection layer
+- [trading-signals](https://github.com/bennycode/trading-signals) - used as an external reference to audit the indicator math (zero deviation)
+- [CCXT](https://github.com/ccxt/ccxt) - the universal exchange library; a candidate to consolidate the multi-source data layer
 - [Binance Vision](https://data.binance.vision) - bulk historical archives powering multi-year backtests
 - [awesome-systematic-trading](https://github.com/wangzhe3224/awesome-systematic-trading) - curated list for going deeper
 - [Whale Alert](https://whale-alert.io) / [Bitquery](https://bitquery.io) / [DexScreener](https://dexscreener.com) / [alternative.me FNG](https://api.alternative.me/fng/) - data sources behind the factors
+
 ## License
 
 MIT - see [LICENSE](LICENSE).

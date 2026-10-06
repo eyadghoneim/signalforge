@@ -1,7 +1,7 @@
 // Binance Vision bulk history - monthly kline ZIP archives from data.binance.vision.
 // Zero rate limits, years of history - removes the backtest's biggest data constraint.
 // The current (incomplete) month is NOT in Vision; callers must merge a recent tail
-// from the live API. Comments are English-only (codepage safety).
+// from the live API.
 
 import { unzipSync } from 'fflate';
 import type { Candle, SupportedAsset } from '../shared/types';

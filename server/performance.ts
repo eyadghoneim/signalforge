@@ -1,6 +1,4 @@
 // Performance analytics layer - pure functions, no I/O, no side effects.
-// Comments are intentionally English-only: keeps the file byte-safe under any
-// console codepage when written/read through shell tooling.
 
 import type { BacktestTrade, PerformanceStats, ScoreBucketStat, ExitReasonStat } from '../shared/types';
 

@@ -101,6 +101,11 @@ function buildPgSslConfig(): { rejectUnauthorized: boolean; ca?: string } {
   const explicit =
     raw === '1' || raw.toLowerCase() === 'true' ? true : raw === '0' || raw.toLowerCase() === 'false' ? false : null;
   const rejectUnauthorized = explicit ?? Boolean(ca);
+  // عند الاستخدام الافتراضي غير الصارم، ننبه مرة واحدة صريحة — المشغل يقرر:
+  // اضبط PGSSL_CA أو PGSSL_STRICT=1 لو مزود قاعدة البيانات يدعم شهادات موثوقة.
+  if (!rejectUnauthorized) {
+    console.warn('[durablePersistence] PG SSL running WITHOUT certificate validation (rejectUnauthorized:false). Set PGSSL_CA or PGSSL_STRICT=1 to enforce strict TLS.');
+  }
   return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
 }
 
@@ -113,6 +118,8 @@ export class PostgresDurableStore implements DurableStore {
   private lessons: LearningLesson[];
   private paper: PaperAccount | null;
   private writeChain: Promise<void> = Promise.resolve();
+  // عدّاد رتيب لمعرّفات السجل: يبدأ من طابع زمني حتى لا يكرر نفس المتتالية بعد إعادة التشغيل.
+  private logSeq: number = Date.now();
 
   private constructor(
     pool: Pool,
@@ -401,7 +408,9 @@ export class PostgresDurableStore implements DurableStore {
     const log: DurableLog = { level, message: message.slice(0, 300), at: Date.now() };
     this.logs.push(log);
     this.logs = this.logs.slice(-1000);
-    const id = jsonId('log', { ...log, sequence: this.logs.length });
+    // المعرّف يحتاج عدّاداً رتيباً (وليس طول المصفوفة المثبتة عند ~1000) حتى لا
+    // يتصادم سطران متطابقان داخل نفس المللي ثانية ويُسقط أحدهما بصمت (ON CONFLICT DO NOTHING).
+    const id = jsonId('log', { ...log, sequence: this.logSeq++ });
     this.enqueue(async () => {
       await this.pool.query(
         'INSERT INTO signalforge_logs (id, payload, at) VALUES ($1, $2::jsonb, $3) ON CONFLICT (id) DO NOTHING',

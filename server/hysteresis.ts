@@ -12,6 +12,8 @@
 // - State resets on process restart: the first candidate after a restart
 //   always waits one full cycle (safe default).
 
+import { STRATEGY_THRESHOLDS } from '../shared/strategyConstants';
+
 export const LABEL_HYSTERESIS_SCANS = 2;
 
 export interface HysteresisState {
@@ -56,7 +58,7 @@ export function isBuyLabelSignal(signal: {
     signal.signalType === 'NO_TRADE' &&
     signal.regimeGateStatus &&
     signal.regimeGateStatus !== 'CLEAR' &&
-    (signal.convictionScore ?? 0) >= 70
+    (signal.convictionScore ?? 0) >= STRATEGY_THRESHOLDS.BUY_MIN_SCORE
   ) {
     return true;
   }

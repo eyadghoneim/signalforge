@@ -50,7 +50,6 @@ export interface MultiTimeframeConfluence {
   score: number; // 0 - 100
   alignment: 'STRONG_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'STRONG_BEARISH';
   timeframes: {
-    m15: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
     h1: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
     h4: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
     d1: 'BULLISH' | 'BEARISH' | 'NEUTRAL';

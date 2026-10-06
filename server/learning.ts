@@ -8,7 +8,6 @@
 //    a stop loss costs -1R - not a flat binary count.
 //  - CONFIDENCE scaling: full bias weight only after enough weighted evidence.
 // All changes are audited by the caller (lessons ledger). No evidence -> no bias.
-// Comments are English-only on purpose (codepage safety under shell tooling).
 
 import type { StoredSignal, TagLearningStat, LearningLesson } from '../shared/types';
 

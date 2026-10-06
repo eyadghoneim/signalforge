@@ -6,7 +6,9 @@ const CACHE_TTL_MS = 15 * 60 * 1000; // 15 دقيقة كاش للتقويم ال
 
 let cachedLiveEvents: MacroEvent[] | null = null;
 let lastFetchTime = 0;
+let lastAttemptTime = 0; // آخر محاولة حتى لو فشلت — يمنع ضرب الـ endpoint كل مسح عند انقطاع الاتصال
 let isFetching = false;
+const FETCH_FAILURE_BACKOFF_MS = 10 * 60 * 1000;
 
 interface RawTradingViewEvent {
   id: string;
@@ -182,7 +184,8 @@ export async function fetchLiveTradingViewEvents(): Promise<MacroEvent[]> {
       };
     });
 
-    return mapped;
+    // تاريخ غير صالح = NaN يتسرب إلى حسابات الحظر و"Invalid Date" في العرض — نستبعده عند المصدر.
+    return mapped.filter((m) => Number.isFinite(m.timestamp));
   } finally {
     clearTimeout(timer);
   }
@@ -384,6 +387,7 @@ export function getMacroCalendar(now: number = Date.now(), explicitAnchor?: numb
 async function refreshLiveCalendarInBackground(): Promise<void> {
   if (isFetching) return;
   isFetching = true;
+  lastAttemptTime = Date.now();
   try {
     const live = await fetchLiveTradingViewEvents();
     if (live && live.length > 0) {
@@ -401,7 +405,10 @@ async function refreshLiveCalendarInBackground(): Promise<void> {
  * دالة غير متزامنة تُستدعى من مسارات API لتحديث الكاش الحي إذا انتهت صلاحيته
  */
 export async function getMacroCalendarAsync(now: number = Date.now()): Promise<MacroCalendarResponse> {
-  if (!cachedLiveEvents || Date.now() - lastFetchTime > CACHE_TTL_MS) {
+  const stale = !cachedLiveEvents || Date.now() - lastFetchTime > CACHE_TTL_MS;
+  const backoffPassed = Date.now() - lastAttemptTime > FETCH_FAILURE_BACKOFF_MS;
+  // بعد فشل متكرر نرتاح 10 دقائق قبل المحاولة التالية بدل ضرب الـ endpoint كل مسح.
+  if (stale && (backoffPassed || lastAttemptTime === 0)) {
     await refreshLiveCalendarInBackground();
   }
   return getMacroCalendar(now);

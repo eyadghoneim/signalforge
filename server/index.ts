@@ -89,7 +89,7 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
-const VERSION = '3.1.0';
+const VERSION = '3.1.1';
 
 app.disable('x-powered-by');
 // خلف البروكسي السحابي (Render وغيره) كل الطلبات توصل من localhost فيظهر أي زائر كأنه
@@ -181,12 +181,17 @@ function allowBacktestRequest(req: express.Request, res: express.Response, heavy
 }
 
 // ─── أدمن: توكن صريح (فقط إذا تم تعيين BOT_ADMIN_TOKEN أو adminToken) ───
+const LOCAL_ADDRS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const config = loadConfig();
   const token = (config.adminToken || process.env.BOT_ADMIN_TOKEN || '').trim();
-  // إذا لم يتم تحديد توكن إداري، فإن الحماية الإدارية غير مفعلة ومسموح بالتعديل فوراً
+  // بدون توكن: يُسمح بالوصول الإداري من الجهاز المحلي فقط (سيناريو التطوير).
+  // أي طلب خارجي يُرفض — بدل الفتح الكامل اللي كان يسيب مسارات الإدارة مكشوفة على الاستضافة السحابية.
   if (!token) {
-    return next();
+    const remote = req.ip || req.socket.remoteAddress || '';
+    if (LOCAL_ADDRS.has(remote)) return next();
+    res.status(401).json({ ok: false, error: 'Unauthorized: Admin token not configured; remote admin disabled' });
+    return;
   }
   const provided = String(req.headers['x-bot-admin-token'] || '').trim();
   if (provided.length === token.length && timingSafeEqual(Buffer.from(provided), Buffer.from(token))) return next();
@@ -197,6 +202,7 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 
 const startedAt = Date.now();
 let lastScanAt = 0;
+let heavyJobRunning = false; // قفل حماية الـ event loop من طلبات الباك تست المتزامنة
 
 app.get('/api/health', (_req, res) => {
   const protection = loadConfig().protection;
@@ -373,7 +379,10 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
   const tagBias = loadTagBias();
   if (refresh) invalidateCandleCache(asset); // forced refresh → bypass TTL caches for this asset
   const candles1h = await getCandles1h(asset, 500);
-  const snapshot = computeSnapshot(candles1h);
+  // القرار على شموع مقفولة فقط — آخر شمعة من المزود لسه بتتكون (تحديث داخل الشمعة يغيّر الدرجة).
+  // نفس اصطلاح الباك تست: القرار عند إغلاق الشمعة، وبالتالي الإشارة الحية مطابقة لما كان سيُحسب تاريخياً.
+  const closedCandles = candles1h.length > 1 ? candles1h.slice(0, -1) : candles1h;
+  const snapshot = computeSnapshot(closedCandles);
   if (!snapshot) throw new Error(`بيانات غير كافية لحساب إشارة ${asset}`);
   const [candles4h, candles1d, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
     getCandles4h(asset, 400),
@@ -387,8 +396,8 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
   ]);
   const htf = candles4h ? computeHtfSnapshot(candles4h) : null;
   const daily = candles1d ? computeDailyTrend(candles1d) : null;
-  const smc = computeSmcStructure(candles1h, undefined, snapshot.atr14);
-  const entryZone = computePullbackZone(candles1h);
+  const smc = computeSmcStructure(closedCandles, undefined, snapshot.atr14);
+  const entryZone = computePullbackZone(closedCandles);
   return buildSignal({
     asset,
     snapshot,
@@ -404,7 +413,7 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
     liquidity,
     daily,
     entryZone,
-    candles: candles1h,
+    candles: closedCandles,
     tagBias,
   });
 }
@@ -453,6 +462,12 @@ app.post('/api/backtest', async (req, res) => {
   const asset = String(body.asset || 'BTC').toUpperCase() as SupportedAsset;
   if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
   if (!allowBacktestRequest(req, res, Boolean(body.robustness || body.walkforward))) return;
+  // الحساب الثقيل متزامن على الـ event loop: طلبان في نفس الوقت يعني حجب مضاعف
+  // للسيرفر كله (بما فيه /api/health). قفل بسيط يمنع التكدس — الطلبات المتزامنة تُرد فوراً.
+  if (heavyJobRunning) {
+    return res.status(503).json({ ok: false, error: 'A backtest/walk-forward job is already running; retry shortly', busy: true });
+  }
+  heavyJobRunning = true;
   const days = Math.min(1095, Math.max(90, Number(body.days) || 365));
   try {
     const candles = await getHistoricalCandlesDeep(asset, Math.min(30000, days * 24));
@@ -471,6 +486,8 @@ app.post('/api/backtest', async (req, res) => {
     return res.json({ ok: true, result });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  } finally {
+    heavyJobRunning = false;
   }
 });
 
@@ -525,7 +542,7 @@ app.get('/api/report/daily', async (_req, res) => {
       engine: {
         signature: ENGINE_SIGNATURE,
         version: VERSION,
-        breakerTripped: evaluateCircuitBreaker(listSignals(100), config.protection, Date.now()).tripped,
+        breakerTripped: evaluateCircuitBreaker(listSignals(500), config.protection, Date.now()).tripped,
         protection: config.protection,
       },
       market: {
@@ -1007,13 +1024,15 @@ async function runScanCycle(): Promise<void> {
             time: lastClosed.time,
           });
         }
-        const snapshot = computeSnapshot(candles1h);
+        // نفس قاعدة computeSignalFor: القرار على شموع مقفولة فقط — لا إعادة رسم داخل الشمعة.
+        const closedCandles = candles1h.length > 1 ? candles1h.slice(0, -1) : candles1h;
+        const snapshot = computeSnapshot(closedCandles);
         if (!snapshot) continue;
         const [candles1d] = await Promise.all([getCandles1d(asset, 400).catch(() => null)]);
         const htf = candles4h ? computeHtfSnapshot(candles4h) : null;
         const daily = candles1d ? computeDailyTrend(candles1d) : null;
-        const smc = computeSmcStructure(candles1h, undefined, snapshot.atr14);
-        const entryZone = computePullbackZone(candles1h);
+        const smc = computeSmcStructure(closedCandles, undefined, snapshot.atr14);
+        const entryZone = computePullbackZone(closedCandles);
         const signal = buildSignal({
           asset,
           snapshot,
@@ -1030,7 +1049,7 @@ async function runScanCycle(): Promise<void> {
           daily,
           entryZone,
           tagBias,
-          candles: candles1h,
+          candles: closedCandles,
           btcMacroTrend,
           orderBookDepth: orderBook,
         });

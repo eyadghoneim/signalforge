@@ -167,42 +167,49 @@ async function pollTelegramUpdates(
       const expectedChat = String(config.chatId).replace(/\s+/g, '');
 
       for (const update of updates) {
-        // 1. Handle Inline Button Callback Queries
-        if (update.callback_query) {
-          const cb = update.callback_query;
-          const messageChat = String(cb.message?.chat?.id ?? cb.from?.id ?? '');
-          if (messageChat === expectedChat && cb.data) {
-            await answerTelegramCallbackQuery(config.token, cb.id, '⏳ جاري المعالجة...');
-            const rawCmd = cb.data.replace(/^cmd_/, '').toLowerCase();
-            const handler = handlers[rawCmd as keyof TelegramCommandHandlers];
-            if (typeof handler === 'function') {
-              const response = await handler();
-              if (response) {
-                await sendTelegramMessage(config.token, config.chatId, response, 6000, DEFAULT_TELEGRAM_KEYBOARD);
+        // معالجة كل تحديث في try مستقلة: خطأ في أمر واحد ما يضيعش باقي الدفعة
+        // (الـ offset اتقدم بالفعل — استثناء واحد يتسقط أفضل من الدفعة كلها).
+        try {
+          // 1. Handle Inline Button Callback Queries
+          if (update.callback_query) {
+            const cb = update.callback_query;
+            const messageChat = String(cb.message?.chat?.id ?? cb.from?.id ?? '');
+            if (messageChat === expectedChat && cb.data) {
+              await answerTelegramCallbackQuery(config.token, cb.id, '⏳ جاري المعالجة...');
+              const rawCmd = cb.data.replace(/^cmd_/, '').toLowerCase();
+              const handler = handlers[rawCmd as keyof TelegramCommandHandlers];
+              if (typeof handler === 'function') {
+                const response = await handler();
+                if (response) {
+                  await sendTelegramMessage(config.token, config.chatId, response, 6000, DEFAULT_TELEGRAM_KEYBOARD);
+                }
               }
             }
+            continue;
           }
-          continue;
-        }
 
-        // 2. Handle Text Commands
-        const messageChat = String(update.message?.chat?.id ?? '');
-        if (!messageChat || messageChat !== expectedChat) continue;
-        const command = parseTelegramCommand(update.message?.text);
-        if (!command) continue;
+          // 2. Handle Text Commands
+          const messageChat = String(update.message?.chat?.id ?? '');
+          if (!messageChat || messageChat !== expectedChat) continue;
+          const command = parseTelegramCommand(update.message?.text);
+          if (!command) continue;
 
-        let handler = handlers[command as keyof TelegramCommandHandlers];
-        if (!handler) {
-          if (command === 'start') handler = handlers.start ?? handlers.help;
-          else if (command === 'help') handler = handlers.help;
-          else if (command === 'trades') handler = handlers.positions ?? handlers.status;
-          else if (command === 'health') handler = handlers.ping;
-        }
+          let handler = handlers[command as keyof TelegramCommandHandlers];
+          if (!handler) {
+            if (command === 'start') handler = handlers.start ?? handlers.help;
+            else if (command === 'help') handler = handlers.help;
+            else if (command === 'trades') handler = handlers.positions ?? handlers.status;
+            else if (command === 'health') handler = handlers.ping;
+          }
 
-        if (typeof handler !== 'function') continue;
-        const response = await handler();
-        if (response) {
-          await sendTelegramMessage(config.token, config.chatId, response, 6000, DEFAULT_TELEGRAM_KEYBOARD);
+          if (typeof handler !== 'function') continue;
+          const response = await handler();
+          if (response) {
+            await sendTelegramMessage(config.token, config.chatId, response, 6000, DEFAULT_TELEGRAM_KEYBOARD);
+          }
+        } catch (e) {
+          // نطبع ونتابع — بدون أي تفاصيل توكن، والدورة الجاية تعيد المحاولة.
+          console.error(`[telegram] update handler failed: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     }

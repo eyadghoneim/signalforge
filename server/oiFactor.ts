@@ -1,7 +1,6 @@
 // Open interest factor - OKX first (reachable from restricted regions incl. SA),
 // Binance futures fallback, cached, graceful degradation.
 // Rising OI = new money confirms the prevailing move; falling OI = move losing fuel.
-// Comments are English-only on purpose (codepage safety under shell tooling).
 
 import type { SupportedAsset } from '../shared/types';
 import { noteProviderHealth } from './marketData';

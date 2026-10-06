@@ -89,16 +89,21 @@ export default function PriceChart({ asset, signal, lang }: Props) {
   }, []);
 
   // دالة جلب البيانات
+  const loadSeqRef = useRef(0);
   const loadData = async () => {
+    // تسلسل الطلبات: استجابة طلب قديم (بعد تبديل الأصل سريعاً) ما تترسمش شموع أصل تاني.
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     try {
       const res = await api.klines(asset, '1h', 300);
+      if (seq !== loadSeqRef.current) return;
       setCandles(normalizeCandlesForChart(res.candles));
       setError(null);
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   };
 

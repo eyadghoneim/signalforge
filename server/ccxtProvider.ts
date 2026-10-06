@@ -1,5 +1,5 @@
 // ─── طبقة ccxt — شبكة أمان أخيرة للبيانات ───
-// مكتبة ccxt (43k★، MIT) توحد +100 بورصة. هنا نستخدمها كطبقة مظلة:
+// مكتبة ccxt (MIT) توحد +100 بورصة. هنا نستخدمها كطبقة مظلة:
 // تُستدعى فقط عندما تفشل المصادر المباشرة (OKX/Coinbase/Binance/Coingecko/Bybit)
 // كلها — حتى يبقى المسار السريع المعتاد كما هو في marketData.ts.
 // نتجنب استيراد ccxt في المسار الساخن: الاستيراد مؤجل (dynamic import) ليبقى
@@ -65,7 +65,9 @@ const exchangePool = new Map<CcxtExchangeId, CcxtExchangeLike>();
 function getExchange(mod: CcxtModule, id: CcxtExchangeId, timeoutMs: number): CcxtExchangeLike | null {
   const existing = exchangePool.get(id);
   if (existing) {
-    if (typeof existing.timeout === 'number') existing.timeout = Math.max(existing.timeout, timeoutMs);
+    // المهلة تُضبط لقيمة الطلب الحالي — وليست Math.max (كانت بتكبر للأبد:
+    // نداء بطيء واحد كان يرفع مهلة كل الطلبات اللي بعده بشكل دائم).
+    if (typeof existing.timeout === 'number') existing.timeout = timeoutMs;
     return existing;
   }
   const created = makeExchange(mod, id, timeoutMs);

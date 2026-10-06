@@ -106,7 +106,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   // 4. ADX — قوة الاتجاه
   if (s.adx14 >= 25 && s.plusDI > s.minusDI) add('ADX', 8, `اتجاه صاعد قوي (ADX ${s.adx14.toFixed(0)})`);
   else if (s.adx14 >= 25 && s.minusDI > s.plusDI) add('ADX', -8, `اتجاه هابط قوي (ADX ${s.adx14.toFixed(0)})`);
-  else if (s.adx14 < STRATEGY_THRESHOLDS.CHOP_ADX_MAX) add('ADX', -4, `سوق بلا اتجاه (ADX ${s.adx14.toFixed(0)} < 18)`);
+  else if (s.adx14 < STRATEGY_THRESHOLDS.CHOP_ADX_MAX) add('ADX', -4, `سوق بلا اتجاه (ADX ${s.adx14.toFixed(0)} < ${STRATEGY_THRESHOLDS.CHOP_ADX_MAX})`);
 
   // 5. الفوليوم النسبي
   if (s.rvol >= STRATEGY_THRESHOLDS.RVOL_BONUS_MIN) add('RVOL', 8, `فوليوم مرتفع مؤكد (${s.rvol.toFixed(1)}x المتوسط)`);
@@ -244,7 +244,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     // 2) بوابة السوق العرضي
     else if (ctx.gates.chop && s.adx14 < STRATEGY_THRESHOLDS.CHOP_ADX_MAX) {
       regimeGateStatus = 'CHOP_BLOCKED';
-      blockReasonAr = 'سوق عرضي خامل (ADX<18) — الدخول هنا يأكل العمولات في ذبذبة بلا اتجاه';
+      blockReasonAr = `سوق عرضي خامل (ADX<${STRATEGY_THRESHOLDS.CHOP_ADX_MAX}) — الدخول هنا يأكل العمولات في ذبذبة بلا اتجاه`;
       reasons.push({ tag: 'ADX', adjustment: 0, textAr: blockReasonAr });
     }
     // 3) بوابة الفوليوم
@@ -298,7 +298,9 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
   }
   // Deduplicate within a completed candle, not by rounded price. A price-based
   // key turns ordinary intrabar movement into a new signal for the same setup.
-  const dedupCandleTime = ctx.candles?.[ctx.candles.length - 2]?.time ?? ctx.candles?.[ctx.candles.length - 1]?.time;
+  // Callers pass a CLOSED-candle slice (live strips the forming candle), so the
+  // last element is always the completed decision candle — same as the backtest.
+  const dedupCandleTime = ctx.candles?.[ctx.candles.length - 1]?.time;
 
   const qualityTotals = new Map<SignalReason['tag'], number>();
   for (const reason of reasons) {

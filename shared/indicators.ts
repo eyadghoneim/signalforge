@@ -466,15 +466,19 @@ export function computeDailyTrend(daily: Candle[], index?: number): DailyTrend |
   };
 }
 
-// ═══════════════ v2.1: توافق متعدد الفريمات (Multi-Timeframe Confluence - 15m / 1h / 4h / 1d) ═══════════════
+// ═══════════════ v3.1: توافق متعدد الفريمات الحقيقي (1h / 4h / 1d) ═══════════════
+// ملاحظة صدق: النسخة القديمة كانت بتعرف 4 فريمات (15m/1h/4h/1d) مع إنها مبتستقبلش
+// بيانات 15m أصلاً — "1h" كان مشتق تقريبي من نفس لقطة الأساس، يعني الفريم الأساسي
+// كان بياخد وزن مضاعف تحت اسمين. هنا 3 فريمات حقيقية بس: الأساس 1h من اللقطة،
+// و4h و1d من بياناتهم المستقلة.
 export function computeMtfConfluence(
-  snapshot15m: IndicatorSnapshot,
+  snapshot1h: IndicatorSnapshot,
   htf4h: HtfSnapshot | null,
   daily: DailyTrend | null,
 ): import('./types').MultiTimeframeConfluence {
-  const m15Bull = snapshot15m.emaTrend === 'BULLISH' || snapshot15m.emaTrend === 'STRONG_BULLISH' || snapshot15m.macdHist > 0;
-  const m15Bear = snapshot15m.emaTrend === 'BEARISH' || snapshot15m.emaTrend === 'STRONG_BEARISH' || snapshot15m.macdHist < 0;
-  const m15State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = m15Bull && !m15Bear ? 'BULLISH' : m15Bear && !m15Bull ? 'BEARISH' : snapshot15m.close > snapshot15m.ema21 ? 'BULLISH' : 'BEARISH';
+  const h1Bull = snapshot1h.emaTrend === 'BULLISH' || snapshot1h.emaTrend === 'STRONG_BULLISH' || snapshot1h.macdHist > 0;
+  const h1Bear = snapshot1h.emaTrend === 'BEARISH' || snapshot1h.emaTrend === 'STRONG_BEARISH' || snapshot1h.macdHist < 0;
+  const h1State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = h1Bull && !h1Bear ? 'BULLISH' : h1Bear && !h1Bull ? 'BEARISH' : 'NEUTRAL';
 
   // 4H Trend
   const h4State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = htf4h
@@ -486,26 +490,19 @@ export function computeMtfConfluence(
     ? (daily.bullish ? 'BULLISH' : daily.bearish ? 'BEARISH' : 'NEUTRAL')
     : 'NEUTRAL';
 
-  // Intermediate 1H estimate based on 15m ADX + 4H alignment
-  let h1State: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
-  if (m15State === 'BULLISH' && h4State === 'BULLISH') h1State = 'BULLISH';
-  else if (m15State === 'BEARISH' && h4State === 'BEARISH') h1State = 'BEARISH';
-  else h1State = m15State;
-
   let bullPoints = 0;
   let totalWeights = 0;
 
-  // Weightings: 15m (25%), 1h (25%), 4h (30%), 1d (20%)
+  // Weightings: 1h (40%), 4h (35%), 1d (25%)
   const addWeight = (state: 'BULLISH' | 'BEARISH' | 'NEUTRAL', weight: number) => {
     totalWeights += weight;
     if (state === 'BULLISH') bullPoints += weight;
     else if (state === 'NEUTRAL') bullPoints += weight * 0.5;
   };
 
-  addWeight(m15State, 25);
-  addWeight(h1State, 25);
-  addWeight(h4State, 30);
-  addWeight(d1State, 20);
+  addWeight(h1State, 40);
+  addWeight(h4State, 35);
+  addWeight(d1State, 25);
 
   const score = totalWeights > 0 ? Math.round((bullPoints / totalWeights) * 100) : 50;
 
@@ -517,7 +514,7 @@ export function computeMtfConfluence(
 
   const summaryAr =
     alignment === 'STRONG_BULLISH'
-      ? 'توافق صاعد قوي عبر جميع الفريمات (15د، 1س، 4س، يومي)'
+      ? 'توافق صاعد قوي عبر جميع الفريمات (1س، 4س، يومي)'
       : alignment === 'BULLISH'
       ? 'اتجاه صاعد مدعوم من الفريمات الأكبر'
       : alignment === 'STRONG_BEARISH'
@@ -528,7 +525,7 @@ export function computeMtfConfluence(
 
   const summaryEn =
     alignment === 'STRONG_BULLISH'
-      ? 'Strong bullish confluence across all timeframes (15m, 1h, 4h, 1d)'
+      ? 'Strong bullish confluence across all timeframes (1h, 4h, 1d)'
       : alignment === 'BULLISH'
       ? 'Bullish alignment supported by higher timeframes'
       : alignment === 'STRONG_BEARISH'
@@ -541,7 +538,6 @@ export function computeMtfConfluence(
     score,
     alignment,
     timeframes: {
-      m15: m15State,
       h1: h1State,
       h4: h4State,
       d1: d1State,

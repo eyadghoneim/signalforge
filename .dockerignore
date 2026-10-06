@@ -1,6 +1,9 @@
 node_modules/
 dist/
 data/
-.env
+.env*
 *.log
 .git/
+build/
+coverage/
+.DS_Store

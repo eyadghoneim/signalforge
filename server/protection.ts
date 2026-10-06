@@ -1,6 +1,5 @@
 // Capital protection layer - pure functions, no I/O, no side effects.
 // R unit convention: TP1_FIRST = +1R, SL_FIRST = -1R, EXPIRED = 0R (paper attribution).
-// Comments are English-only on purpose (codepage safety when written via shell tooling).
 
 import type { PaperTradeOutcome, ProtectionConfig, StoredSignal } from '../shared/types';
 import { realizedR } from './learning';

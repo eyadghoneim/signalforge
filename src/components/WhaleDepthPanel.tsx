@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Layers, ShieldCheck, AlertTriangle, RefreshCw, TrendingUp, TrendingDown, Anchor, Zap } from 'lucide-react';
 import { api, type OrderBookDepth, type SupportedAsset } from '../api';
 import type { Lang } from '../i18n';
@@ -13,18 +13,23 @@ export default function WhaleDepthPanel({ asset, lang }: Props) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadSeqRef = useRef(0);
   const loadData = async () => {
+    // تسلسل الطلبات: استجابة قديمة بعد تبديل الأصل ما بتتعرضش ببيانات أصل تاني.
+    const seq = ++loadSeqRef.current;
     try {
       setLoading(true);
       setError(null);
       const res = await api.depth(asset);
+      if (seq !== loadSeqRef.current) return;
       if (res.ok && res.depth) {
         setData(res.depth);
       }
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   };
 
@@ -151,15 +156,15 @@ export default function WhaleDepthPanel({ asset, lang }: Props) {
               {lang === 'ar' ? 'جدار الشراء (Whale Bid Wall)' : 'Whale Bid Wall'}
             </span>
             <span className="text-[10px] text-zinc-500 font-mono">
-              -{data.bidWall?.distancePercent.toFixed(2)}%
+              -{data.bidWall ? data.bidWall.distancePercent.toFixed(2) : '—'}%
             </span>
           </div>
           <div className="mt-1 text-base font-bold font-mono text-emerald-300">
-            ${data.bidWall?.price.toLocaleString('en-US')}
+            {data.bidWall ? `$${data.bidWall.price.toLocaleString('en-US')}` : '—'}
           </div>
           <div className="mt-0.5 text-[10px] text-zinc-500">
             {lang === 'ar' ? 'حجم الطلب المتجمع: ' : 'Clustered Volume: '}
-            <strong className="text-zinc-300 font-mono">{data.bidWall?.amount.toLocaleString('en-US')}</strong>
+            <strong className="text-zinc-300 font-mono">{data.bidWall ? data.bidWall.amount.toLocaleString('en-US') : '—'}</strong>
           </div>
         </div>
 
@@ -187,15 +192,15 @@ export default function WhaleDepthPanel({ asset, lang }: Props) {
               {lang === 'ar' ? 'جدار البيع (Whale Ask Wall)' : 'Whale Ask Wall'}
             </span>
             <span className="text-[10px] text-zinc-500 font-mono">
-              +{data.askWall?.distancePercent.toFixed(2)}%
+              +{data.askWall ? data.askWall.distancePercent.toFixed(2) : '—'}%
             </span>
           </div>
           <div className="mt-1 text-base font-bold font-mono text-rose-300">
-            ${data.askWall?.price.toLocaleString('en-US')}
+            {data.askWall ? `$${data.askWall.price.toLocaleString('en-US')}` : '—'}
           </div>
           <div className="mt-0.5 text-[10px] text-zinc-500">
             {lang === 'ar' ? 'حجم العرض المتجمع: ' : 'Clustered Volume: '}
-            <strong className="text-zinc-300 font-mono">{data.askWall?.amount.toLocaleString('en-US')}</strong>
+            <strong className="text-zinc-300 font-mono">{data.askWall ? data.askWall.amount.toLocaleString('en-US') : '—'}</strong>
           </div>
         </div>
       </div>

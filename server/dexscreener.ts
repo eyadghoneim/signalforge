@@ -2,7 +2,6 @@
 // Informational layer: exposed via /api/dex/pairs - NOT wired into scoring.
 // We query canonical token addresses instead of ambiguous ticker symbols so a
 // token that merely reuses BTC/ETH/PAXG/SOL cannot appear as the real asset.
-// Comments are English-only on purpose (codepage safety under shell tooling).
 
 import type { SupportedAsset } from '../shared/types';
 

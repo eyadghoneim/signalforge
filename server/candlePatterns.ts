@@ -2,11 +2,10 @@
 // Pure + deterministic + zero network: تعمل على آخر شموع الجلسة فقط،
 // وتُعدّ عاملاً واحداً إضافياً في المحرك — مستوحاة من فكرة مكتبة
 // technicalindicators (MIT) لكن بكتابة مستقلة وشروط نسب محلية.
-// Comments are English-only on purpose (codepage safety under shell tooling).
 
 import type { Candle } from '../shared/types';
 
-export type PatternDirection = 'BULLISH' | 'BEARISH';
+export type PatternDirection = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
 export interface PatternHit {
   id: string; // stable machine id (used in tests/keys)
@@ -30,7 +29,7 @@ const HAMMER: PatternHit = { id: 'hammer', nameAr: 'المطرقة', nameEn: 'Ha
 const SHOOTING_STAR: PatternHit = { id: 'shooting-star', nameAr: 'الشهاب', nameEn: 'Shooting Star', direction: 'BEARISH', weight: 3 };
 const MORNING_STAR: PatternHit = { id: 'morning-star', nameAr: 'نجمة الصباح', nameEn: 'Morning Star', direction: 'BULLISH', weight: 5 };
 const EVENING_STAR: PatternHit = { id: 'evening-star', nameAr: 'نجمة المساء', nameEn: 'Evening Star', direction: 'BEARISH', weight: 5 };
-const DOJI: PatternHit = { id: 'doji', nameAr: 'دوجي (تردّد)', nameEn: 'Doji (indecision)', direction: 'BULLISH', weight: 0 };
+const DOJI: PatternHit = { id: 'doji', nameAr: 'دوجي (تردّد)', nameEn: 'Doji (indecision)', direction: 'NEUTRAL', weight: 0 };
 
 /**
  * Detect candlestick patterns over the last candles of a session.
@@ -112,12 +111,14 @@ export function resolvePatternAdjustment(candles: Candle[] | undefined): {
   let bear = false;
   let best: PatternHit | null = null;
   for (const h of hits) {
+    // Doji (NEUTRAL) never participates in the conflict rule: an indecision
+    // candle must not cancel an opposing directional pattern.
     if (h.direction === 'BULLISH') bull = true;
-    else bear = true;
+    else if (h.direction === 'BEARISH') bear = true;
     if (!best || Math.abs(h.weight) > Math.abs(best.weight)) best = h;
   }
   if (bull && bear) return { adjustment: 0, hit: null, hits }; // تعارض → حياد صريح
   const weight = best ? Math.abs(best.weight) : 0;
-  const sign = bull ? 1 : -1;
+  const sign = bull ? 1 : bear ? -1 : 0;
   return { adjustment: sign * weight, hit: best, hits };
 }

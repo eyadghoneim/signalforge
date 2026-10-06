@@ -1,6 +1,5 @@
 // Fear & Greed Index factor - alternative.me public API, no key required.
 // Contrarian interpretation: extreme fear = opportunity, extreme greed = caution.
-// Comments are English-only on purpose (codepage safety under shell tooling).
 
 import type { FngPoint } from '../shared/types';
 

@@ -284,7 +284,8 @@ async function candlesFromOkx(asset: SupportedAsset, interval: '1h' | '4h' | '1d
     const url = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=${want}${after ? `&after=${after}` : ''}`;
     const d = await fetchJsonWithTimeout<{ code?: string; data?: string[][] }>(url, 6000);
     if (d.code !== '0') throw new Error(`okx candles code ${d.code}`);
-    const rows = (d.data ?? [])
+    const rawRows = d.data ?? [];
+    const rows = rawRows
       .map((r) => ({
         time: Math.floor(Number(r[0]) / 1000),
         open: parseFloat(String(r[1])),
@@ -301,7 +302,9 @@ async function candlesFromOkx(asset: SupportedAsset, interval: '1h' | '4h' | '1d
       if (!byTime.has(c.time)) byTime.set(c.time, c);
     }
     pages++;
-    if (rows.length < MAX) break; // upstream exhausted
+    // نقرر استنفاد المصدر بعدّ الصفوف الخام قبل الفلترة — لو عدّينا المفلترة
+    // كانت الصفحات بتقف بدري وتاريخ أقصر من المطلوب.
+    if (rawRows.length < MAX) break; // upstream exhausted
     after = String(oldest * 1000);
   }
   const out = [...byTime.values()].sort((a, b) => a.time - b.time);
@@ -394,8 +397,8 @@ export async function getCandles1d(asset: SupportedAsset, limit = 400): Promise<
   return cached(`c1d:${asset}:${safeLimit}`, 10 * 60_000, async () => {
     try {
       const out = await candlesFromOkx(asset, '1d', Math.min(safeLimit, 400));
-      noteProviderHealth('okx:klines', true);
       if (out.length < 75) throw new Error('okx daily too short');
+      noteProviderHealth('okx:klines', true);
       return out;
     } catch (e) {
       noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));
@@ -423,8 +426,8 @@ export async function getCandles4h(asset: SupportedAsset, limit = 400): Promise<
     return await cached(`c4h:${asset}:${safeLimit}`, 120_000, async () => {
       try {
         const rows = await candlesFromOkx(asset, '4h', Math.min(safeLimit, 1000));
-        noteProviderHealth('okx:klines', true);
         if (rows.length < 230) throw new Error('4h too short for HTF gate');
+        noteProviderHealth('okx:klines', true);
         return rows;
       } catch (e) {
         noteProviderHealth('okx:klines', false, e instanceof Error ? e.message : String(e));

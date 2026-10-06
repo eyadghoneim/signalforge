@@ -66,11 +66,13 @@ const TXT = {
 
 function computeStats(acct: PaperAccountInfo) {
   const trades = acct.closed;
+  // التعادل (pnl=0) مش مكسب ولا خسارة — مش بيتعد في معدل الفوز ولا في العدادت.
   const wins = trades.filter((t) => t.pnlUsd > 0);
-  const losses = trades.filter((t) => t.pnlUsd <= 0);
+  const losses = trades.filter((t) => t.pnlUsd < 0);
   const grossWin = wins.reduce((s, t) => s + t.pnlUsd, 0);
   const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pnlUsd, 0));
-  const winRate = trades.length ? (wins.length / trades.length) * 100 : null;
+  const decided = wins.length + losses.length;
+  const winRate = decided ? (wins.length / decided) * 100 : null;
 
   let peak = 0;
   let maxDd = 0;
