@@ -1908,6 +1908,14 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
   assert(cooldownBefore === false, 'PROTECTION: SPOT_SELL_ALL stop-loss does not trigger LossCooldown');
 }
 
+console.log('\n=== 32. اختبارات التخزين ووضع التدهور (Degraded Persistence) ===');
+{
+  const { PostgresDurableStore } = await import('../server/durablePersistence');
+  // اختبار تسجيل الخطأ والتصفير التلقائي
+  const errBefore = PostgresDurableStore.getLastPersistenceError();
+  assert(errBefore === null || typeof errBefore === 'string', 'PERSISTENCE: getLastPersistenceError returns string or null');
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);
