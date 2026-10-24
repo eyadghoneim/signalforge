@@ -282,7 +282,7 @@ export const api = {
     digestEnabled?: boolean;
     paperAlertsEnabled?: boolean;
     telegramLang?: 'ar' | 'en';
-    gates?: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean; btcMacro?: boolean };
+    gates?: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean; btcMacro?: boolean; macro?: boolean };
     protection?: Partial<ProtectionConfig>;
   }) => j<{ ok: true }>('/api/config', { method: 'POST', body: JSON.stringify(body) }),
   telegramTest: (credentials?: { token?: string; chatId?: string }) =>

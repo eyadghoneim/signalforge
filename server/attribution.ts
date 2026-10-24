@@ -122,7 +122,7 @@ function computeWindows(
 export type { AttributionSummary, TagStat } from '../shared/types';
 
 export function computeAttributionSummary(signals: StoredSignal[]): AttributionSummary {
-  const actionable = signals.filter((s) => !s.isGateBlocked);
+  const actionable = signals.filter((s) => !s.isGateBlocked && s.spotAction === 'SPOT_BUY');
   const resolvedSignals = actionable.filter((s) => s.outcomes?.resolution === 'TP1_FIRST' || s.outcomes?.resolution === 'SL_FIRST');
   const tp1First = resolvedSignals.filter((s) => s.outcomes.resolution === 'TP1_FIRST').length;
   const slFirst = resolvedSignals.filter((s) => s.outcomes.resolution === 'SL_FIRST').length;

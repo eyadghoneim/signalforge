@@ -644,6 +644,7 @@ app.post('/api/config', requireAdmin, (req, res) => {
       rvol: typeof g.rvol === 'boolean' ? g.rvol : loadConfig().gates.rvol,
       funding: typeof g.funding === 'boolean' ? g.funding : loadConfig().gates.funding,
       btcMacro: typeof g.btcMacro === 'boolean' ? g.btcMacro : loadConfig().gates.btcMacro ?? true,
+      macro: typeof g.macro === 'boolean' ? g.macro : loadConfig().gates.macro ?? true,
     };
   }
   if (body.protection && typeof body.protection === 'object') {

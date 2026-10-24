@@ -263,7 +263,8 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
       reasons.push({ tag: 'FUNDING', adjustment: 0, textAr: blockReasonAr });
     }
     // 5) بوابة فترات حظر الماكرو (Macro Blackout Gate: FOMC / CPI / NFP)
-    else if ((ctx.gates.macro ?? true) && ctx.macroCalendar?.isBlackoutActive) {
+    // لا تُطبق على الجداول المرجعية الاسترشادية (isReferenceSchedule) — فقط عند توفر بيانات حية
+    else if ((ctx.gates.macro ?? true) && ctx.macroCalendar?.isBlackoutActive && !ctx.macroCalendar?.isReferenceSchedule) {
       regimeGateStatus = 'MACRO_BLOCKED';
       blockReasonAr = ctx.macroCalendar.lockReasonAr || 'فترة حظر ماكرو نشطة (FOMC / CPI / NFP) — الدخول محجوب لتجنب الانزلاقات العنيفة';
       reasons.push({ tag: 'HTF', adjustment: 0, textAr: blockReasonAr });

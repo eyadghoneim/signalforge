@@ -60,7 +60,7 @@ export function realizedR(s: StoredSignal): number {
 }
 
 function isCountable(s: StoredSignal): boolean {
-  if (s.isGateBlocked) return false;
+  if (s.isGateBlocked || s.spotAction !== 'SPOT_BUY') return false;
   return s.outcomes.resolution === 'TP1_FIRST' || s.outcomes.resolution === 'SL_FIRST';
 }
 

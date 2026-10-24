@@ -21,6 +21,16 @@ async function okxOpenInterestUsd(asset: SupportedAsset): Promise<number[][] | n
   return json.data.map((r) => [Number(r[0]), Number(r[1])]);
 }
 
+/** Calculate percentage change from oldest to newest data point, sorting chronologically by timestamp. */
+export function computeOiChangePercent(rows: number[][]): number | null {
+  if (!rows || rows.length < 2) return null;
+  const sorted = [...rows].sort((x, y) => x[0] - y[0]);
+  const oldest = sorted[0][1];
+  const newest = sorted[sorted.length - 1][1];
+  if (!Number.isFinite(oldest) || !Number.isFinite(newest) || oldest <= 0) return null;
+  return Math.round(((newest - oldest) / oldest) * 1000) / 10;
+}
+
 /** 24h open-interest percent change, or null when unavailable (never throws). */
 export async function getOpenInterestChange24h(asset: string): Promise<number | null> {
   const cached = OI_CACHE.get(asset);
@@ -30,12 +40,8 @@ export async function getOpenInterestChange24h(asset: string): Promise<number | 
   try {
     const rows = await okxOpenInterestUsd(a);
     if (rows && rows.length >= 2) {
-      const first = rows[0][1];
-      const last = rows[rows.length - 1][1];
-      if (Number.isFinite(first) && Number.isFinite(last) && first > 0) {
-        value = Math.round(((last - first) / first) * 1000) / 10;
-        noteProviderHealth('okx:oi', true);
-      }
+      value = computeOiChangePercent(rows);
+      if (value !== null) noteProviderHealth('okx:oi', true);
     }
   } catch (e) {
     noteProviderHealth('okx:oi', false, e instanceof Error ? e.message : String(e));

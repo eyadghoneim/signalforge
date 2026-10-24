@@ -63,7 +63,7 @@ export function dayRealizedR(signals: StoredSignal[], nowMs: number): DailyPnLR 
   let winsToday = 0;
   let lossesToday = 0;
   for (const s of signals) {
-    if (s.isGateBlocked) continue;
+    if (s.isGateBlocked || s.spotAction !== 'SPOT_BUY') continue;
     const res = s.outcomes.resolution;
     if (res !== 'TP1_FIRST' && res !== 'SL_FIRST') continue;
     const at = s.outcomes.resolvedAt ?? 0;
@@ -269,7 +269,7 @@ export function stoplossGuardCount(signals: StoredSignal[], asset: string, windo
   const start = nowMs - windowHours * 3600_000;
   let count = 0;
   for (const s of signals) {
-    if (s.isGateBlocked || s.asset !== asset) continue;
+    if (s.isGateBlocked || s.asset !== asset || s.spotAction !== 'SPOT_BUY') continue;
     if (s.outcomes.resolution !== 'SL_FIRST') continue;
     const at = s.outcomes.resolvedAt ?? 0;
     if (at >= start && at <= nowMs) count++;
@@ -282,7 +282,7 @@ export function lossCooldownActive(signals: StoredSignal[], asset: string, coold
   if (cooldownHours <= 0) return false;
   let lastSlAt = 0;
   for (const s of signals) {
-    if (s.isGateBlocked || s.asset !== asset) continue;
+    if (s.isGateBlocked || s.asset !== asset || s.spotAction !== 'SPOT_BUY') continue;
     if (s.outcomes.resolution !== 'SL_FIRST') continue;
     const at = s.outcomes.resolvedAt ?? 0;
     if (at > lastSlAt) lastSlAt = at;

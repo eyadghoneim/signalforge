@@ -1772,11 +1772,12 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
     gates: { htf: true, chop: true, rvol: true, funding: true, btcMacro: true, macro: true },
   };
 
-  // 1) Macro Blackout gate blocks BUY when isBlackoutActive is true
+  // 1) Macro Blackout gate blocks BUY when isBlackoutActive is true on LIVE data
   const macroBlocked = buildSignal({
     ...baseCtx,
     macroCalendar: {
       isBlackoutActive: true,
+      isReferenceSchedule: false,
       activeEvent: {
         id: 'fomc-1',
         name: 'FOMC Rate Decision',
@@ -1798,8 +1799,37 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
       lastUpdated: Date.now(),
     },
   });
-  assert(macroBlocked.regimeGateStatus === 'MACRO_BLOCKED', 'MACRO-GATE: blocks BUY signal during active blackout');
-  assert(macroBlocked.spotAction === 'SPOT_HOLD', 'MACRO-GATE: forces SPOT_HOLD during blackout');
+  assert(macroBlocked.regimeGateStatus === 'MACRO_BLOCKED', 'MACRO-GATE: blocks BUY signal during active LIVE blackout');
+  assert(macroBlocked.spotAction === 'SPOT_HOLD', 'MACRO-GATE: forces SPOT_HOLD during live blackout');
+
+  // 1b) Reference template schedule must NOT block trading (advisory only)
+  const macroReference = buildSignal({
+    ...baseCtx,
+    macroCalendar: {
+      isBlackoutActive: true,
+      isReferenceSchedule: true,
+      activeEvent: {
+        id: 'fomc-ref',
+        name: 'Reference Schedule FOMC',
+        nameAr: 'جدول مرجعي استرشادي',
+        category: 'FOMC',
+        impact: 'HIGH',
+        timestamp: Date.now(),
+        timeFormatted: '20:00 UTC',
+        previousValue: '',
+        forecastValue: '',
+        blackoutHoursBefore: 2,
+        blackoutHoursAfter: 2,
+        descriptionAr: 'جدول استرشادي',
+        status: 'ACTIVE_BLACKOUT',
+      },
+      lockReasonAr: 'تنبيه استرشادي: لا يحظر المحرك الصفقات تلقائياً',
+      lockReasonEn: 'Advisory notice: no trading locked',
+      upcomingEvents: [],
+      lastUpdated: Date.now(),
+    },
+  });
+  assert(macroReference.regimeGateStatus === 'CLEAR', 'MACRO-GATE: reference template schedule does NOT block trading');
 
   // 2) Macro Blackout toggle disabled allows signal through
   const macroGateDisabled = buildSignal({
@@ -1807,6 +1837,7 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
     gates: { ...baseCtx.gates, macro: false },
     macroCalendar: {
       isBlackoutActive: true,
+      isReferenceSchedule: false,
       activeEvent: null,
       lockReasonAr: 'فترة حظر ماكرو',
       lockReasonEn: 'Blackout',
@@ -1821,6 +1852,49 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
   const d1 = new Date('2026-10-24T23:59:59Z').getTime();
   const d2 = new Date('2026-10-25T00:00:01Z').getTime();
   assert(utcDayStart(d2) > utcDayStart(d1), 'UTC-BOUNDARY: transitions cleanly at 00:00 UTC');
+
+  // 4) Open Interest chronological calculation (OKX newest-first vs Binance oldest-first)
+  const { computeOiChangePercent } = await import('../server/oiFactor');
+  const okxDescending = [[1000, 980], [500, 990], [0, 1000]]; // drops from 1000 to 980 = -2%
+  assert(computeOiChangePercent(okxDescending) === -2, 'OI-CALC: correctly calculates negative change with newest-first OKX rows');
+  const binanceAscending = [[0, 1000], [500, 1020], [1000, 1050]]; // rises to 1050 = +5%
+  assert(computeOiChangePercent(binanceAscending) === 5, 'OI-CALC: correctly calculates positive change with oldest-first rows');
+
+  // 5) SPOT_SELL_ALL isolation from Learning and Capital Protection
+  const { baselineWinRatePercent } = await import('../server/learning');
+  const { dayRealizedR } = await import('../server/protection');
+  const dummyBuySignal: any = {
+    id: 'buy-test-1',
+    asset: 'BTC',
+    spotAction: 'SPOT_BUY',
+    isGateBlocked: false,
+    generatedAt: Date.now() - 3600_000,
+    entryPrice: 100,
+    stopLoss: 95,
+    target1: 110,
+    reasons: [{ tag: 'TREND', adjustment: 10, textAr: 'ترند صاعد' }],
+    outcomes: { resolution: 'TP1_FIRST', resolvedAt: Date.now() - 1800_000 },
+  };
+  const dummySellSignal: any = {
+    id: 'sell-test-1',
+    asset: 'BTC',
+    spotAction: 'SPOT_SELL_ALL',
+    isGateBlocked: false,
+    generatedAt: Date.now() - 3600_000,
+    entryPrice: 100,
+    stopLoss: 95,
+    target1: 110,
+    reasons: [{ tag: 'TREND', adjustment: -12, textAr: 'ترند هابط' }],
+    outcomes: { resolution: 'TP1_FIRST', resolvedAt: Date.now() - 1800_000 },
+  };
+  const onlyBuy = baselineWinRatePercent([dummyBuySignal], Date.now());
+  const withSell = baselineWinRatePercent([dummyBuySignal, dummySellSignal], Date.now());
+  assert(onlyBuy === withSell, 'LEARNING: SPOT_SELL_ALL does not pollute baseline win rate');
+
+  const pnlBuy = dayRealizedR([dummyBuySignal], Date.now());
+  const pnlWithSell = dayRealizedR([dummyBuySignal, dummySellSignal], Date.now());
+  assert(pnlBuy.realizedR === pnlWithSell.realizedR, 'PROTECTION: SPOT_SELL_ALL does not alter dayRealizedR');
+  assert(pnlBuy.resolvedToday === pnlWithSell.resolvedToday, 'PROTECTION: SPOT_SELL_ALL is not counted in resolvedToday');
 }
 
 console.log(`\n=============================================`);
