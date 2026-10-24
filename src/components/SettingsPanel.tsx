@@ -9,7 +9,7 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
   const [tokenInput, setTokenInput] = useState('');
   const [chatIdInput, setChatIdInput] = useState('');
   const [intervalInput, setIntervalInput] = useState(120);
-  const [gates, setGates] = useState({ htf: true, chop: true, rvol: true, funding: true, btcMacro: true });
+  const [gates, setGates] = useState({ htf: true, chop: true, rvol: true, funding: true, btcMacro: true, macro: true });
   const [enabled, setEnabled] = useState(false);
   const [regimeEnabled, setRegimeEnabled] = useState(true);
   const [digestEnabled, setDigestEnabled] = useState(true);
@@ -35,7 +35,7 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
         const res = await api.config();
         setConfig(res.config);
         setIntervalInput(res.config.scanIntervalSeconds);
-        setGates({ ...res.config.gates, btcMacro: res.config.gates.btcMacro ?? true });
+        setGates({ ...res.config.gates, btcMacro: res.config.gates.btcMacro ?? true, macro: res.config.gates.macro ?? true });
         setEnabled(res.config.telegramEnabled);
         setRegimeEnabled(res.config.regimeEnabled);
         setDigestEnabled(res.config.digestEnabled);
@@ -263,6 +263,7 @@ export default function SettingsPanel({ onSaved, lang }: { onSaved: () => void; 
           {gateRow('rvol', t(lang, 'gateRvol'), t(lang, 'gateRvolDesc'))}
           {gateRow('funding', t(lang, 'gateSqueeze'), t(lang, 'gateSqueezeDesc'))}
           {gateRow('btcMacro' as keyof typeof gates, t(lang, 'gateBtcMacro'), t(lang, 'gateBtcMacroDesc'))}
+          {gateRow('macro' as keyof typeof gates, t(lang, 'gateMacro'), lang === 'ar' ? 'حظر الصفقات أثناء إعلانات الفيدرالي وبيانات التضخم' : 'Block entries during FOMC rate decisions & CPI prints')}
         </div>
         <label className="mt-2 flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3 transition hover:border-sky-500/50">
           <div>

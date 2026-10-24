@@ -1,22 +1,29 @@
-# SignalForge — صورة إنتاجية جاهزة لأي سيرفر (Render / Railway / Fly.io / VPS)
-# خطوتين: 1) npm install + build  2) node dist/server.cjs
-FROM node:20-alpine
+# SignalForge — Multi-stage production build (Render / Railway / Fly.io / VPS)
+# Stage 1: Build client assets and bundle the server
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# المكتبات أولاً عشان الكاش يشتغل
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-# الكود
 COPY . .
-
-# بناء الواجهة (Vite) + حزم السيرفر (esbuild)
 RUN npm run build
 
-# Run the application as the pre-created non-root Node user. The data directory
-# is created lazily by the JSON fallback and must remain writable in that mode.
-RUN chown -R node:node /app
+# Stage 2: Minimal runtime image without devDependencies or build toolchains
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+
+# Copy built frontend assets and bundled backend from builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/public ./public
+
+# Prepare persistent data directory with non-root ownership
+RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 
 ENV NODE_ENV=production

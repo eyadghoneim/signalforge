@@ -54,6 +54,7 @@ const DICT = {
     gateChop: 'بوابة السوق العرضي (ADX)',
     gateRvol: 'بوابة الفوليوم الضعيف',
     gateSqueeze: 'بوابة تمويل العقود',
+    gateMacro: 'بوابة حظر الماكرو (FOMC/CPI)',
     gateUnknown: 'بوابة مخاطر',
     gateNote: 'الإشارة محفوظة للتدقيق — هنعرف بعدين لو البوابة منعت خسارة أو منعت ربح.',
     // أرقام المخاطرة
@@ -275,6 +276,7 @@ const DICT = {
     gateChop: 'Choppy-market gate (ADX)',
     gateRvol: 'Weak-volume gate',
     gateSqueeze: 'Funding squeeze gate',
+    gateMacro: 'Macro Blackout gate (FOMC/CPI)',
     gateUnknown: 'Risk gate',
     gateNote: 'Signal kept for audit — we will learn later whether the gate blocked a loss or a profit.',
     // أرقام المخاطرة

@@ -26,6 +26,7 @@ const GATE_KEYS: Record<string, TKey> = {
   CHOP_BLOCKED: 'gateChop',
   RVOL_BLOCKED: 'gateRvol',
   SQUEEZE_BLOCKED: 'gateSqueeze',
+  MACRO_BLOCKED: 'gateMacro',
 };
 
 const QUALITY_TAG_KEYS: Record<string, TKey> = {

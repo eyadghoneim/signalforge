@@ -1748,6 +1748,81 @@ console.log('\n=== 30. دروع نزاهة البيانات وسلوك بواب�
   }
 }
 
+console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackout, UTC Day Boundary, O(1) Backtest Indexing ===');
+{
+  const { buildSignal } = await import('../server/signalEngine');
+  const dummySnapshot: any = {
+    close: 3000,
+    emaTrend: 'BULLISH',
+    rsi14: 60,
+    adx14: 30,
+    rvol: 1.5,
+    bbPercentB: 0.5,
+    atr14: 50,
+    plusDI: 28,
+    minusDI: 15,
+  };
+  const baseCtx = {
+    asset: 'BTC' as const,
+    snapshot: dummySnapshot,
+    htf: { close: 3000, bullish: true, bearish: false, ema21: 3100, ema50: 2900, ema200: 2800 },
+    fundingPct8h: 0.01,
+    change24h: 3.5,
+    dataSource: 'LIVE' as const,
+    gates: { htf: true, chop: true, rvol: true, funding: true, btcMacro: true, macro: true },
+  };
+
+  // 1) Macro Blackout gate blocks BUY when isBlackoutActive is true
+  const macroBlocked = buildSignal({
+    ...baseCtx,
+    macroCalendar: {
+      isBlackoutActive: true,
+      activeEvent: {
+        id: 'fomc-1',
+        name: 'FOMC Rate Decision',
+        nameAr: 'قرار الفائدة الفيدرالي',
+        category: 'FOMC',
+        impact: 'HIGH',
+        timestamp: Date.now(),
+        timeFormatted: '20:00 UTC',
+        previousValue: '5.25%',
+        forecastValue: '5.00%',
+        blackoutHoursBefore: 2,
+        blackoutHoursAfter: 2,
+        descriptionAr: 'قرار الفائدة',
+        status: 'ACTIVE_BLACKOUT',
+      },
+      lockReasonAr: 'فترة حظر ماكرو: مؤتمر الفيدرالي — الدخول محجوب',
+      lockReasonEn: 'Macro blackout active: FOMC Decision',
+      upcomingEvents: [],
+      lastUpdated: Date.now(),
+    },
+  });
+  assert(macroBlocked.regimeGateStatus === 'MACRO_BLOCKED', 'MACRO-GATE: blocks BUY signal during active blackout');
+  assert(macroBlocked.spotAction === 'SPOT_HOLD', 'MACRO-GATE: forces SPOT_HOLD during blackout');
+
+  // 2) Macro Blackout toggle disabled allows signal through
+  const macroGateDisabled = buildSignal({
+    ...baseCtx,
+    gates: { ...baseCtx.gates, macro: false },
+    macroCalendar: {
+      isBlackoutActive: true,
+      activeEvent: null,
+      lockReasonAr: 'فترة حظر ماكرو',
+      lockReasonEn: 'Blackout',
+      upcomingEvents: [],
+      lastUpdated: Date.now(),
+    },
+  });
+  assert(macroGateDisabled.regimeGateStatus === 'CLEAR', 'MACRO-GATE toggle: disabled gate does not block BUY');
+
+  // 3) UTC Day Boundary alignment verification
+  const { utcDayStart } = await import('../server/protection');
+  const d1 = new Date('2026-10-24T23:59:59Z').getTime();
+  const d2 = new Date('2026-10-25T00:00:01Z').getTime();
+  assert(utcDayStart(d2) > utcDayStart(d1), 'UTC-BOUNDARY: transitions cleanly at 00:00 UTC');
+}
+
 console.log(`\n=============================================`);
 console.log(`النتيجة: ${passed} نجح / ${failed} فشل`);
 if (failed > 0) process.exit(1);

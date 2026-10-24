@@ -59,7 +59,7 @@ export const DEFAULT_CONFIG: BotConfig = {
   telegramEnabled: false,
   telegramToken: '',
   telegramChatId: '',
-  gates: { htf: true, chop: true, rvol: true, funding: true, btcMacro: true },
+  gates: { htf: true, chop: true, rvol: true, funding: true, btcMacro: true, macro: true },
   adminToken: '',
   regimeEnabled: true,
   digestEnabled: true,

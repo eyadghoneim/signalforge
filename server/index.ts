@@ -95,9 +95,8 @@ app.disable('x-powered-by');
 // خلف البروكسي السحابي (Render وغيره) كل الطلبات توصل من localhost فيظهر أي زائر كأنه
 // "محلي". لذلك trust proxy ضروري عشان نعرف عنوان الفعلي للمستخدم من X-Forwarded-For.
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '100kb' }));
 
-// ─── أمان: رؤوس CSP عامة في الإنتاج + rate limit بسيط ───
+// ─── أمان: رؤوس CSP عامة في الإنتاج + rate limit قبل معالجة أي body ───
 if (!IS_DEV) {
   app.use((req, res, next) => {
     const isApi = req.path.startsWith('/api');
@@ -119,6 +118,8 @@ const RATE_LIMIT_MAX = 240; // 240 طلب/دقيقة لكل عنوان
 const BACKTEST_WINDOW_MS = 10 * 60_000;
 const BACKTEST_MAX_STANDARD = 12;
 const BACKTEST_MAX_HEAVY = 3;
+
+// Rate limiting يُطبق أولاً قبل تحليل الـ JSON body لحماية الذاكرة من فيضانات الطلبات
 app.use('/api', (req, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -140,6 +141,8 @@ app.use('/api', (req, res, next) => {
   }
   next();
 });
+
+app.use(express.json({ limit: '100kb' }));
 // تنظيف دوري: يمسح الإدخالات المنتهية + يفرض السقف الأقصى — يمنع تسريب الذاكرة
 // على السيرفرات الدائمة (Render وغيره) اللي بيفضل شغال أسابيع.
 function sweepRateBuckets(): void {
@@ -202,6 +205,7 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 
 const startedAt = Date.now();
 let lastScanAt = 0;
+let lastDigestAt = 0;
 let heavyJobRunning = false; // قفل حماية الـ event loop من طلبات الباك تست المتزامنة
 
 app.get('/api/health', (_req, res) => {
@@ -384,7 +388,7 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
   const closedCandles = candles1h.length > 1 ? candles1h.slice(0, -1) : candles1h;
   const snapshot = computeSnapshot(closedCandles);
   if (!snapshot) throw new Error(`بيانات غير كافية لحساب إشارة ${asset}`);
-  const [candles4h, candles1d, funding, oiChange, fng, whale, ticker, liquidity] = await Promise.all([
+  const [candles4h, candles1d, funding, oiChange, fng, whale, ticker, liquidity, orderBook, macroCalendar] = await Promise.all([
     getCandles4h(asset, 400),
     getCandles1d(asset, 400).catch(() => null),
     getFundingPct8h(asset),
@@ -393,6 +397,8 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
     getWhaleNetflow(asset),
     getTicker(asset),
     config.regimeEnabled ? getLiquidityRegime() : Promise.resolve(null),
+    getOrderBookDepth(asset).catch(() => null),
+    getMacroCalendarAsync().catch(() => null),
   ]);
   const htf = candles4h ? computeHtfSnapshot(candles4h) : null;
   const daily = candles1d ? computeDailyTrend(candles1d) : null;
@@ -415,6 +421,8 @@ async function computeSignalFor(asset: SupportedAsset, refresh = false) {
     entryZone,
     candles: closedCandles,
     tagBias,
+    orderBookDepth: orderBook,
+    macroCalendar,
   });
 }
 
@@ -977,13 +985,17 @@ async function runScanCycle(): Promise<void> {
     const paperBefore = snapshotPaperAccount(paperAccount);
     const paperSizingPrices = !paperEnginePaused && paperAccount.open.length > 0 ? await getOpenPaperPrices() : {};
 
-    // ─── اتجاه البيتكوين العام (BTC Macro Trend) لتطبيقه كبوابة حماية للعملات البديلة ───
+    // ─── اتجاه البيتكوين العام وفترات حظر الماكرو لحماية المحفظة ───
     let btcMacroTrend: { isBearish: boolean; summaryAr: string } | null = null;
-    try {
-      const [btcH4, btcD1] = await Promise.all([
+    const [btcCandlesResult, macroCalendar] = await Promise.all([
+      Promise.all([
         getCandles4h('BTC', 300).catch(() => null),
         getCandles1d('BTC', 300).catch(() => null),
-      ]);
+      ]).catch(() => [null, null]),
+      getMacroCalendarAsync().catch(() => null),
+    ]);
+    try {
+      const [btcH4, btcD1] = btcCandlesResult;
       const btcHtf = btcH4 ? computeHtfSnapshot(btcH4) : null;
       const btcDaily = btcD1 ? computeDailyTrend(btcD1) : null;
       if (btcHtf && btcDaily) {
@@ -1052,6 +1064,7 @@ async function runScanCycle(): Promise<void> {
           candles: closedCandles,
           btcMacroTrend,
           orderBookDepth: orderBook,
+          macroCalendar,
         });
 
         const gateBlocked = signal.regimeGateStatus !== 'CLEAR';
@@ -1316,18 +1329,17 @@ async function sendDailyDigestIfDue(): Promise<void> {
   const config = loadConfig();
   const tg = telegramRuntimeConfig();
   if (!config.digestEnabled || !tg.enabled) return;
-  const last = new Date(lastDigestAt);
-  const now = new Date();
-  const isNewDay = last.getFullYear() !== now.getFullYear() || last.getMonth() !== now.getMonth() || last.getDate() !== now.getDate();
+  const nowMs = Date.now();
+  const lastUtcDay = utcDayStart(lastDigestAt);
+  const nowUtcDay = utcDayStart(nowMs);
+  const isNewDay = nowUtcDay > lastUtcDay;
   if (!isNewDay) return;
   const result = await sendTelegramMessage(tg.token, tg.chatId, buildDailyDigestHtml());
   if (result.ok) {
-    lastDigestAt = Date.now();
+    lastDigestAt = nowMs;
     appendLog('INFO', 'Daily digest sent');
   }
 }
-
-let lastDigestAt = 0;
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {

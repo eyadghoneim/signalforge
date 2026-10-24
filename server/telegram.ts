@@ -96,6 +96,7 @@ let pollingActive = false;
 let pollingTimer: NodeJS.Timeout | null = null;
 let pollingOffset = 0;
 let pollingInitialized = false;
+let lastPollErrorLoggedAt = 0;
 
 /** Standard Quick Action Inline Keyboard for interactive Telegram experience */
 export const DEFAULT_TELEGRAM_KEYBOARD: TelegramInlineKeyboard = {
@@ -213,8 +214,12 @@ async function pollTelegramUpdates(
         }
       }
     }
-  } catch {
-    // Polling is best-effort; the next cycle retries without affecting scanning.
+  } catch (err) {
+    const now = Date.now();
+    if (now - lastPollErrorLoggedAt >= 5 * 60_000) {
+      lastPollErrorLoggedAt = now;
+      console.warn(`[telegram] polling network error (retrying): ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   if (pollingActive) pollingTimer = setTimeout(() => void pollTelegramUpdates(configProvider, handlers), 1000);

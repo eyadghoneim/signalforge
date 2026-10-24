@@ -89,7 +89,7 @@ export interface ConfigInfo {
   telegramChatId: string;
   hasTelegramToken: boolean;
   hasChatId: boolean;
-  gates: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean; btcMacro?: boolean };
+  gates: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean; btcMacro?: boolean; macro?: boolean };
   adminRequired: boolean;
   regimeEnabled: boolean;
   digestEnabled: boolean;

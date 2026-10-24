@@ -159,6 +159,12 @@ export function runBacktest(
   const equityCurve: { time: number; equity: number; buyHold: number }[] = [];
   const firstPrice = candles1h[WARMUP].close;
 
+  // Pre-index candle times for O(1) lookups during exit recording
+  const candleIndexByTime = new Map<number, number>();
+  for (let c = 0; c < candles1h.length; c++) {
+    candleIndexByTime.set(candles1h[c].time, c);
+  }
+
   for (let i = WARMUP; i < candles1h.length; i++) {
     const candle = candles1h[i];
 
@@ -310,10 +316,11 @@ export function runBacktest(
       signalScore: pos.score,
     });
     equity += pos.realizedPnl;
-    const idx = candles1h.findIndex((c) => c.time === time);
+    const idx = candleIndexByTime.get(time) ?? -1;
     const bh = idx >= 0 ? opts.initialEquity * (candles1h[idx].close / firstPrice) : opts.initialEquity;
     equityCurve.push({ time, equity: Number(equity.toFixed(2)), buyHold: Number(bh.toFixed(2)) });
-    cooldownUntil = idx + opts.cooldownCandles;
+    const exitIdx = idx >= 0 ? idx : (candles1h.length - 1);
+    cooldownUntil = exitIdx + opts.cooldownCandles;
   }
 
   // ─── صفقة مفتوحة في النهاية → تُقفل على آخر إغلاق ───

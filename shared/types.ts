@@ -23,7 +23,8 @@ export type RegimeGateStatus =
   | 'HTF_BLOCKED'
   | 'CHOP_BLOCKED'
   | 'RVOL_BLOCKED'
-  | 'SQUEEZE_BLOCKED';
+  | 'SQUEEZE_BLOCKED'
+  | 'MACRO_BLOCKED';
 
 export type SignalType = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NO_TRADE';
 export type SpotAction = 'SPOT_BUY' | 'SPOT_HOLD' | 'SPOT_SELL_ALL';
@@ -133,7 +134,7 @@ export interface BotConfig {
   telegramEnabled: boolean;
   telegramToken: string;
   telegramChatId: string;
-  gates: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean; btcMacro?: boolean };
+  gates: { htf: boolean; chop: boolean; rvol: boolean; funding: boolean; btcMacro?: boolean; macro?: boolean };
   adminToken: string;
   regimeEnabled: boolean;
   protection: ProtectionConfig;

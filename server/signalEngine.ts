@@ -9,6 +9,7 @@ import type {
   LiquidityRegime,
   DailyTrend,
   OrderBookDepth,
+  MacroCalendarResponse,
 } from '../shared/types';
 import {
   ENGINE_SIGNATURE,
@@ -34,6 +35,7 @@ export interface GateToggles {
   rvol: boolean;
   funding: boolean;
   btcMacro?: boolean;
+  macro?: boolean;
 }
 
 export interface BuildSignalContext {
@@ -56,6 +58,7 @@ export interface BuildSignalContext {
   candles?: import('../shared/types').Candle[] | null;
   btcMacroTrend?: { isBearish: boolean; summaryAr: string } | null;
   orderBookDepth?: OrderBookDepth | null;
+  macroCalendar?: MacroCalendarResponse | null;
 }
 
 // Log-scaled funding squeeze penalty (backlog item 5). Flat -12 replaced
@@ -258,6 +261,12 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
       regimeGateStatus = 'SQUEEZE_BLOCKED';
       blockReasonAr = `تمويل العقود مرتفع (${fundingPct8h.toFixed(3)}%/8h) — خطر تصفية عقود الشراء`;
       reasons.push({ tag: 'FUNDING', adjustment: 0, textAr: blockReasonAr });
+    }
+    // 5) بوابة فترات حظر الماكرو (Macro Blackout Gate: FOMC / CPI / NFP)
+    else if ((ctx.gates.macro ?? true) && ctx.macroCalendar?.isBlackoutActive) {
+      regimeGateStatus = 'MACRO_BLOCKED';
+      blockReasonAr = ctx.macroCalendar.lockReasonAr || 'فترة حظر ماكرو نشطة (FOMC / CPI / NFP) — الدخول محجوب لتجنب الانزلاقات العنيفة';
+      reasons.push({ tag: 'HTF', adjustment: 0, textAr: blockReasonAr });
     }
 
     if (regimeGateStatus !== 'CLEAR') {
