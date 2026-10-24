@@ -182,8 +182,8 @@ export class PostgresDurableStore implements DurableStore {
       await pool.end().catch(() => {});
       const errMsg = error instanceof Error ? error.message : String(error);
       PostgresDurableStore.lastPersistenceError = errMsg;
-      console.error(`Durable PostgreSQL storage unavailable; operating in degraded mode: ${errMsg}`);
-      throw new Error(`Database connection failed (degraded/fail-closed): ${errMsg}`);
+      console.error(`Durable PostgreSQL storage unavailable; falling back to local JSON (degraded mode): ${errMsg}`);
+      return null;
     }
   }
 
@@ -328,7 +328,10 @@ export class PostgresDurableStore implements DurableStore {
   }
 
   private enqueue(task: () => Promise<void>): void {
-    this.writeChain = this.writeChain.then(task).catch((error) => {
+    this.writeChain = this.writeChain.then(async () => {
+      await task();
+      PostgresDurableStore.lastPersistenceError = null;
+    }).catch((error) => {
       const errMsg = error instanceof Error ? error.message : String(error);
       PostgresDurableStore.lastPersistenceError = errMsg;
       console.error(`Durable storage write failed (degraded): ${errMsg}`);
