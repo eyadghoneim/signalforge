@@ -135,8 +135,10 @@ export default function MacroCalendarPanel({ lang }: Props) {
           <div>
             <span className="font-bold block text-sm">
               {isBlackout
-                ? (lang === 'ar' ? '⚠️ تداخل مع نافذة حدث مرجعي — تنبيه عرضي فقط، لا يوجد حظر فعلي' : '⚠️ Overlap with a reference event window — display-only, nothing is blocked')
-                : (lang === 'ar' ? '✅ لا تداخل مع نوافذ الأحداث المرجعية حالياً' : '✅ No overlap with reference event windows right now')}
+                ? (!data?.isReferenceSchedule
+                  ? (lang === 'ar' ? '🚨 نافذة حظر ماكرو حية (FOMC / CPI) — البوابة النشطة تحظر عقود الشراء تلقائياً' : '🚨 Live Macro Blackout window (FOMC / CPI) — Active gate blocks BUY orders automatically')
+                  : (lang === 'ar' ? '⚠️ تداخل مع نافذة حدث استرشادي — تنبيه عرضي، لا يوجد حظر فعلي' : '⚠️ Overlap with reference event window — advisory only, no live gate lock'))
+                : (lang === 'ar' ? '✅ لا توجد نوافذ حظر ماكرو نشطة حالياً — البوابات تعمل بحرية' : '✅ No active macro blackout windows right now — gates are clear')}
             </span>
             {isBlackout && data?.lockReasonAr && (
               <span className="text-[11px] text-rose-300 block mt-0.5">

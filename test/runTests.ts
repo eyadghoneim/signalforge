@@ -1895,6 +1895,17 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
   const pnlWithSell = dayRealizedR([dummyBuySignal, dummySellSignal], Date.now());
   assert(pnlBuy.realizedR === pnlWithSell.realizedR, 'PROTECTION: SPOT_SELL_ALL does not alter dayRealizedR');
   assert(pnlBuy.resolvedToday === pnlWithSell.resolvedToday, 'PROTECTION: SPOT_SELL_ALL is not counted in resolvedToday');
+
+  // 6) StoplossGuard and LossCooldown isolation from SPOT_SELL_ALL
+  const { stoplossGuardCount, lossCooldownActive } = await import('../server/protection');
+  const dummyStopSellSignal: any = {
+    ...dummySellSignal,
+    outcomes: { resolution: 'SL_FIRST', resolvedAt: Date.now() - 1800_000 },
+  };
+  const countBefore = stoplossGuardCount([dummyStopSellSignal], 'BTC', 6, Date.now());
+  assert(countBefore === 0, 'PROTECTION: SPOT_SELL_ALL stop-loss does not trigger StoplossGuard');
+  const cooldownBefore = lossCooldownActive([dummyStopSellSignal], 'BTC', 2, Date.now());
+  assert(cooldownBefore === false, 'PROTECTION: SPOT_SELL_ALL stop-loss does not trigger LossCooldown');
 }
 
 console.log(`\n=============================================`);

@@ -54,14 +54,11 @@ export async function getOpenInterestChange24h(asset: string): Promise<number | 
         const url = `https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=25`;
         const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
         if (res.ok) {
-          const arr = (await res.json()) as { sumOpenInterest: string }[];
+          const arr = (await res.json()) as { timestamp?: number; sumOpenInterest: string }[];
           if (Array.isArray(arr) && arr.length >= 2) {
-            const first = Number(arr[0].sumOpenInterest);
-            const last = Number(arr[arr.length - 1].sumOpenInterest);
-            if (Number.isFinite(first) && Number.isFinite(last) && first > 0) {
-              value = Math.round(((last - first) / first) * 1000) / 10;
-              noteProviderHealth('binance:oi', true);
-            }
+            const rows = arr.map((item, idx) => [item.timestamp ?? idx, Number(item.sumOpenInterest)]);
+            value = computeOiChangePercent(rows);
+            if (value !== null) noteProviderHealth('binance:oi', true);
           }
         }
       }

@@ -47,7 +47,7 @@ Two display-only layers deserve explicit framing:
 
 | Layer | Status |
 |---|---|
-| **Macro calendar tab** | A REFERENCE schedule of typical recurring US release times (CPI/FOMC/NFP/PPI/GDP) — it repeats daily as a template, is NOT a real economic calendar, shows no real prev/forecast values (`—`), and does NOT block any trading automatically. Verify actual dates from official sources. |
+| **Macro calendar tab** | Real-time US release calendar fed from TradingView live feeds (CPI/FOMC/NFP/PPI/GDP). When live data is active, the macro blackout gate automatically blocks BUY entries during high-impact release windows (`MACRO_BLOCKED`). When live data is unavailable, it falls back to a REFERENCE schedule of recurring release times as an advisory notice (display-only, does not block trades). Verify actual dates from official sources. |
 | **Order book depth tab** | Live Binance L2 depth when reachable. When every provider fails, the panel falls back to a deterministic synthetic model built from the last known price; it is labeled `isSimulated` with a visible warning banner, and the walls/volumes are NOT real orders. |
 
 ## Quick start
