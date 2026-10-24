@@ -12,6 +12,7 @@ const TAG_KEY: Record<string, TKey> = {
   FUNDING: 'tagFunding',
   BOLLINGER: 'tagBollinger',
   HTF: 'tagHtf',
+  MACRO: 'tagMacro',
   SMC: 'tagSmc',
   LIQUIDITY: 'tagLiquidity',
   WHALE: 'tagWhale',

@@ -146,6 +146,11 @@ export class PostgresDurableStore implements DurableStore {
     return PostgresDurableStore.lastPersistenceError;
   }
 
+  /** Test seam for exercising the ordered write/error state without a live database. */
+  public static createForTest(pool: Pool, fallbackConfig: BotConfig): PostgresDurableStore {
+    return new PostgresDurableStore(pool, fallbackConfig, [], [], {}, [], null);
+  }
+
   static async create(fallbackConfig: BotConfig): Promise<PostgresDurableStore | null> {
     const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || '';
     if (!connectionString.trim()) return null;

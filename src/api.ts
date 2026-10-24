@@ -65,6 +65,10 @@ export interface HealthInfo {
   version: string;
   engineSignature: string;
   persistence?: 'postgres' | 'local_json';
+  persistenceConfigured?: boolean;
+  persistenceStatus?: 'healthy' | 'degraded';
+  lastPersistenceError?: string | null;
+  paperEnginePaused?: boolean;
   lastScanAt: number;
   uptimeSec: number;
   protection?: {

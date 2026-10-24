@@ -39,6 +39,7 @@ export type ReasonTag =
   | 'FUNDING'
   | 'BOLLINGER'
   | 'HTF'
+  | 'MACRO'
   | 'MTF'
   | 'SMC'
   | 'LIQUIDITY'
@@ -142,6 +143,7 @@ export interface BotConfig {
   paperAlertsEnabled: boolean;
   telegramLang: 'ar' | 'en';
   paperEnginePaused: boolean;
+  lastDigestAt?: number;
 }
 
 // ─── تقارير الأداء والباك تست (مشتركة بين السيرفر والواجهة) ───

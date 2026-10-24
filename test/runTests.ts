@@ -1801,6 +1801,7 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
   });
   assert(macroBlocked.regimeGateStatus === 'MACRO_BLOCKED', 'MACRO-GATE: blocks BUY signal during active LIVE blackout');
   assert(macroBlocked.spotAction === 'SPOT_HOLD', 'MACRO-GATE: forces SPOT_HOLD during live blackout');
+  assert(macroBlocked.reasons.some((reason) => reason.tag === 'MACRO'), 'MACRO-GATE: blackout reason is labeled MACRO, not HTF');
 
   // 1b) Reference template schedule must NOT block trading (advisory only)
   const macroReference = buildSignal({
@@ -1910,10 +1911,46 @@ console.log('\n=== 31. إصلاحات التدقيق الشامل: Macro Blackou
 
 console.log('\n=== 32. اختبارات التخزين ووضع التدهور (Degraded Persistence) ===');
 {
+  const persistence = await import('../server/persistence');
   const { PostgresDurableStore } = await import('../server/durablePersistence');
-  // اختبار تسجيل الخطأ والتصفير التلقائي
-  const errBefore = PostgresDurableStore.getLastPersistenceError();
-  assert(errBefore === null || typeof errBefore === 'string', 'PERSISTENCE: getLastPersistenceError returns string or null');
+  const oldDatabaseUrl = process.env.DATABASE_URL;
+  const oldSupabaseUrl = process.env.SUPABASE_DB_URL;
+  try {
+    delete process.env.SUPABASE_DB_URL;
+    process.env.DATABASE_URL = 'postgres://signalforge:test@127.0.0.1:65439/signalforge';
+    const initialized = await persistence.initializeDurablePersistence();
+    const bootHealth = persistence.getPersistenceHealth();
+    assert(initialized === false, 'PERSISTENCE: failed PostgreSQL boot returns false');
+    assert(bootHealth.databaseConfigured === true, 'PERSISTENCE: configured database is remembered after boot failure');
+    assert(bootHealth.mode === 'local_json', 'PERSISTENCE: failed boot never reports PostgreSQL as active');
+    assert(bootHealth.status === 'degraded', 'PERSISTENCE: failed boot reports degraded status');
+    assert(typeof bootHealth.lastError === 'string' && bootHealth.lastError.length > 0, 'PERSISTENCE: boot error remains visible without a store');
+    assert(persistence.isPersistenceDegraded(), 'PERSISTENCE: degraded guard is true after failed boot');
+
+    let failWrites = true;
+    const fakePool = {
+      query: async (sql: unknown) => {
+        const text = typeof sql === 'string' ? sql : '';
+        if (failWrites && text.includes('INSERT INTO')) throw new Error('synthetic write failure');
+        return { rows: [] };
+      },
+      end: async () => {},
+    } as unknown as import('pg').Pool;
+    const store = PostgresDurableStore.createForTest(fakePool, persistence.DEFAULT_CONFIG);
+    store.appendLog('WARN', 'synthetic failure');
+    await store.flush();
+    assert(PostgresDurableStore.getLastPersistenceError() === 'synthetic write failure', 'PERSISTENCE: write failure is recorded');
+    failWrites = false;
+    store.appendLog('INFO', 'synthetic recovery');
+    await store.flush();
+    assert(PostgresDurableStore.getLastPersistenceError() === null, 'PERSISTENCE: successful write clears the previous error');
+    await store.close();
+  } finally {
+    if (oldDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = oldDatabaseUrl;
+    if (oldSupabaseUrl === undefined) delete process.env.SUPABASE_DB_URL;
+    else process.env.SUPABASE_DB_URL = oldSupabaseUrl;
+  }
 }
 
 console.log(`\n=============================================`);

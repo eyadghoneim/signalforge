@@ -40,6 +40,8 @@ import {
   listLessons,
   initializeDurablePersistence,
   getDurablePersistence,
+  getPersistenceHealth,
+  isPersistenceDegraded,
   closeDurablePersistence,
 } from './persistence';
 import {
@@ -187,13 +189,14 @@ function allowBacktestRequest(req: express.Request, res: express.Response, heavy
 const LOCAL_ADDRS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const config = loadConfig();
-  const token = (config.adminToken || process.env.BOT_ADMIN_TOKEN || '').trim();
-  // بدون توكن: يُسمح بالوصول الإداري من الجهاز المحلي فقط (سيناريو التطوير).
-  // أي طلب خارجي يُرفض — بدل الفتح الكامل اللي كان يسيب مسارات الإدارة مكشوفة على الاستضافة السحابية.
+  // Environment configuration wins so a leaked/old persisted token cannot block rotation.
+  const token = (process.env.BOT_ADMIN_TOKEN || config.adminToken || '').trim();
+  // Local bypass is development-only. Production must fail closed even when a proxy
+  // reports a loopback address or forwards a spoofed X-Forwarded-For value.
   if (!token) {
     const remote = req.ip || req.socket.remoteAddress || '';
-    if (LOCAL_ADDRS.has(remote)) return next();
-    res.status(401).json({ ok: false, error: 'Unauthorized: Admin token not configured; remote admin disabled' });
+    if (IS_DEV && LOCAL_ADDRS.has(remote)) return next();
+    res.status(401).json({ ok: false, error: 'Unauthorized: Admin token required' });
     return;
   }
   const provided = String(req.headers['x-bot-admin-token'] || '').trim();
@@ -215,15 +218,16 @@ app.get('/api/health', (_req, res) => {
   const breaker = evaluateCircuitBreaker(signals, protection, now);
   const exposure = currentExposure(signals, protection);
   const choppy = choppyCooldownState(paperAccount.closed, protection.choppyLossStreak, protection.choppyCooldownHours, now);
-  const durable = getDurablePersistence();
-  const persistenceLastError = durable && typeof durable.getLastError === 'function' ? durable.getLastError() : null;
+  const persistence = getPersistenceHealth();
   res.json({
     ok: true,
     version: VERSION,
     engineSignature: ENGINE_SIGNATURE,
-    persistence: durable ? 'postgres' : 'local_json',
-    persistenceStatus: persistenceLastError ? 'degraded' : 'healthy',
-    lastPersistenceError: persistenceLastError,
+    persistence: persistence.mode,
+    persistenceConfigured: persistence.databaseConfigured,
+    persistenceStatus: persistence.status,
+    lastPersistenceError: persistence.lastError,
+    paperEnginePaused,
     lastScanAt,
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     protection: {
@@ -237,6 +241,40 @@ app.get('/api/health', (_req, res) => {
         active: choppy.active,
         consecutiveLosses: choppy.consecutiveLosses,
         cooldownUntil: choppy.cooldownUntil,
+      },
+    },
+  });
+});
+
+app.get('/api/ready', (_req, res) => {
+  const persistence = getPersistenceHealth();
+  const config = loadConfig();
+  const now = Date.now();
+  const scanWindowMs = Math.max(5 * 60_000, Math.max(30, config.scanIntervalSeconds) * 3_000);
+  const scanAgeMs = lastScanAt > 0 ? now - lastScanAt : null;
+  const scanReady = scanAgeMs !== null && scanAgeMs >= 0 && scanAgeMs <= scanWindowMs;
+  const persistenceReady = persistence.status === 'healthy';
+  const ready = persistenceReady && scanReady;
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
+    ready,
+    checks: {
+      persistence: {
+        ok: persistenceReady,
+        mode: persistence.mode,
+        configured: persistence.databaseConfigured,
+        status: persistence.status,
+        lastError: persistence.lastError,
+      },
+      scan: {
+        ok: scanReady,
+        lastScanAt,
+        ageMs: scanAgeMs,
+        maxAgeMs: scanWindowMs,
+      },
+      paper: {
+        ok: !isPersistenceDegraded(),
+        paused: paperEnginePaused,
       },
     },
   });
@@ -618,7 +656,7 @@ app.get('/api/config', (_req, res) => {
       regimeEnabled: config.regimeEnabled,
       digestEnabled: config.digestEnabled,
       paperAlertsEnabled: config.paperAlertsEnabled,
-      paperEnginePaused: config.paperEnginePaused,
+      paperEnginePaused,
       telegramLang: config.telegramLang,
       protection: config.protection,
     },
@@ -834,8 +872,12 @@ function buildTelegramHistoryMessage(): string {
 function buildTelegramPingMessage(): string {
   const uptimeHours = (process.uptime() / 3600).toFixed(1);
   const memMb = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
-  const durable = getDurablePersistence();
-  const dbStatus = durable ? '🟢 متصلة بنجاح (PostgreSQL / Supabase)' : '🟡 تخزين محلي (Local Filesystem)';
+  const persistence = getPersistenceHealth();
+  const dbStatus = persistence.status === 'degraded'
+    ? `🔴 متدهورة: ${persistence.lastError || 'خطأ غير معروف'}`
+    : persistence.mode === 'postgres'
+      ? '🟢 متصلة بنجاح (PostgreSQL / Supabase)'
+      : '🟡 تخزين محلي (Local Filesystem)';
   return [
     '⚡ <b>[حالة السيرفر وقاعدة البيانات — SignalForge]</b>',
     '',
@@ -961,6 +1003,9 @@ async function runScanCycle(): Promise<void> {
   try {
     const config = loadConfig();
     const protection = config.protection;
+    // Never create or mutate Paper state while a configured durable database is degraded.
+    // Local JSON remains available for read-only diagnostics, but it is not a durable Paper ledger.
+    if (isPersistenceDegraded()) paperEnginePaused = true;
     const nowMs = Date.now();
     let signalsNow = listSignals(500);
     const tagBias = loadTagBias();
@@ -1342,6 +1387,7 @@ async function sendDailyDigestIfDue(): Promise<void> {
   const result = await sendTelegramMessage(tg.token, tg.chatId, buildDailyDigestHtml());
   if (result.ok) {
     lastDigestAt = nowMs;
+    saveConfig({ lastDigestAt: nowMs });
     appendLog('INFO', 'Daily digest sent');
   }
 }
@@ -1380,10 +1426,15 @@ async function main(): Promise<void> {
     // not the JSON snapshot that existed before the database was initialized.
     paperAccount = loadPaperAccount();
     appendLog('INFO', 'Durable PostgreSQL storage enabled');
-  } else if (process.env.DATABASE_URL || process.env.SUPABASE_DB_URL) {
-    appendLog('WARN', 'DATABASE_URL was provided but durable storage could not start; local JSON fallback is active');
   }
-  paperEnginePaused = loadConfig().paperEnginePaused;
+  const persistedConfig = loadConfig();
+  const persistence = getPersistenceHealth();
+  const persistenceBlocksPaper = persistence.databaseConfigured && persistence.status === 'degraded';
+  if (persistenceBlocksPaper) {
+    appendLog('ERROR', `Durable PostgreSQL storage unavailable at boot; Paper engine is paused (${persistence.lastError || 'unknown error'})`);
+  }
+  paperEnginePaused = persistedConfig.paperEnginePaused || persistenceBlocksPaper;
+  lastDigestAt = Number(persistedConfig.lastDigestAt) || 0;
 
   if (IS_DEV) {
     const { createServer: createViteServer } = await import('vite');
@@ -1426,6 +1477,10 @@ async function main(): Promise<void> {
         return '⏸️ <b>Paper engine paused</b>\nتم إيقاف محرك التداول الورقي مؤقتًا. / Paper execution is paused.';
       },
       resume: () => {
+        if (isPersistenceDegraded()) {
+          paperEnginePaused = true;
+          return '⚠️ <b>Paper engine remains paused</b>\nالتخزين الدائم غير متاح حالياً؛ لن يتم استئناف Paper قبل عودة PostgreSQL. / Durable persistence is degraded; Paper execution cannot resume yet.';
+        }
         paperEnginePaused = false;
         saveConfig({ paperEnginePaused: false });
         appendLog('INFO', 'Paper engine resumed from Telegram');

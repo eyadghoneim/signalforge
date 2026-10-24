@@ -31,6 +31,10 @@ async function main(): Promise<void> {
     check('health responds ok:true', r.status === 200 && r.json?.ok === true);
     check('health exposes protection state', !!r.json?.protection && typeof r.json.protection.breakerTripped === 'boolean');
     check('health exposes persistence mode', r.json?.persistence === 'postgres' || r.json?.persistence === 'local_json');
+    check('health exposes persistence status', r.json?.persistenceStatus === 'healthy' || r.json?.persistenceStatus === 'degraded');
+    check('health exposes Paper pause state', typeof r.json?.paperEnginePaused === 'boolean');
+    const ready = await j('/api/ready');
+    check('readiness distinguishes ready/not-ready', (ready.status === 200 || ready.status === 503) && typeof ready.json?.ready === 'boolean');
   } catch {
     console.error(`  Server not reachable on ${BASE} - start it first with: npm run dev`);
     process.exit(2);
@@ -58,6 +62,7 @@ async function main(): Promise<void> {
 
   const cfg = await j('/api/config');
   check('config exposes protection', cfg.json?.ok === true && !!cfg.json?.config?.protection);
+  check('config exposes effective Paper pause state', typeof cfg.json?.config?.paperEnginePaused === 'boolean');
 
   const prov = await j('/api/providers');
   check('providers responds', prov.json?.ok === true && Array.isArray(prov.json?.providers));

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { BotConfig, StoredSignal, SignalOutcomes, LearningLesson } from '../shared/types';
 import { DEFAULT_PROTECTION } from './protection';
-import { createDurableStore, type DurableStore } from './durablePersistence';
+import { createDurableStore, PostgresDurableStore, type DurableStore } from './durablePersistence';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -13,17 +13,57 @@ const LEARNING_FILE = path.join(DATA_DIR, 'learning.json');
 const LESSONS_FILE = path.join(DATA_DIR, 'lessons.json');
 
 let durableStore: DurableStore | null = null;
+let persistenceDatabaseConfigured = false;
+let bootPersistenceError: string | null = null;
+
+export interface PersistenceHealth {
+  mode: 'postgres' | 'local_json';
+  status: 'healthy' | 'degraded';
+  lastError: string | null;
+  databaseConfigured: boolean;
+}
 
 export async function initializeDurablePersistence(): Promise<boolean> {
   if (durableStore) return true;
-  const store = await createDurableStore(DEFAULT_CONFIG);
-  if (!store) return false;
-  durableStore = store;
-  return true;
+  persistenceDatabaseConfigured = Boolean(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL);
+  if (!persistenceDatabaseConfigured) {
+    bootPersistenceError = null;
+    return false;
+  }
+
+  try {
+    const store = await createDurableStore(DEFAULT_CONFIG);
+    if (!store) {
+      bootPersistenceError = PostgresDurableStore.getLastPersistenceError() || 'Durable PostgreSQL storage could not be initialized';
+      return false;
+    }
+    durableStore = store;
+    bootPersistenceError = null;
+    return true;
+  } catch (error) {
+    bootPersistenceError = error instanceof Error ? error.message : String(error);
+    return false;
+  }
 }
 
 export function getDurablePersistence(): DurableStore | null {
   return durableStore;
+}
+
+export function getPersistenceHealth(): PersistenceHealth {
+  const storeError = durableStore && typeof durableStore.getLastError === 'function' ? durableStore.getLastError() : null;
+  const lastError = storeError || bootPersistenceError;
+  return {
+    mode: durableStore ? 'postgres' : 'local_json',
+    status: lastError ? 'degraded' : 'healthy',
+    lastError,
+    databaseConfigured: persistenceDatabaseConfigured,
+  };
+}
+
+export function isPersistenceDegraded(): boolean {
+  const state = getPersistenceHealth();
+  return state.databaseConfigured && state.status === 'degraded';
 }
 
 export async function closeDurablePersistence(): Promise<void> {
@@ -66,6 +106,7 @@ export const DEFAULT_CONFIG: BotConfig = {
   paperAlertsEnabled: true,
   telegramLang: 'ar',
   paperEnginePaused: false,
+  lastDigestAt: 0,
   protection: DEFAULT_PROTECTION,
 };
 

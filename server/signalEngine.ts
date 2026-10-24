@@ -267,7 +267,7 @@ export function buildSignal(ctx: BuildSignalContext): Signal {
     else if ((ctx.gates.macro ?? true) && ctx.macroCalendar?.isBlackoutActive && !ctx.macroCalendar?.isReferenceSchedule) {
       regimeGateStatus = 'MACRO_BLOCKED';
       blockReasonAr = ctx.macroCalendar.lockReasonAr || 'فترة حظر ماكرو نشطة (FOMC / CPI / NFP) — الدخول محجوب لتجنب الانزلاقات العنيفة';
-      reasons.push({ tag: 'HTF', adjustment: 0, textAr: blockReasonAr });
+      reasons.push({ tag: 'MACRO', adjustment: 0, textAr: blockReasonAr });
     }
 
     if (regimeGateStatus !== 'CLEAR') {

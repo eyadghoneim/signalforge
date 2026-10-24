@@ -39,6 +39,7 @@ const QUALITY_TAG_KEYS: Record<string, TKey> = {
   FUNDING: 'tagFunding',
   BOLLINGER: 'tagBollinger',
   HTF: 'tagHtf',
+  MACRO: 'tagMacro',
   MTF: 'tagMtf',
   SMC: 'tagSmc',
   LIQUIDITY: 'tagLiquidity',
