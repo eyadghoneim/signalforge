@@ -215,11 +215,15 @@ app.get('/api/health', (_req, res) => {
   const breaker = evaluateCircuitBreaker(signals, protection, now);
   const exposure = currentExposure(signals, protection);
   const choppy = choppyCooldownState(paperAccount.closed, protection.choppyLossStreak, protection.choppyCooldownHours, now);
+  const durable = getDurablePersistence();
+  const persistenceLastError = durable && typeof durable.getLastError === 'function' ? durable.getLastError() : null;
   res.json({
     ok: true,
     version: VERSION,
     engineSignature: ENGINE_SIGNATURE,
-    persistence: getDurablePersistence() ? 'postgres' : 'local_json',
+    persistence: durable ? 'postgres' : 'local_json',
+    persistenceStatus: persistenceLastError ? 'degraded' : 'healthy',
+    lastPersistenceError: persistenceLastError,
     lastScanAt,
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     protection: {

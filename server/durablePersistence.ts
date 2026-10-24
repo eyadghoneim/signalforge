@@ -41,6 +41,7 @@ export interface DurableStore {
   savePaperAccount(account: PaperAccount): void;
   flush(): Promise<void>;
   close(): Promise<void>;
+  getLastError?(): string | null;
 }
 
 type StateKey = 'config' | 'learning' | 'paper';
@@ -139,6 +140,12 @@ export class PostgresDurableStore implements DurableStore {
     this.paper = paper;
   }
 
+  private static lastPersistenceError: string | null = null;
+
+  public static getLastPersistenceError(): string | null {
+    return PostgresDurableStore.lastPersistenceError;
+  }
+
   static async create(fallbackConfig: BotConfig): Promise<PostgresDurableStore | null> {
     const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || '';
     if (!connectionString.trim()) return null;
@@ -148,8 +155,6 @@ export class PostgresDurableStore implements DurableStore {
       max: Number(process.env.DATABASE_POOL_MAX) > 0 ? Number(process.env.DATABASE_POOL_MAX) : 4,
       connectionTimeoutMillis: 8_000,
       idleTimeoutMillis: 30_000,
-      // Supabase's external connection requires TLS. Strict certificate checking
-      // is on by default whenever a CA chain is provided; see buildPgSslConfig().
       ssl: buildPgSslConfig(),
     });
 
@@ -161,6 +166,7 @@ export class PostgresDurableStore implements DurableStore {
       const signals = await PostgresDurableStore.readSignals(pool);
       const logs = await PostgresDurableStore.readLogs(pool);
       const lessons = await PostgresDurableStore.readLessons(pool);
+      PostgresDurableStore.lastPersistenceError = null;
       return new PostgresDurableStore(
         pool,
         state.config ? ({ ...fallbackConfig, ...state.config } as BotConfig) : fallbackConfig,
@@ -174,8 +180,10 @@ export class PostgresDurableStore implements DurableStore {
       );
     } catch (error) {
       await pool.end().catch(() => {});
-      console.error(`Durable PostgreSQL storage unavailable; using local JSON fallback: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
+      const errMsg = error instanceof Error ? error.message : String(error);
+      PostgresDurableStore.lastPersistenceError = errMsg;
+      console.error(`Durable PostgreSQL storage unavailable; operating in degraded mode: ${errMsg}`);
+      throw new Error(`Database connection failed (degraded/fail-closed): ${errMsg}`);
     }
   }
 
@@ -321,7 +329,9 @@ export class PostgresDurableStore implements DurableStore {
 
   private enqueue(task: () => Promise<void>): void {
     this.writeChain = this.writeChain.then(task).catch((error) => {
-      console.error(`Durable storage write failed: ${error instanceof Error ? error.message : String(error)}`);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      PostgresDurableStore.lastPersistenceError = errMsg;
+      console.error(`Durable storage write failed (degraded): ${errMsg}`);
     });
   }
 
@@ -471,6 +481,10 @@ export class PostgresDurableStore implements DurableStore {
         ['paper', JSON.stringify(account), Date.now()],
       );
     });
+  }
+
+  getLastError(): string | null {
+    return PostgresDurableStore.getLastPersistenceError();
   }
 
   async flush(): Promise<void> {
