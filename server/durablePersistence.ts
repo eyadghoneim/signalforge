@@ -89,23 +89,17 @@ function readPgCaCert(): string | null {
 
 /**
  * TLS policy for the managed Postgres connection.
- * Strict certificate validation is the DEFAULT whenever a CA chain is available
- * (PGSSL_CA / PGSSL_CA_FILE). Deployments can force either side explicitly with
- * PGSSL_STRICT=1 (always strict) or PGSSL_STRICT=0 (compatible legacy default).
- * Without any CA, the compatible default stays rejectUnauthorized:false because
- * platform-managed databases (Supabase/Neon poolers) present CAs Node does not
- * trust out of the box.
+ * Certificate validation is ON by default (rejectUnauthorized:true). If the provider's CA is
+ * not in Node's trust store, supply it with PGSSL_CA / PGSSL_CA_FILE. As an explicit,
+ * logged opt-out for providers whose CA you cannot supply, set PGSSL_STRICT=0.
  */
 function buildPgSslConfig(): { rejectUnauthorized: boolean; ca?: string } {
   const ca = readPgCaCert();
-  const raw = String(process.env.PGSSL_STRICT || '').trim();
-  const explicit =
-    raw === '1' || raw.toLowerCase() === 'true' ? true : raw === '0' || raw.toLowerCase() === 'false' ? false : null;
-  const rejectUnauthorized = explicit ?? Boolean(ca);
-  // عند الاستخدام الافتراضي غير الصارم، ننبه مرة واحدة صريحة — المشغل يقرر:
-  // اضبط PGSSL_CA أو PGSSL_STRICT=1 لو مزود قاعدة البيانات يدعم شهادات موثوقة.
+  const raw = String(process.env.PGSSL_STRICT || '').trim().toLowerCase();
+  const optOut = raw === '0' || raw === 'false';
+  const rejectUnauthorized = !optOut;
   if (!rejectUnauthorized) {
-    console.warn('[durablePersistence] PG SSL running WITHOUT certificate validation (rejectUnauthorized:false). Set PGSSL_CA or PGSSL_STRICT=1 to enforce strict TLS.');
+    console.warn('[durablePersistence] PG SSL certificate validation DISABLED by PGSSL_STRICT=0 (rejectUnauthorized:false). Prefer setting PGSSL_CA.');
   }
   return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
 }

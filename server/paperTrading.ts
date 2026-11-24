@@ -257,6 +257,7 @@ export function markToMarket(
       continue;
     }
 
+    const stopAtCandleStart = p.stop;
     // 1) الوقف أولاً (متحفظ — نفس ترتيب الباك تست بالضبط) بانزلاق الثوابت
     if (candle.low <= p.stop) {
       const slippage = p.atrEntry * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
@@ -279,6 +280,13 @@ export function markToMarket(
       // رفع الوقف فوراً إلى نقطة التعادل + تغطية الرسوم (True Breakeven)
       const breakevenPlusFees = p.entry * (1 + PAPER_EXECUTION.FEE_RATE * 2);
       p.stop = Math.max(p.stop, breakevenPlusFees);
+      // Same-candle ambiguity (same worst-case rule as the backtest): if this candle's low
+      // also reaches the new break-even stop, assume the remainder was stopped out.
+      if (candle.low <= p.stop) {
+        const slippage = p.atrEntry * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
+        closeRemainder(acct, p, p.stop - slippage, 'SL', nowMs);
+        continue;
+      }
     }
     if (p.tp1Taken && !p.tp2Taken && candle.high >= p.tp2) {
       const out = p.qtyOpen * TP2_RATIO;
@@ -311,6 +319,12 @@ export function markToMarket(
       const offset = (p.tp2Taken || profitAtr >= TRAILING.TIGHT_AFTER_ATR) ? TRAILING.TIGHT_OFFSET_ATR : TRAILING.OFFSET_ATR;
       const trail = p.trailPeak - p.atrEntry * offset;
       if (trail > p.stop) p.stop = round2(trail);
+    }
+    // Same-candle ambiguity for the trail (same worst case as the backtest).
+    if (p.stop > stopAtCandleStart && candle.low <= p.stop) {
+      const slippage = p.atrEntry * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
+      closeRemainder(acct, p, p.stop - slippage, 'SL', nowMs);
+      continue;
     }
 
     surviving.push(p);

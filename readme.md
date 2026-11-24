@@ -70,8 +70,22 @@ Telegram notifications are optional - configure a bot token and chat id in the d
 **paper-only** commands: `/status`, `/balance`, `/pause`, `/resume`, and `/panic`. The bot never
 creates an exchange order; `/panic` closes only paper positions using the latest market ticker.
 
-Admin endpoints (`/api/config`, paper reset, telegram test) require `BOT_ADMIN_TOKEN` on any
-non-local deployment. Without a token they stay open to localhost only.
+Admin endpoints (`/api/config`, paper reset, telegram test, `/api/backtest`) and the account-state
+read endpoints (`/api/paper`, `/api/logs`, `/api/learning`, `/api/attribution/summary`) require
+`BOT_ADMIN_TOKEN` (sent as `x-bot-admin-token`; enter it in Settings in the dashboard). Without a
+token they stay open to localhost in development only and fail closed in production. Set
+`PUBLIC_READ_ENDPOINTS=1` only if you deliberately want the four read endpoints public.
+Market and signal endpoints stay public. Production responses send HSTS (effective over HTTPS only).
+
+**Database TLS:** certificate validation is on by default. If your provider's CA is not in Node's
+trust store (Supabase poolers are the usual case), set `PGSSL_CA` or `PGSSL_CA_FILE` to the
+provider CA. `PGSSL_STRICT=0` is an explicit, logged opt-out.
+
+**Backtest simulation assumptions:** OHLC candles do not say whether the high or the low came first.
+The simulator checks the stop first, and when a candle both takes TP1 (or raises the trailing stop)
+and its low reaches the new stop, it assumes the stop was hit on that same candle. This is a
+conservative assumption, not proof of the real price path. Note `/api/backtest` still computes on the
+server's main thread (one job at a time, rate limited), so it can briefly delay other requests.
 
 ### Free durable storage (Supabase)
 

@@ -1115,17 +1115,39 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   // 4) جني TP1 ثم وقف تعادل (لا خسارة بعد TP1)
   const acct1 = defaultPaperAccount();
   const a1 = openBuy(acct1, sig, 0.5, 1000);
-  // شمعة تجيب TP1 (102) ثم ترتد وتلمس فقط 100 (فوق وقف التعادل)
+  // شمعة تجيب TP1 (102) ثم ترتد وتلمس فقط 101.5 (فوق وقف التعادل والوقف المتحرك)
   const post2 = markToMarket(
     a1,
     { BTC: 101 },
-    { BTC: { open: 100, high: 103, low: 99.8, close: 101, time: 2000 } },
+    { BTC: { open: 100, high: 103, low: 102.9, close: 103, time: 2000 } },
     3000,
   );
   const stillOpen = post2.open[0];
   assert(stillOpen && stillOpen.tp1Taken, 'TP1 taken');
   assert(stillOpen.stop >= stillOpen.entry, 'stop moved to break-even after TP1');
   assert(post2.cash > acct1.cash - post2.open[0].qty * post2.open[0].entry, 'TP1 proceeds returned to cash');
+
+  // 4b) نفس الشمعة تجيب TP1 ثم تلمس وقف التعادل: الترتيب داخل الشمعة مجهول، نفترض الأسوأ (خروج بالوقف)
+  const acct1b = defaultPaperAccount();
+  const a1b = openBuy(acct1b, sig, 0.5, 1000);
+  const post2b = markToMarket(
+    a1b,
+    { BTC: 100.5 },
+    { BTC: { open: 100, high: 103, low: 99.8, close: 100.5, time: 2000 } },
+    3000,
+  );
+  assert(post2b.open.length === 0 && post2b.closed.length === 1, 'same-candle TP1 then stop touch exits conservatively');
+
+  // 4c) الوقف المتحرك: الشمعة اللي ترفع الرحل ولمستها السفلى توصله = خروج (أسوأ حالة)
+  const acct1c = defaultPaperAccount();
+  const a1c = openBuy(acct1c, sig, 0.5, 1000);
+  const post2c = markToMarket(
+    a1c,
+    { BTC: 100.5 },
+    { BTC: { open: 100, high: 101.9, low: 99.9, close: 100.5, time: 2000 } },
+    3000,
+  );
+  assert(post2c.open.length <= 1, 'trailing ratchet same-candle case does not crash');
 
   // 5) بيع/خروج يقفل المركز
   const closedBySell = closeBySellSignal(post2, 'BTC', 101, 4000);
@@ -1195,7 +1217,7 @@ console.log('\n=== 22. إشعارات أحداث المحفظة الورقية (
   const afterTp1 = (await import('../server/paperTrading')).markToMarket(
     bWork,
     { ETH: 2010 },
-    { ETH: { open: 2000, high: 2021, low: 1995, close: 2010, time: 2000 } },
+    { ETH: { open: 2000, high: 2021, low: 2008, close: 2010, time: 2000 } },
     3000,
   );
   const evs2 = diffPaperEvents(bBefore, afterTp1);
@@ -1482,7 +1504,8 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
     const bt = runBacktest('BTC', candles, { riskPercent: 1, feePercent: 0, cooldownCandles: 50, initialEquity: 10000, entryMinScore: 0, adxFloor: 0, slippagePercent: 0 });
     assert(bt.totalTrades >= 1, `BUG-2 integration: engine opened a position in the crafted trend (got ${bt.totalTrades})`);
     const tr = bt.trades[0];
-    assert(tr.exitReason === 'TP1_SL', `BUG-2 integration: trailing stop fired after TP1 (got ${tr.exitReason})`);
+    // Worst-case same-candle rule: the trail may fire on the candle that ratchets it (SL or TP1_SL).
+    assert(tr.exitReason === 'TP1_SL' || tr.exitReason === 'SL', `BUG-2 integration: trailing stop fired (got ${tr.exitReason})`);
     assert(tr.exitAvgPrice > tr.entry, `BUG-2 integration: trailed exit locked profit ABOVE entry (exit ${tr.exitAvgPrice} vs entry ${tr.entry})`);
     assert(tr.pnlUsd > 0, `BUG-2 integration: trailing lock is profitable (got ${tr.pnlUsd})`);
   }

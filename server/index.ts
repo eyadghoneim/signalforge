@@ -107,6 +107,8 @@ if (!IS_DEV) {
       : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none';";
     res.setHeader('Content-Security-Policy', csp);
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // HSTS: browsers ignore it over plain http, so it only takes effect behind HTTPS.
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
   });
@@ -202,6 +204,14 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
   const provided = String(req.headers['x-bot-admin-token'] || '').trim();
   if (provided.length === token.length && timingSafeEqual(Buffer.from(provided), Buffer.from(token))) return next();
   res.status(401).json({ ok: false, error: 'Unauthorized: Invalid Admin Token' });
+}
+
+// Read access for data that reveals account state (paper account, logs, learning, attribution).
+// Same token as admin. Set PUBLIC_READ_ENDPOINTS=1 to keep these readable without a token
+// (only for a demo you are happy to expose publicly).
+function requireReadAccess(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (String(process.env.PUBLIC_READ_ENDPOINTS || '').trim() === '1') return next();
+  return requireAdmin(req, res, next);
 }
 
 // ═══════════════════ API ═══════════════════
@@ -353,7 +363,7 @@ app.get('/api/liquidations/:asset?', async (req, res) => {
 });
 
 // ─── المحفظة الورقية: قراءة الحالة الحية ───
-app.get('/api/paper', (_req, res) => {
+app.get('/api/paper', requireReadAccess, (_req, res) => {
   res.json({
     ok: true,
     account: {
@@ -487,10 +497,10 @@ app.get('/api/signals', (req, res) => {
   res.json({ ok: true, signals: listSignals(limit) });
 });
 
-app.get('/api/attribution/summary', (_req, res) => {
+app.get('/api/attribution/summary', requireReadAccess, (_req, res) => {
   res.json({ ok: true, summary: computeAttributionSummary(listSignals(500)) });
 });
-app.get('/api/learning', (_req, res) => {
+app.get('/api/learning', requireReadAccess, (_req, res) => {
   const allSignals = listSignals(500);
   const state = computeLearningState(allSignals);
   res.json({
@@ -503,11 +513,11 @@ app.get('/api/learning', (_req, res) => {
   });
 });
 
-app.get('/api/logs', (_req, res) => {
+app.get('/api/logs', requireReadAccess, (_req, res) => {
   res.json({ ok: true, logs: listLogs(60) });
 });
 
-app.post('/api/backtest', async (req, res) => {
+app.post('/api/backtest', requireAdmin, async (req, res) => {
   const body = (req.body || {}) as { asset?: string; days?: number; robustness?: boolean; walkforward?: boolean };
   const asset = String(body.asset || 'BTC').toUpperCase() as SupportedAsset;
   if (!SUPPORTED_ASSETS.includes(asset)) return res.status(400).json({ ok: false, error: 'unsupported asset' });
@@ -710,10 +720,15 @@ app.post('/api/config', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/telegram/test', requireAdmin, async (_req, res) => {
+app.post('/api/telegram/test', requireAdmin, async (req, res) => {
   const config = loadConfig();
-  const token = config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
-  const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
+  // Credentials typed in the settings form (not yet saved) take priority, so the test checks
+  // what the user sees; otherwise fall back to the saved config / environment.
+  const body = (req.body || {}) as { token?: unknown; chatId?: unknown };
+  const bodyToken = typeof body.token === 'string' ? body.token.trim() : '';
+  const bodyChatId = typeof body.chatId === 'string' ? body.chatId.trim() : '';
+  const token = bodyToken || config.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '';
+  const chatId = bodyChatId || config.telegramChatId || process.env.TELEGRAM_CHAT_ID || '';
   try {
     const result = await sendTelegramMessage(token, chatId, buildTestMessageHtml());
     appendLog(result.ok ? 'INFO' : 'WARN', `Telegram test: ${result.ok ? 'sent' : `failed (${result.error})`}`);

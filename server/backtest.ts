@@ -177,6 +177,7 @@ export function runBacktest(
 
     // ─── 1) إدارة مركز مفتوح (افتُتح في شمعة سابقة) ───
     if (position) {
+      const stopAtCandleStart = position.stop;
       // الوقف أولاً (متحفظ) — مع معالجة فجوة الفتح + انزلاق تنفيذي واقعي
       if (candle.low <= position.stop) {
         // انزلاق وقف السوق: أمر Stop-Market في الواقع يتنفذ أسوأ من سعر الوقف
@@ -199,19 +200,31 @@ export function runBacktest(
           position.remainingRatio -= 0.5;
           position.tp1Taken = true;
           position.stop = position.entry; // وقف تعادل بعد TP1
+          // Same-candle ambiguity: OHLC does not say whether the high that hit TP1 came before
+          // this candle's low. Worst case: if the low also reaches the new break-even stop,
+          // the rest of the position is stopped out on this same candle (stop slippage applies).
+          if (candle.low <= position.stop) {
+            const stopSlippage = position.trailAtr * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
+            const exit = position.stop - stopSlippage;
+            const qtyRest = position.qty * position.remainingRatio;
+            position.realizedPnl += (exit - position.entry) * qtyRest - position.entryFeeTotal * position.remainingRatio;
+            const pos = position;
+            position = null;
+            recordAndClose(pos, exit, 'TP1_SL', candle.time);
+          }
         }
-        if (position.tp1Taken && !position.tp2Taken && candle.high >= position.tp2) {
+        if (position && position.tp1Taken && !position.tp2Taken && candle.high >= position.tp2) {
           const qtyPart = position.qty * 0.3;
           position.realizedPnl += (position.tp2 - position.entry) * qtyPart - position.entryFeeTotal * 0.3;
           position.remainingRatio -= 0.3;
           position.tp2Taken = true;
         }
-        if (position.tp2Taken && candle.high >= position.tp3) {
+        if (position && position.tp2Taken && candle.high >= position.tp3) {
           const qtyPart = position.qty * position.remainingRatio;
           position.realizedPnl += (position.tp3 - position.entry) * qtyPart - position.entryFeeTotal * position.remainingRatio;
           position.remainingRatio = 0;
         }
-        if (position.remainingRatio <= 0) {
+        if (position && position.remainingRatio <= 0) {
           const pos = position;
           const avgExit = computeAvgExit(pos);
           position = null;
@@ -229,6 +242,18 @@ export function runBacktest(
             : TRAILING.OFFSET_ATR;
           const trail = position.trailPeak - position.trailAtr * offset;
           if (trail > position.stop) position.stop = trail;
+        }
+        // Same-candle ambiguity for the trail: if this candle's high raised the trailing stop and
+        // this candle's low already reaches it, assume the high came first and we were stopped out.
+        if (position.stop > stopAtCandleStart && candle.low <= position.stop) {
+          const stopSlippage = position.trailAtr * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
+          const exit = position.stop - stopSlippage;
+          const qtyRest = position.qty * position.remainingRatio;
+          position.realizedPnl += (exit - position.entry) * qtyRest - position.entryFeeTotal * position.remainingRatio;
+          const reason: BacktestTrade['exitReason'] = position.tp2Taken ? 'TP2_SL' : position.tp1Taken ? 'TP1_SL' : 'SL';
+          const pos = position;
+          position = null;
+          recordAndClose(pos, exit, reason, candle.time);
         }
       }
     }
@@ -480,7 +505,8 @@ export function trailingActivated(entry: number, peak: number, trailAtr: number)
 
 /**
  * Walk-forward optimizer: grid-search entry/ADX thresholds on the first half
- * (in-sample), rank by OUT-OF-SAMPLE profit factor with a drawdown penalty.
+ * (in-sample) and rank by IN-SAMPLE score with a drawdown penalty. The second half
+ * is reported as out-of-sample validation only; it is not used for ranking.
  * The validation slice reuses the last 1000 candles of the in-sample half as
  * indicator warm-up only; trading starts exactly at the split index.
  */

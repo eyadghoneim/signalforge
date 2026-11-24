@@ -166,7 +166,7 @@ export default function App() {
             </div>
 
             {/* الأصول السريعة المباشرة */}
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
               {summary.map(priceChip)}
             </div>
           </div>
