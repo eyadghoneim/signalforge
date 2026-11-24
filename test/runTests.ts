@@ -1139,15 +1139,20 @@ console.log('\n=== 21. المحفظة الورقية (Paper Trading) ===');
   assert(post2b.open.length === 0 && post2b.closed.length === 1, 'same-candle TP1 then stop touch exits conservatively');
 
   // 4c) الوقف المتحرك: الشمعة اللي ترفع الرحل ولمستها السفلى توصله = خروج (أسوأ حالة)
-  const acct1c = defaultPaperAccount();
-  const a1c = openBuy(acct1c, sig, 0.5, 1000);
-  const post2c = markToMarket(
-    a1c,
-    { BTC: 100.5 },
-    { BTC: { open: 100, high: 101.9, low: 99.9, close: 100.5, time: 2000 } },
+  const ratchetStop = stillOpen.stop; // الوقف بعد شمعة (high 103, low 102.9) بقيت مفتوحة
+  assert(ratchetStop > stillOpen.entry && ratchetStop < 103, `trailing ratchet raised the stop above entry (got ${ratchetStop})`);
+  const runCandle = (low: number) => markToMarket(
+    openBuy(defaultPaperAccount(), sig, 0.5, 1000),
+    { BTC: 103 },
+    { BTC: { open: 100, high: 103, low, close: 103, time: 2000 } },
     3000,
   );
-  assert(post2c.open.length <= 1, 'trailing ratchet same-candle case does not crash');
+  const touched = runCandle(ratchetStop - 0.001);
+  assert(touched.open.length === 0 && touched.closed.length === 1, 'low touching the stop ratcheted on the same candle closes the position');
+  assert(touched.closed[0].exitAvg > stillOpen.entry, 'same-candle trailing exit still locks profit above entry');
+  assert(touched.closed[0].exitAvg < 103, 'same-candle trailing exit is below the candle high');
+  const untouched = runCandle(ratchetStop + 0.05);
+  assert(untouched.open.length === 1, 'low above the ratcheted stop keeps the position open');
 
   // 5) بيع/خروج يقفل المركز
   const closedBySell = closeBySellSignal(post2, 'BTC', 101, 4000);
