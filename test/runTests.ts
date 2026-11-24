@@ -1525,6 +1525,41 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
   clearCacheForTest();
   assert(readCache('test-null-key').hit === false, 'BUG-5: clearCache clears cached nulls');
 
+  // 3b) Same-candle stop ordering (backtest): synthetic series, ATR = 100, one BUY opens at candle 1000
+  // and candle 1001 is crafted. OHLC cannot say whether the high or the low came first, so the
+  // simulator assumes the worst: if the candle took TP1 / raised the trail AND its low reaches the
+  // raised stop, the position is stopped out on that same candle.
+  {
+    const { runBacktest } = await import('../server/backtest');
+    const base = 1_700_000_000;
+    const craft = (hi: number, lo: number) => {
+      const out: import('../shared/types').Candle[] = [];
+      let price = 50000;
+      for (let i = 0; i < 1200; i++) {
+        const open = price;
+        let close = i <= 1000 ? open + 10 : open;
+        let high = Math.max(open, close) + 45;
+        let low = Math.min(open, close) - 45;
+        if (i === 1001) { high = open + hi; low = open - lo; close = open + hi / 2; }
+        out.push({ time: base + i * 3600, open, high, low, close, volume: i < 995 ? 100 : 1000 });
+        price = close;
+      }
+      return out;
+    };
+    const o = { riskPercent: 1, feePercent: 0, cooldownCandles: 50, initialEquity: 10000, entryMinScore: 0, adxFloor: 0, slippagePercent: 0 };
+    const exitCandle = (t: { exitTime: number }) => (t.exitTime - base) / 3600;
+    // TP1 hit and low touches break-even on the same candle -> TP1_SL on that candle, not later TP3
+    const tp1 = runBacktest('BTC', craft(600, 5), o).trades[0];
+    assert(tp1.exitReason === 'TP1_SL' && exitCandle(tp1) === 1001, `same-candle TP1 then break-even touch exits that candle (got ${tp1.exitReason} @${exitCandle(tp1)})`);
+    assert(tp1.exitAvgPrice < tp1.entry, 'same-candle TP1 stop-out exits below entry after stop slippage');
+    // Control: TP1 hit, low stays above break-even -> no same-candle stop-out
+    const ctl = runBacktest('BTC', craft(600, -5), o).trades[0];
+    assert(!(ctl.exitReason === 'TP1_SL' && exitCandle(ctl) === 1001), 'control: low above break-even does not stop out on the TP1 candle');
+    // Trailing ratchet raised by this candle's high and touched by this candle's low -> exit on that candle
+    const trail = runBacktest('BTC', craft(120, 100), o).trades[0];
+    assert(trail.exitReason === 'SL' && exitCandle(trail) === 1001, `same-candle trailing ratchet touch exits that candle (got ${trail.exitReason} @${exitCandle(trail)})`);
+  }
+
   // 4) BUG-6: isBuyLabelSignal and hysteresis state machine
   const { isBuyLabelSignal, evaluateLabelHysteresis } = await import('../server/hysteresis');
   assert(isBuyLabelSignal({ spotAction: 'SPOT_BUY' }) === true, 'BUG-6: SPOT_BUY is recognized as BUY label');

@@ -82,7 +82,7 @@ import {
   type PaperCandle,
 } from './paperTrading';
 import { invalidateCandleCache } from './marketData';
-import { runBacktest, runRobustness, runWalkForward, DEFAULT_BACKTEST_OPTIONS } from './backtest';
+import { runBacktestJob } from './backtestRunner';
 import { getHistoricalCandlesDeep } from './marketData';
 import { computeSnapshot, computeHtfSnapshot, computeSmcStructure, computeDailyTrend, computePullbackZone } from '../shared/indicators';
 
@@ -531,17 +531,18 @@ app.post('/api/backtest', requireAdmin, async (req, res) => {
   const days = Math.min(1095, Math.max(90, Number(body.days) || 365));
   try {
     const candles = await getHistoricalCandlesDeep(asset, Math.min(30000, days * 24));
+    // Heavy compute runs in a child process so health checks and other requests are not blocked.
     if (body.robustness) {
-      const { base, grid } = runRobustness(asset, candles, DEFAULT_BACKTEST_OPTIONS);
+      const r = await runBacktestJob('robustness', asset, candles);
       appendLog('INFO', `Backtest robustness ${asset} (${days}d): 9 scenarios computed`);
-      return res.json({ ok: true, result: base, robustness: grid });
+      return res.json({ ok: true, result: r.result, robustness: r.robustness });
     }
     if (body.walkforward) {
-      const wf = runWalkForward(asset, candles, DEFAULT_BACKTEST_OPTIONS);
+      const { walkforward: wf } = await runBacktestJob('walkforward', asset, candles);
       appendLog('INFO', `Walk-forward ${asset}: ${wf.results.length} configs computed, best score ${wf.best?.score ?? 'n/a'}`);
       return res.json({ ok: true, walkforward: wf });
     }
-    const result = runBacktest(asset, candles, DEFAULT_BACKTEST_OPTIONS);
+    const { result } = await runBacktestJob('backtest', asset, candles);
     appendLog('INFO', `Backtest ${asset} (${days}d): ${result.totalTrades} trades, final $${result.finalEquity} vs B&H $${result.buyHoldFinal}`);
     return res.json({ ok: true, result });
   } catch (e) {

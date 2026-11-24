@@ -84,8 +84,8 @@ provider CA. `PGSSL_STRICT=0` is an explicit, logged opt-out.
 **Backtest simulation assumptions:** OHLC candles do not say whether the high or the low came first.
 The simulator checks the stop first, and when a candle both takes TP1 (or raises the trailing stop)
 and its low reaches the new stop, it assumes the stop was hit on that same candle. This is a
-conservative assumption, not proof of the real price path. Note `/api/backtest` still computes on the
-server's main thread (one job at a time, rate limited), so it can briefly delay other requests.
+conservative assumption, not proof of the real price path. `/api/backtest` computes in a child
+process (one job at a time, rate limited, 120 s timeout), so it does not block the main server.
 
 ### Free durable storage (Supabase)
 
