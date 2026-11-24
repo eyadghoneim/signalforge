@@ -93,7 +93,7 @@ function readPgCaCert(): string | null {
  * not in Node's trust store, supply it with PGSSL_CA / PGSSL_CA_FILE. As an explicit,
  * logged opt-out for providers whose CA you cannot supply, set PGSSL_STRICT=0.
  */
-function buildPgSslConfig(): { rejectUnauthorized: boolean; ca?: string } {
+export function buildPgSslConfig(): { rejectUnauthorized: boolean; ca?: string } {
   const ca = readPgCaCert();
   const raw = String(process.env.PGSSL_STRICT || '').trim().toLowerCase();
   const optOut = raw === '0' || raw === 'false';

@@ -273,7 +273,7 @@ export default function PriceChart({ asset, signal, lang }: Props) {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-[10px]">
           <span className="flex items-center gap-1 text-zinc-400">
             <span className="h-0.5 w-3 rounded bg-amber-400" /> EMA21
           </span>
@@ -281,7 +281,7 @@ export default function PriceChart({ asset, signal, lang }: Props) {
             <span className="h-0.5 w-3 rounded bg-sky-400" /> EMA50
           </span>
           {showLevels && hasSignalLevels && signal && (
-            <div className="flex flex-wrap items-center gap-1.5 border-r border-zinc-800 pr-2 font-mono" dir="ltr">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5 border-r border-zinc-800 pr-2 font-mono" dir="ltr">
               <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-400">
                 Entry: ${signal.entryPrice.toLocaleString('en-US')}
               </span>

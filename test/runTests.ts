@@ -1560,6 +1560,26 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
     assert(trail.exitReason === 'SL' && exitCandle(trail) === 1001, `same-candle trailing ratchet touch exits that candle (got ${trail.exitReason} @${exitCandle(trail)})`);
   }
 
+  // 3c) DB TLS policy: strict by default, explicit logged opt-out, CA passthrough
+  {
+    const { buildPgSslConfig } = await import('../server/durablePersistence');
+    const saved = { s: process.env.PGSSL_STRICT, c: process.env.PGSSL_CA, f: process.env.PGSSL_CA_FILE };
+    delete process.env.PGSSL_STRICT; delete process.env.PGSSL_CA; delete process.env.PGSSL_CA_FILE;
+    assert(buildPgSslConfig().rejectUnauthorized === true, 'DB TLS: certificate validation is on by default');
+    process.env.PGSSL_CA = 'PEM-PLACEHOLDER';
+    const withCa = buildPgSslConfig();
+    assert(withCa.rejectUnauthorized === true && withCa.ca === 'PEM-PLACEHOLDER', 'DB TLS: PGSSL_CA is passed through with validation on');
+    delete process.env.PGSSL_CA;
+    process.env.PGSSL_STRICT = '0';
+    const warn = console.warn; let warned = false; console.warn = () => { warned = true; };
+    const optOut = buildPgSslConfig();
+    console.warn = warn;
+    assert(optOut.rejectUnauthorized === false && warned, 'DB TLS: PGSSL_STRICT=0 is an explicit, logged opt-out');
+    for (const [k, v] of [['PGSSL_STRICT', saved.s], ['PGSSL_CA', saved.c], ['PGSSL_CA_FILE', saved.f]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+
   // 4) BUG-6: isBuyLabelSignal and hysteresis state machine
   const { isBuyLabelSignal, evaluateLabelHysteresis } = await import('../server/hysteresis');
   assert(isBuyLabelSignal({ spotAction: 'SPOT_BUY' }) === true, 'BUG-6: SPOT_BUY is recognized as BUY label');
