@@ -1,21 +1,25 @@
 // Runs a backtest job in a child process (the compute is synchronous and CPU heavy).
 import { fork } from 'child_process';
-import * as fs from 'fs';
 import * as path from 'path';
 import type { Candle } from '../shared/types';
 
 export type BacktestJobKind = 'backtest' | 'robustness' | 'walkforward';
 const JOB_TIMEOUT_MS = 300_000;
 
+/**
+ * Chooses the worker by how THIS process was started, not by what happens to exist on disk:
+ * a built server (entry is a .cjs bundle) uses the backtestWorker.cjs next to it, with no tsx;
+ * source runs (tsx dev server, tests) always use the .ts source, so a stale dist/ is ignored.
+ */
+export function resolveBacktestWorker(entry: string, cwd: string): { file: string; execArgv: string[] } {
+  if (path.extname(entry) === '.cjs') {
+    return { file: path.join(path.dirname(entry), 'backtestWorker.cjs'), execArgv: [] };
+  }
+  return { file: path.join(cwd, 'server', 'backtestWorker.ts'), execArgv: ['--import', 'tsx'] };
+}
+
 export function runBacktestJob(kind: BacktestJobKind, asset: string, candles: Candle[]): Promise<any> {
-  // Worker location does not depend on NODE_ENV: use the bundled worker next to the server bundle
-  // when it exists (production, no tsx needed), otherwise run the .ts source through tsx (dev/tests).
-  const bundled = [
-    path.join(path.dirname(process.argv[1] || ''), 'backtestWorker.cjs'),
-    path.join(process.cwd(), 'dist', 'backtestWorker.cjs'),
-  ].find((f) => fs.existsSync(f));
-  const file = bundled || path.join(process.cwd(), 'server', 'backtestWorker.ts');
-  const execArgv = bundled ? [] : ['--import', 'tsx'];
+  const { file, execArgv } = resolveBacktestWorker(process.argv[1] || '', process.cwd());
   return new Promise((resolve, reject) => {
     const child = fork(file, [], { execArgv, stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
     let settled = false;

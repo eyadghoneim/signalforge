@@ -1587,7 +1587,12 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
 
   // 3d) Backtest jobs run off the main thread: the event loop stays responsive during a walk-forward.
   {
-    const { runBacktestJob } = await import('../server/backtestRunner');
+    const { runBacktestJob, resolveBacktestWorker } = await import('../server/backtestRunner');
+    // Worker selection follows how the process was started, never a leftover dist/ bundle.
+    const srcRun = resolveBacktestWorker('/app/test/runTests.ts', '/app');
+    assert(srcRun.file === '/app/server/backtestWorker.ts' && srcRun.execArgv.includes('tsx'), 'source/dev runs use the .ts worker even if a stale dist/ bundle exists');
+    const builtRun = resolveBacktestWorker('/app/dist/server.cjs', '/elsewhere');
+    assert(builtRun.file === '/app/dist/backtestWorker.cjs' && builtRun.execArgv.length === 0, 'built server uses the bundled worker beside it, with no tsx and no NODE_ENV dependency');
     const candles = syntheticCandles(6000, 2, 7);
     let last = Date.now();
     let maxGap = 0;
@@ -1597,7 +1602,9 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
     const elapsed = Date.now() - t0;
     clearInterval(timer);
     assert(Array.isArray(r.walkforward?.results), 'child-process walk-forward returns results');
-    assert(elapsed > 500 ? maxGap < 250 : true, `event loop stays responsive during the job (max gap ${maxGap}ms over ${elapsed}ms)`);
+    // Smoke-level proxy (measures this process's loop, not the HTTP server). Needs a job long enough to matter.
+    assert(elapsed > 500, `responsiveness probe ran long enough to be meaningful (${elapsed}ms)`);
+    assert(maxGap < 250, `event loop stays responsive during the job (max gap ${maxGap}ms over ${elapsed}ms)`);
     let rejected = false;
     try { await runBacktestJob('backtest', 'BTC', candles.slice(0, 10)); } catch { rejected = true; }
     assert(rejected, 'child-process job errors (too few candles) reject instead of hanging');

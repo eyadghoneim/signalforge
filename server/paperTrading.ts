@@ -324,6 +324,8 @@ export function markToMarket(
       if (trail > p.stop) p.stop = round2(trail);
     }
     // Same-candle ambiguity for the trail (same worst case as the backtest).
+    // Fill model as for TP1: worst-case path (high first, then a fall through the raised stop), so no
+    // opening gap is priced in; fill at the stop minus stop slippage.
     if (p.stop > stopAtCandleStart && candle.low <= p.stop) {
       const slippage = p.atrEntry * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
       closeRemainder(acct, p, p.stop - slippage, 'SL', nowMs);

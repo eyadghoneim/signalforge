@@ -248,6 +248,8 @@ export function runBacktest(
         }
         // Same-candle ambiguity for the trail: if this candle's high raised the trailing stop and
         // this candle's low already reaches it, assume the high came first and we were stopped out.
+        // Fill model as for TP1: worst-case path (high first, then a fall through the raised stop), so no
+        // opening gap is priced in; fill at the stop minus stop slippage.
         if (position.stop > stopAtCandleStart && candle.low <= position.stop) {
           const stopSlippage = position.trailAtr * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;
           const exit = position.stop - stopSlippage;

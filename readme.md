@@ -71,10 +71,10 @@ Telegram notifications are optional - configure a bot token and chat id in the d
 creates an exchange order; `/panic` closes only paper positions using the latest market ticker.
 
 Admin endpoints (`/api/config`, paper reset, telegram test, `/api/backtest`) and the account-state
-read endpoints (`/api/paper`, `/api/logs`, `/api/learning`, `/api/attribution/summary`) require
+read endpoints (`/api/paper`, `/api/logs`, `/api/learning`, `/api/attribution/summary`, `/api/report/daily`) require
 `BOT_ADMIN_TOKEN` (sent as `x-bot-admin-token`; enter it in Settings in the dashboard). Without a
 token they stay open to localhost in development only and fail closed in production. Set
-`PUBLIC_READ_ENDPOINTS=1` only if you deliberately want the four read endpoints public.
+`PUBLIC_READ_ENDPOINTS=1` only if you deliberately want these five read endpoints public.
 Market and signal endpoints stay public. Production responses send HSTS (effective over HTTPS only).
 
 **Database TLS:** certificate validation is on by default. If your provider's CA is not in Node's
