@@ -281,6 +281,9 @@ export function markToMarket(
       const breakevenPlusFees = p.entry * (1 + PAPER_EXECUTION.FEE_RATE * 2);
       p.stop = Math.max(p.stop, breakevenPlusFees);
       // Same-candle ambiguity (same worst-case rule as the backtest): if this candle's low
+      // Fill model: worst-case path = high first, then a fall through the stop, so no opening gap is
+      // priced in; fill at stop minus stop slippage. The normal stop path (stop set before the candle)
+      // still fills at min(open, stop - slippage) for real gaps.
       // also reaches the new break-even stop, assume the remainder was stopped out.
       if (candle.low <= p.stop) {
         const slippage = p.atrEntry * STRATEGY_RISK_MULTIPLIERS.STOP_SLIPPAGE_ATR;

@@ -201,6 +201,9 @@ export function runBacktest(
           position.tp1Taken = true;
           position.stop = position.entry; // وقف تعادل بعد TP1
           // Same-candle ambiguity: OHLC does not say whether the high that hit TP1 came before
+          // Fill model: worst-case path = high first, then a fall through the stop, so no opening gap is
+          // priced in; fill at stop minus stop slippage. The normal stop path (stop set before the candle)
+          // still fills at min(open, stop - slippage) for real gaps.
           // this candle's low. Worst case: if the low also reaches the new break-even stop,
           // the rest of the position is stopped out on this same candle (stop slippage applies).
           if (candle.low <= position.stop) {
