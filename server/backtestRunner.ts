@@ -1,16 +1,21 @@
 // Runs a backtest job in a child process (the compute is synchronous and CPU heavy).
 import { fork } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import type { Candle } from '../shared/types';
 
 export type BacktestJobKind = 'backtest' | 'robustness' | 'walkforward';
-const JOB_TIMEOUT_MS = 120_000;
+const JOB_TIMEOUT_MS = 300_000;
 
 export function runBacktestJob(kind: BacktestJobKind, asset: string, candles: Candle[]): Promise<any> {
-  const isProd = process.env.NODE_ENV === 'production';
-  // Production: bundled by `npm run build` next to server.cjs. Development: run the .ts via tsx.
-  const file = isProd ? path.join(process.cwd(), 'dist', 'backtestWorker.cjs') : path.join(process.cwd(), 'server', 'backtestWorker.ts');
-  const execArgv = isProd ? [] : ['--import', 'tsx'];
+  // Worker location does not depend on NODE_ENV: use the bundled worker next to the server bundle
+  // when it exists (production, no tsx needed), otherwise run the .ts source through tsx (dev/tests).
+  const bundled = [
+    path.join(path.dirname(process.argv[1] || ''), 'backtestWorker.cjs'),
+    path.join(process.cwd(), 'dist', 'backtestWorker.cjs'),
+  ].find((f) => fs.existsSync(f));
+  const file = bundled || path.join(process.cwd(), 'server', 'backtestWorker.ts');
+  const execArgv = bundled ? [] : ['--import', 'tsx'];
   return new Promise((resolve, reject) => {
     const child = fork(file, [], { execArgv, stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
     let settled = false;

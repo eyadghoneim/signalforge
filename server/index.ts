@@ -562,7 +562,7 @@ app.get('/api/liquidity-regime', async (_req, res) => {
 });
 
 // ─── Daily Comprehensive Terminal Report ───
-app.get('/api/report/daily', async (_req, res) => {
+app.get('/api/report/daily', requireReadAccess, async (_req, res) => {
   try {
     const config = loadConfig();
     const paper = snapshotPaperAccount(paperAccount);

@@ -1585,6 +1585,24 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
     }
   }
 
+  // 3d) Backtest jobs run off the main thread: the event loop stays responsive during a walk-forward.
+  {
+    const { runBacktestJob } = await import('../server/backtestRunner');
+    const candles = syntheticCandles(6000, 2, 7);
+    let last = Date.now();
+    let maxGap = 0;
+    const timer = setInterval(() => { const now = Date.now(); maxGap = Math.max(maxGap, now - last); last = now; }, 20);
+    const t0 = Date.now();
+    const r = await runBacktestJob('walkforward', 'BTC', candles);
+    const elapsed = Date.now() - t0;
+    clearInterval(timer);
+    assert(Array.isArray(r.walkforward?.results), 'child-process walk-forward returns results');
+    assert(elapsed > 500 ? maxGap < 250 : true, `event loop stays responsive during the job (max gap ${maxGap}ms over ${elapsed}ms)`);
+    let rejected = false;
+    try { await runBacktestJob('backtest', 'BTC', candles.slice(0, 10)); } catch { rejected = true; }
+    assert(rejected, 'child-process job errors (too few candles) reject instead of hanging');
+  }
+
   // 4) BUG-6: isBuyLabelSignal and hysteresis state machine
   const { isBuyLabelSignal, evaluateLabelHysteresis } = await import('../server/hysteresis');
   assert(isBuyLabelSignal({ spotAction: 'SPOT_BUY' }) === true, 'BUG-6: SPOT_BUY is recognized as BUY label');
