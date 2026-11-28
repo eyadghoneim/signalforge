@@ -1571,6 +1571,12 @@ console.log('\n=== 28. إصلاحات الحماية والقياس والبيا
     const saved = { s: process.env.PGSSL_STRICT, c: process.env.PGSSL_CA, f: process.env.PGSSL_CA_FILE };
     delete process.env.PGSSL_STRICT; delete process.env.PGSSL_CA; delete process.env.PGSSL_CA_FILE;
     assert(buildPgSslConfig().rejectUnauthorized === true, 'DB TLS: certificate validation is on by default');
+    const sb = buildPgSslConfig('postgresql://u:p%40ss[x]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres');
+    assert(sb.rejectUnauthorized === true && !!sb.ca && sb.ca.includes('BEGIN CERTIFICATE'), 'DB TLS: Supabase host gets the bundled root CA with validation on');
+    const other = buildPgSslConfig('postgresql://u:p@db.example.com:5432/postgres');
+    assert(other.rejectUnauthorized === true && !other.ca, 'DB TLS: non-Supabase host keeps default trust store');
+    const trick = buildPgSslConfig('postgresql://u:p@evil.com/x?h=a.supabase.com');
+    assert(!trick.ca, 'DB TLS: bundled CA is not applied by a lookalike query string');
     process.env.PGSSL_CA = 'PEM-PLACEHOLDER';
     const withCa = buildPgSslConfig();
     assert(withCa.rejectUnauthorized === true && withCa.ca === 'PEM-PLACEHOLDER', 'DB TLS: PGSSL_CA is passed through with validation on');
