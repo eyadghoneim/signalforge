@@ -232,6 +232,16 @@ export default function App() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {/* العمود الرئيسي: الرسم البياني + كارت التوصية + مساحة العمل والتبويبات التحليلية */}
           <section className="space-y-4 lg:col-span-2">
+            {health && (health.persistenceStatus === 'degraded' || health.paperEnginePaused || (health.persistenceConfigured && health.persistence !== 'postgres')) && (
+              <div role="alert" className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+                <div className="font-bold">⚠️ {lang === 'ar' ? 'مشكلة في تخزين البيانات' : 'Data storage problem'}</div>
+                <div className="mt-1 text-xs text-amber-200/80">
+                  {lang === 'ar'
+                    ? 'قاعدة البيانات غير متصلة، فالتداول التجريبي متوقف مؤقتًا والبيانات الجديدة قد لا تُحفظ.'
+                    : 'The database is not connected, so paper trading is paused and new data may not be saved.'}
+                </div>
+              </div>
+            )}
             <PriceChart asset={activeAsset} signal={signal} lang={lang} />
             {health?.protection?.choppyCooldown?.active && (
               <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 p-4 text-sm text-rose-200">
